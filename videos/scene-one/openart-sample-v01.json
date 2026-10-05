@@ -1,0 +1,36 @@
+{
+  "title": "openNova 场景一：Always On 桌面交流样片",
+  "status": "awaiting_credits_not_submitted",
+  "preparedOn": "2026-10-04",
+  "model": "kling-3-omni",
+  "mode": "element2video",
+  "referenceFiles": [
+    "/Users/chenzhuoping/Documents/ChatGPT/openNova/videos/scene-one/public/waterdrop/workspace.png"
+  ],
+  "paramsBeforeReferenceImport": {
+    "duration": 10,
+    "resolution": "std",
+    "aspectRatio": "16:9",
+    "generateSound": true,
+    "videoCount": 1,
+    "multiShot": false,
+    "creationMode": "element",
+    "prompt": "生成一段 10 秒、16:9 的写实产品体验短片，现代精致的家居工作环境，自然晨光、浅橡木桌、银色笔记本电脑。使用参考图中的水滴助手和首饰托盘充电座，保持产品的轮廓、银色材质、镜头布局、底部短白灯、细链和支撑结构。水滴是真实首饰大小，约宽 25、高 32 毫米，托盘约长 72、宽 52 毫米，切勿放大成桌面音箱。主体只有一个上方黑色摄像镜头，摄像头全程关闭且不采集画面，旁边独立的小采集指示灯全程熄灭。\n\n一位穿灰色上衣的成年中国用户坐在电脑旁，位于画面左侧，水滴归座放在右前景。保持水滴完整可见。一个连续镜头，机位从桌面侧前方轻缓向水滴推进，真实光影和自然景深，产品细节在最后清晰呈现。\n\n前 1 秒建立安静工作的氛围。用户无需触碰产品、无需唤醒词，自然开口，用日常聊天的普通话说：“我们继续昨天的方案。”用户说完后短暂停顿，水滴用温暖、平和、自然的女声回应：“好，我们接着聊。”只有用户第一句有相应的嘴部动作；助手的声音从桌面水滴所在方向传来，用户安静倾听。两句完整说完，结尾保留约 2 秒安静画面。\n\n声音需有自然语气、口语节奏和细微情绪，像熟悉的工作伙伴。两位说话者音色明确区分，避免播音腔、机械断句、夸张表演和强烈电子音效。保留轻微真实室内环境声，无音乐。助手回应时仅底部白色语音状态灯柔和提亮，摄像头采集指示灯保持关闭。\n\n展现 Always On：用户直接开口即可交流，不出现点按、触摸或拿起设备来唤醒的动作。产品始终静置归座，不发生形变，不增加屏幕、面孔、机械动作或全息投影。电脑内容自然虚焦。画面中无字幕、标题、品牌标志或水印。"
+  },
+  "referenceImportRequired": "生成前将 referenceFiles 导入 OpenArt，把返回的 type、id、url、label 填入 params.visualReferences；本文件尚不是可直接提交的 API 请求。",
+  "quote": {
+    "balance": 40,
+    "totalCredits": 350,
+    "shortfall": 310,
+    "currency": "credits",
+    "pricingNote": "报价为一条10秒、16:9、标准档、含声音的样片；更改配置会改变价格，最终以提交时为准。",
+    "upgradeUrl": "https://openart.ai/pricing?utm_source=mcp"
+  },
+  "acceptanceChecks": [
+    "水滴与参考图外观一致且保持首饰大小",
+    "中文对话完整、自然、角色不混淆",
+    "用户直接开口，未触碰设备唤醒",
+    "底座仅充电与支撑，声音来自主体",
+    "摄像头采集灯全程关闭"
+  ]
+}

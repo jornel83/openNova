@@ -1,0 +1,13 @@
+# Local system files
+.DS_Store
+._*
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and Python caches
+node_modules/
+__pycache__/
+*.py[cod]

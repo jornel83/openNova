@@ -1,0 +1,62 @@
+[
+  {
+    "file": "01-user.mp3",
+    "text": "这份资料，我们一起改。",
+    "voice": "Reed (中文（中国大陆）)",
+    "duration": 2.232,
+    "start": 0.87,
+    "end": 3.102,
+    "speed": 1.0,
+    "recovered_aiff": true,
+    "rms_dbfs": -18.65,
+    "peak_dbfs": -2.26
+  },
+  {
+    "file": "02-user.mp3",
+    "text": "这句太抽象，换成一个真实场景。",
+    "voice": "Reed (中文（中国大陆）)",
+    "duration": 3.12,
+    "start": 4.7,
+    "end": 7.82,
+    "speed": 1.0,
+    "recovered_aiff": true,
+    "rms_dbfs": -18.07,
+    "peak_dbfs": -2.26
+  },
+  {
+    "file": "03-nova.mp3",
+    "text": "已改写，请看这一处变化。",
+    "voice": "Tingting",
+    "duration": 2.496,
+    "start": 9.87,
+    "end": 12.366,
+    "speed": 1.0,
+    "recovered_aiff": false,
+    "rms_dbfs": -17.84,
+    "peak_dbfs": -4.22
+  },
+  {
+    "file": "04-user.mp3",
+    "text": "保留桌面方案，随身入口待定。",
+    "voice": "Reed (中文（中国大陆）)",
+    "duration": 2.88,
+    "start": 15.53,
+    "end": 18.41,
+    "speed": 1.0,
+    "recovered_aiff": false,
+    "rms_dbfs": -20.69,
+    "peak_dbfs": -2.27
+  },
+  {
+    "file": "05-nova.mp3",
+    "text": "已保存，随身入口仍然待定。",
+    "voice": "Tingting",
+    "duration": 2.808,
+    "start": 20.53,
+    "end": 23.338,
+    "speed": 1.0,
+    "recovered_aiff": false,
+    "rms_dbfs": -18.1,
+    "peak_dbfs": -3.72
+  }
+]
