@@ -1,0 +1,74 @@
+---
+config:
+  htmlLabels: false
+  layout: elk
+  theme: base
+  themeVariables:
+    fontFamily: 'PingFang SC, Arial, sans-serif'
+    fontSize: 16px
+    primaryColor: '#f5f7fa'
+    primaryTextColor: '#1f2937'
+    primaryBorderColor: '#9ca3af'
+    lineColor: '#64748b'
+    clusterBkg: '#fafbfc'
+    clusterBorder: '#cbd5e1'
+  flowchart:
+    htmlLabels: false
+    nodeSpacing: 28
+    rankSpacing: 42
+---
+flowchart TB
+    subgraph Terminal[交互终端]
+        DropFW[水滴固件<br/>声学前端 · 音频输入输出<br/>静音 · 按键 · 状态反馈]
+        App[Air 工作区<br/>项目 · 对话 · 成果<br/>操作确认与设备设置]
+    end
+    subgraph Studio[Studio · 常驻 Agent 服务]
+        Session[设备接入与会话管理<br/>鉴权 · 连接 · 多端同步<br/>会话 · 轮次 · 打断协调]
+        ASRService[ASR 识别服务<br/>音频流 · 转写 · 识别状态<br/>ASR 模型适配]
+        Harness[Agent Harness<br/>上下文 · 记忆 · 任务运行<br/>模型与工具协同]
+        TTSService[TTS 合成服务<br/>文本分段 · 合成与取消<br/>TTS 模型适配]
+        Catalog[Skill 与 Tool 目录<br/>任务方法 · 工具描述<br/>参数 · 权限 · 执行节点]
+        LLMAdapter[LLM 适配<br/>大模型接口 · 服务地址<br/>模型版本配置]
+        Gateway[工具执行网关<br/>权限与参数校验<br/>MCP / API / CLI 适配]
+        Dev[本地执行器<br/>文件 · Git · 终端<br/>进程与运行环境管理]
+        State[(状态与成果管理<br/>会话 · 任务 · 记忆<br/>项目文件与成果索引)]
+    end
+    subgraph Models[模型服务]
+        LLM[云端 LLM 大模型<br/>理解 · 推理 · 生成]
+        ASR[ASR 模型<br/>语音识别<br/>Studio 或云端]
+        TTS[TTS 模型<br/>流式语音合成<br/>Studio 或云端]
+    end
+    subgraph Spark[Spark · 按需实验节点]
+        Experiment[任务执行器<br/>计算任务 · 实验运行<br/>资源与状态管理]
+        Artifacts[(任务产物<br/>配置 · 日志 · 结果文件<br/>版本与位置)]
+    end
+    External[外部工具与设备<br/>服务接口 · 设备连接<br/>调用结果与状态回传]
+    DropFW <-->|音频与设备事件| Session
+    App <-->|文字、共享对象与结果| Session
+    Session -->|音频与识别控制| ASRService
+    ASRService -->|中间转写与识别状态| Session
+    ASRService -->|本轮输入文本| Harness
+    Session <-->|文字、上下文与任务事件| Harness
+    Harness -->|需播报的回复文本| TTSService
+    Session -->|播报与取消控制| TTSService
+    TTSService -->|音频与合成状态| Session
+    Harness <-->|推理与工具请求| LLMAdapter
+    LLMAdapter <--> LLM
+    ASRService <-->|音频与转写| ASR
+    TTSService <-->|文本与音频| TTS
+    Catalog -.->|能力定义| Harness
+    Harness <-->|工具请求与执行结果| Gateway
+    Harness <--> State
+    Gateway <--> Dev
+    Gateway <--> Experiment
+    Gateway <--> External
+    Dev <--> State
+    Experiment --> Artifacts
+    Artifacts -.->|版本与位置引用| State
+    classDef core fill:#fdeaea,stroke:#b87575,color:#512727
+    classDef model fill:#f1ebfa,stroke:#9273b2,color:#39244f
+    classDef execution fill:#eaf5f0,stroke:#659480,color:#183c2d
+    class Harness,Catalog,Gateway core
+    class LLMAdapter,LLM,ASR,TTS model
+    class ASRService,TTSService execution
+    class DropFW,App,Dev,Experiment,External execution

@@ -1,0 +1,52 @@
+---
+config:
+  htmlLabels: false
+  layout: elk
+  theme: base
+  themeVariables:
+    fontFamily: 'PingFang SC, Arial, sans-serif'
+    fontSize: 18px
+    primaryTextColor: '#1f2937'
+    lineColor: '#64748b'
+    clusterBkg: '#fafbfc'
+    clusterBorder: '#cbd5e1'
+  flowchart:
+    htmlLabels: false
+    nodeSpacing: 35
+    rankSpacing: 45
+    wrappingWidth: 290
+---
+flowchart TB
+    subgraph AIR[Air · 交互与开发]
+        Client[浏览器交互端<br/>拾音 · 本地 VAD · 音频播放<br/>对话 · 差异 · 任务状态]
+    end
+    subgraph STUDIO[Studio · 常驻服务]
+        subgraph APP[Node · 服务进程]
+            Session[接入与语音会话管理<br/>ASR 适配 · 轮次 · 打断<br/>播报文本与 TTS 调度]
+            Agent[DeepSeek Harness<br/>模型适配 · 项目上下文<br/>工具与任务执行]
+        end
+        subgraph PY[Python · 推理进程]
+            TTS[MLX-Audio<br/>Qwen3-TTS CustomVoice<br/>Vivian 音色 · 本地合成]
+        end
+        Data[(内部存储<br/>项目 · 会话与任务状态<br/>模型缓存 · 参考录音)]
+    end
+    subgraph CLOUD[云端服务]
+        ASR[豆包流式 ASR 2.0<br/>实时双向流式]
+        LLM[GPT-6.1 Sol<br/>Responses API]
+    end
+    Future[DGX Spark · 后续训练与实验<br/>本轮不接入实时语音链路]
+    Client <-->|SSH 隧道 · 音频 / 文字 / 事件| Session
+    Session <-->|本轮输入 / 回复与任务事件| Agent
+    Session <-->|本机调用 · 文本 / 音频| TTS
+    Session <-->|音频 / 转写| ASR
+    Agent <-->|上下文 / 回复与工具调用| LLM
+    Agent <--> Data
+    TTS --- Data
+    classDef client fill:#edf5ff,stroke:#729bc2,color:#173954
+    classDef service fill:#f0f7f4,stroke:#74a18d,color:#234b3c
+    classDef model fill:#fff6e9,stroke:#c6a16c,color:#654d2c
+    classDef future fill:#f5f3f8,stroke:#aaa0b5,color:#645970,stroke-dasharray:6 4
+    class Client client
+    class Session,Agent,Data service
+    class TTS,ASR,LLM model
+    class Future future

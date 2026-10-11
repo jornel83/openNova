@@ -1,0 +1,72 @@
+---
+config:
+  htmlLabels: false
+  layout: elk
+  theme: base
+  themeVariables:
+    fontFamily: 'PingFang SC, Arial, sans-serif'
+    fontSize: 18px
+    primaryColor: '#f5f7fa'
+    primaryTextColor: '#1f2937'
+    primaryBorderColor: '#94a3b8'
+    lineColor: '#64748b'
+    clusterBkg: '#fafbfc'
+    clusterBorder: '#cbd5e1'
+  flowchart:
+    htmlLabels: false
+    nodeSpacing: 30
+    rankSpacing: 48
+    wrappingWidth: 260
+---
+flowchart TB
+    subgraph AIR[Air · 交互端]
+        Input[音频前端<br/>拾音 · 回声消除 · 降噪<br/>VAD · 缓存 · 麦克风静音]
+        UI[工作界面<br/>文字与手动图片输入<br/>对话 · 差异 · 确认 · 任务]
+        Playback[音频播放器<br/>流式播放 · 本地停播<br/>播放进度回传]
+    end
+
+    subgraph STUDIO[Studio · 常驻服务]
+        Session[设备接入与会话管理<br/>连接 · 指向与轮次判断<br/>输入确认 · 打断协调]
+        ASRAdapter[ASR 服务与适配<br/>音频上行 · 转写修订<br/>识别状态与重连]
+        Harness[DeepSeek Harness<br/>OpenNova 服务适配<br/>上下文 · 模型与工具协作]
+        LLMAdapter[LLM 适配<br/>Responses API<br/>文字与图片 · 流式事件]
+        TTSAdapter[TTS 服务与适配<br/>可播报文本 · 音色配置<br/>合成 · 取消 · 旧音频过滤]
+        Tools[工具执行与任务管理<br/>文件 · Git · 检查命令<br/>操作确认 · 回执 · 取消任务]
+        LocalTTS[独立 Python 推理进程<br/>MLX-Audio · Qwen3-TTS<br/>12Hz-1.7B-Base · 固定参考音色]
+        Store[(项目与状态存储<br/>工作区 · 成果 · 会话<br/>任务记录 · 基础记忆)]
+    end
+
+    subgraph CLOUD[云端 · 模型服务]
+        ASR[豆包流式 ASR 2.0<br/>实时双向流式]
+        LLM[GPT-6.1 Sol<br/>文字与图片理解<br/>推理 · 工具调用]
+        CloudTTS[云端 TTS · 备选待选<br/>CosyVoice / 豆包声音复刻]
+    end
+
+
+    Input -->|音频与采集事件| Session
+    UI <-->|文字、图片、确认与结果| Session
+    Session <-->|音频、识别控制与转写| ASRAdapter
+    ASRAdapter <-->|音频 / 转写| ASR
+    Session <-->|本轮输入 / 回复与任务事件| Harness
+    Harness <-->|模型请求 / 输出| LLMAdapter
+    LLMAdapter <-->|上下文、图片 / 回复与工具调用| LLM
+    Harness <-->|工具操作 / 状态与回执| Tools
+    Harness <-->|上下文与记录| Store
+    Tools <-->|文件、成果与任务记录| Store
+    Harness -->|需播报的回复| TTSAdapter
+    Session -->|播放许可与取消| TTSAdapter
+    TTSAdapter -.->|备选文字 / 音频| CloudTTS
+    TTSAdapter -->|有效音频与合成状态| Session
+    Session <-->|音频下行 / 播放进度| Playback
+    TTSAdapter <-->|文字 / 合成音频| LocalTTS
+
+    classDef terminal fill:#edf5ff,stroke:#729bc2,color:#173954
+    classDef service fill:#f0f7f4,stroke:#74a18d,color:#234b3c
+    classDef agent fill:#f2edfb,stroke:#9b84bb,color:#493568
+    classDef model fill:#fff6e9,stroke:#c6a16c,color:#654d2c
+    classDef pending fill:#f8f5fd,stroke:#a48bc0,color:#58426f,stroke-dasharray:6 4
+    class Input,UI,Playback terminal
+    class Session,ASRAdapter,TTSAdapter,Tools,Store service
+    class Harness,LLMAdapter agent
+    class ASR,LLM,LocalTTS model
+    class CloudTTS pending
