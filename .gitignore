@@ -11,3 +11,13 @@
 node_modules/
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+
+# Local credentials, machine configuration and generated runtime data
+config/*.local.json
+output/
+*.log
+.pytest_cache/
+.ruff_cache/
+.cache/

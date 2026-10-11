@@ -1,0 +1,11 @@
+{
+  "harness": {
+    "url": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "revision": "ddefc45fbc7f8e46dd73185e68295696d1297887",
+    "pnpm": "11.7.0"
+  },
+  "siwc": {
+    "url": "https://github.com/openai/sign-in-with-chatgpt-devkit.git",
+    "revision": "0a36fefeb913055c8c7a1a29b63d82b96b2e841a"
+  }
+}

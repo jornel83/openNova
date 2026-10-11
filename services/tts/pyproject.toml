@@ -1,0 +1,11 @@
+[project]
+name = "opennova-tts"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "mlx-audio[tts,server] @ git+https://github.com/Blaizzy/mlx-audio.git@e66ad2ff4eb96ce1149000187b30370cbcd707aa",
+  "soundfile>=0.13,<0.14",
+]
+
+[tool.uv]
+package = false

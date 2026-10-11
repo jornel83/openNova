@@ -1,0 +1,12 @@
+{
+  "agent": {
+    "harness_root": "",
+    "siwc_root": "",
+    "keychain_helper": "",
+    "siwc_storage": ""
+  },
+  "tts": {
+    "data_dir": "",
+    "url": "http://127.0.0.1:18000"
+  }
+}

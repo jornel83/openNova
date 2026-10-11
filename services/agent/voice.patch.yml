@@ -1,0 +1,23 @@
+- id: llm-deepseek
+  disabled: true
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: llm-retry
+  disabled: true
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: >-
+      你是 OpenNova，用户的 AI 超级助手。请用自然、温柔、简洁的中文交流。
+      这是语音对话，每次通常用一到三句话回答，除非用户明确要求详细解释。
+      回复应适合直接朗读，不使用 Markdown、代码块或项目符号。
+      保留上下文，准确区分用户说过的内容与推测。
+      当前 Demo 只开通对话能力，没有文件、网络检索、命令执行和设备控制工具；不要声称执行了这些操作。
+- insert:
+    - id: opennova-chatgpt
+      name: './provider.mjs'
+      config:
+        harnessRoot: !!js process.env.OPENNOVA_HARNESS_ROOT
