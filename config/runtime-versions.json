@@ -6,6 +6,8 @@
   },
   "siwc": {
     "url": "https://github.com/openai/sign-in-with-chatgpt-devkit.git",
-    "revision": "0a36fefeb913055c8c7a1a29b63d82b96b2e841a"
+    "revision": "0a36fefeb913055c8c7a1a29b63d82b96b2e841a",
+    "tools_patch": "patches/siwc/0001-stream-items.patch",
+    "tools_build": "python3.11 tools/setup/bootstrap.py --install --web"
   }
 }

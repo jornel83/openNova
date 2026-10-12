@@ -6,6 +6,8 @@ OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI �
 
 ## 工程结构
 
+2026-10-13 新增可选联网模式 `--web`：Harness 原生 `web_search` / `web_fetch` → GPT 工具回传 → 带来源的完整答案 → Vivian。工具协议、真实公开网页读取与来源追问已通过；**真实 Exa 搜索验收还需要本机配置 Exa Key**。不传 `--web` 继续使用原增量语音模式。安装、命令和验收边界见[联网版验收记录](docs/research/opennova-web-search-verification.md)。
+
 | 目录 | 职责 |
 | --- | --- |
 | `tools/voice/` | 完整对话入口、收音分轮、Agent 进程管理与播放 |
@@ -100,6 +102,8 @@ python3.11 -m unittest discover -s services/tts/tests -v
 python3.11 -m unittest discover -s tools/setup/tests -v
 node --test services/agent/tests/*.test.mjs
 ```
+
+联网扩展测试需先执行 `python3.11 tools/setup/bootstrap.py --install --web`，使用 Node 24，并确保 `agent.harness_root` 指向固定版本的已构建 Harness。
 
 完整链路可向持续模式入口传入 `--audio <一次自然发言.wav> --no-play`，可重复 `--audio` 验证多轮上下文；文件最长 60 秒，单次连续发言应小于 45 秒，尾部保留至少 2 秒静音。显式传 `--output-dir output/voice/<新目录>` 时，持续模式只保存文字与时序 JSON，原轮流模式另保存回复 WAV。Harness 文字会话保存在 `~/.local/share/opennova/harness-home/sessions/`；重新启动 Demo 会新建模型会话。
 

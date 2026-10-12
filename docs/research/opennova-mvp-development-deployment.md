@@ -1,5 +1,7 @@
 # OpenNova MVP 开发环境部署方案
 
+2026-10-13 联网版增量：已实现独立 SIWC 工具扩展、Harness 原生 Web 插件、来源与预算控制、文字入口和持续语音 `--web`。部署位置保持 Air Agent + Studio Vivian；新增外部依赖为 Exa 搜索 Key。工具协议和真实公开网页读取已验证，真实搜索仍待 Key；[联网验收记录](opennova-web-search-verification.md) 汇总命令、证据与未完成验证。下面保留原语音基线与目标架构的历史说明。
+
 日期：2026-10-12。状态：已有 VAD → 豆包 ASR → Harness / GPT-6.1 Sol → Vivian 闭环。持续交流模式已实现并通过真实两轮文件链路、同会话生成取消与自动化回归；Air 原生 Voice Processing 音频桥已完成内置组合、SRS-XB100 组合及内置麦克风配蓝牙输出的实际启动、PCM 采集和静音播放检查。**外放 AEC、现场插话完整性与听感尚未完成专项验证。** Studio 常驻 Agent 与 MVP 主服务尚未部署。
 
 当前可运行的终端 Demo 见 [语音对话说明](../../tools/voice/README.md)：Air 承担原生音频、VAD、ASR 适配、Harness 和独立授权，Studio 承担 Vivian 推理，Air 以 1.5 倍速播放。传入 `--continuous` 启用持续交流，原轮流模式保留。该安排复用 Air 已可用的 Keychain；下文 Studio 常驻架构仍是目标部署。2026-10-13 的 Harness 版本清单更新为用户仓库 `jornel83/deepseek-harness` 的 `v0.2.1-alpha.2` / `d743267388641bc76f17c45ce8b4c231aed1d32c`，不修改其源码；原语音基线使用 `ddefc45fbc7f8e46dd73185e68295696d1297887`。升级验证见 [Agent 运行说明](../../services/agent/README.md)。

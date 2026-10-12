@@ -33,7 +33,27 @@ node services/agent/worker.mjs --check
 - `result.mjs`：只接受当前轮次完整结束且未被中断的已提交回复。
 - `authorize.mjs`：独立 OpenNova 登录入口，已连接时不重新发起授权。
 
-此版本是文字对话适配，明确拒绝模型工具和图片输入；系统提示也告知模型没有执行工具。GPT 的视觉能力与未来工作工具仍需另行接入，不因模型本身支持就视为本 Demo 已实现。原轮流模式只朗读完整回复；持续模式按用户可见的增量文本分句朗读，不朗读推理、内部事件或错误堆栈。
+默认模式仍是文字对话适配，拒绝模型工具和图片输入。2026-10-13 新增的 `--web` 模式仅开放下面两种只读 Web 工具。视觉、文件和命令执行仍需另行接入。原轮流模式只朗读完整回复；默认持续模式按增量文本分句朗读；联网持续模式等待整轮完成后朗读。
+
+## 联网工具桥接（2026-10-13）
+
+```sh
+python3.11 tools/setup/bootstrap.py --install --web
+python3.11 tools/setup/bootstrap.py --check --web
+OPENNOVA_PROXY=http://127.0.0.1:7897 /opt/homebrew/opt/node@24/bin/node tools/agent/chat.mjs --web
+```
+
+真实 Exa Key 放在 Git 忽略的 `config/secrets.local.json` 的 `web.exa_api_key` 字段；环境变量 `EXA_API_KEY` 优先。默认不启用工具，只有显式 `--web` 加载 Web patch。该模式需要密钥才能启动。CLI 支持 `/stop`、`/quit`；`--check` 只检查依赖、授权与运行时启动，不调用搜索。
+
+- `patches/siwc/0001-stream-items.patch`：在官方 DevKit 的 authenticated 路径增加 `streamItems`，沿用刷新和 Keychain。按固定提交导出、应用补丁、npm 锁定安装及构建；产物位于 `output/deps/siwc/<revision>-<patch-sha>`，不修改原检出。没有向业务层暴露 token。
+- `responses-protocol.mjs`：把允许的工具放进 `opennova` namespace，往返保留 call ID、结果、reasoning replay。只接收完成的输出；兼容订阅流的空 completed.output + output_item.done，截断、失败和取消不会提交可执行调用。
+- `web.patch.yml`：加载 Harness 原生 Web / Exa / HTTP fetch / tool-web / timeout-policy。每轮最多 2 次搜索、3 次读取、6 次模型请求；每次搜索 1 个查询、最多 5 项，网页输出 12,000 字符。单次搜索 15 秒、读取 10 秒，累计工具 45 秒、整轮 90 秒；不含 TTS。
+- `web-policy.mjs`、`web-budget.mjs`：通过现有 control 插件注册 Harness hooks，原子计数、传播取消并清理定时器；不实现另一套 Agent 循环。
+- `web-events.mjs`、`speech-text.mjs`：真实工具结果关联来源；同进程保留最近 100 项来源供追问。显示文本保留已核对的链接，播报文本去除链接、编号和代码块；搜索摘要与读取正文用 `retrieval` 区分。
+
+JSONL ready 包含 `outputMode: incremental | settled-answer`。联网模式仅发送 `status{id,phase,step,toolCallId?}`、`sources{id,items}` 和最终 `reply{id,text,speechText,sources,sessionId}`，不发送工具循环中的正文 delta。错误与取消没有成功 reply。两条路径共享 ask / cancel / close 和会话管理。
+
+显式探针：`node tools/agent/web_probe.mjs --protocol-only` 验证真实工具往返与取消后继续；`--live-web` 验证真实 Exa 搜索、读取及来源追问；`--fetch-only` 是不使用 Exa 的公开网页测试夹具，不代表真实搜索已通过。结果保存在 Git 忽略的 `output/agent/web-verification/`。详见[验收记录](../../docs/research/opennova-web-search-verification.md)。
 
 ## 持续对话桥接（2026-10-12）
 

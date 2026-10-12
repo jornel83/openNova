@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node 24、Python 3.11+、DeepSeek Harness 0.2.1-alpha.2、现有 Sign in with ChatGPT DevKit、Exa、现有豆包 ASR / Silero VAD / Vivian / FFmpeg。
 
-**Spec:** [联网搜索设计](../specs/2026-10-13-agent-web-search-design.md)。方案基于已讨论的接入路线，细节为本次计划建议；任务均未开始。
+**Spec:** [联网搜索设计](../specs/2026-10-13-agent-web-search-design.md)。2026-10-13 已完成下述功能代码和自动化 / 实际网页读取验证；真实 Exa 搜索与现场听感仍待验收。复选框保留原计划条目，实际完成范围与证据见[验收记录](../../research/opennova-web-search-verification.md)。
 
 ## 阶段和依赖
 
@@ -145,7 +145,7 @@ T1 → T2 是主要技术风险；在它通过之前，不把“官方支持”�
 
 ## 计划中的使用方式
 
-以下命令是开发完成后的目标接口，当前不可用于开启搜索。
+以下接口已实现；联网模式需要先构建扩展并在本机配置 Exa Key。
 
 ```sh
 # 安装 / 检查可复现的订阅工具扩展

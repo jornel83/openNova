@@ -2,7 +2,25 @@
 
 运行链路：**Air 原生音频 / Silero VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Studio Vivian → Air 1.5 倍保调播放**。
 
-2026-10-12 新增 `--continuous` 持续交流模式：持续拾音、增量文本分段合成、候选插话暂停、确认插话后取消旧生成和播报，以及静音、停止和重新开始。原来的轮流说话模式继续保留。当前只开放对话和同一进程内的上下文，工具执行与视觉输入仍关闭。
+2026-10-12 新增 `--continuous` 持续交流模式：持续拾音、增量文本分段合成、候选插话暂停、确认插话后取消旧生成和播报，以及静音、停止和重新开始。原来的轮流说话模式继续保留。2026-10-13 新增可选 `--web` 只读搜索和网页读取；视觉、文件和命令执行仍关闭。
+
+## 联网对话
+
+先按 [Agent 安装说明](../../services/agent/README.md#联网工具桥接2026-10-13) 构建扩展、在本机 `config/secrets.local.json` 配置 `web.exa_api_key`。**真实 Exa 搜索仍待配置密钥后验收**。
+
+```sh
+OPENNOVA_PROXY=http://127.0.0.1:7897 tools/voice/run-continuous.command --web \
+  --output-device 'SRS-XB100' --device 'SRS-XB100'
+
+OPENNOVA_PROXY=http://127.0.0.1:7897 tools/voice/run-continuous.command --web \
+  --device 'MacBook Air麦克风'
+```
+
+联网模式在完整答案就绪后分句合成。检索或读取开始后等待超过 2 秒，会最多提示一次“我查一下，请稍等”；快速完成则不提示。提示和答案共用一个播放队列，链接和来源留在终端，Vivian 不朗读 URL。答案到达时，仍未产出 PCM 的提示合成会取消；已开始输出的提示先结束，再播放答案。插话、`/stop`、`/end` 和退出会取消本轮输出，`/retry` 保留联网模式与设备参数。
+
+报告分别记录 `notice_first_pcm_at`、`answer_first_pcm_at`、`agent_complete_at`；`first_pcm_at` 继续代表答案首 PCM，不用提示音时间替代答案延迟。PCM 到达与实际扬声器首声不同，文件验证不证明现场听感。
+
+不传 `--web` 即恢复原增量模式；`--web` 只支持持续模式，旧轮流模式会明确拒绝。可先用[文字入口和验收用例](../../docs/research/opennova-web-search-verification.md) 排除音频因素。
 
 已通过真实云端与 Studio 的两轮文件链路、同一 Harness 会话取消后继续交流，以及本地自动化回归。**原生音频已通过内置设备的实际启动、Voice Processing 开启、采集 PCM、静音播放排空和上行静音检查；内置扬声器下的 AEC 效果、插话完整性和跨句听感仍待现场验证。**
 
