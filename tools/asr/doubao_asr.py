@@ -197,7 +197,7 @@ async def file_chunks(pcm):
 
 
 async def recognize(pcm, key, resource_id, *, mic_seconds=None, device=None,
-                    audio_source=None, audio_seconds_limit=48, turn_id=None):
+                    audio_source=None, audio_seconds_limit=48, turn_id=None, on_text=None):
     from websockets.asyncio.client import connect
     from websockets.exceptions import InvalidStatus
 
@@ -281,6 +281,8 @@ async def recognize(pcm, key, resource_id, *, mic_seconds=None, device=None,
                     body, final = decode_packet(packet)
                     old_text = transcript.text
                     transcript.update(body, final)
+                    if on_text is not None and transcript.text != old_text:
+                        on_text(transcript.text)
                     if transcript.text and transcript.text != old_text:
                         report['text_updates'] += 1
                         if report['first_text_ms'] is None:

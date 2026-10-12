@@ -13,7 +13,7 @@ from pcm_tempo import tempo_output
 from probe_http import vivian_payload
 
 
-def speak(text, *, url, speed=1.5, play=True, device=None, output=None):
+def speak(text, *, url, speed=1.5, play=True, device=None, output=None, sink=None):
     if not 0.5 <= speed <= 2.0:
         raise ValueError('无效语速。')
     if not isinstance(text, str) or not text.strip() or len(text) > 500:
@@ -48,6 +48,8 @@ def speak(text, *, url, speed=1.5, play=True, device=None, output=None):
             audible = audible or any(data)
             if saved is not None:
                 saved.extend(data)
+            if sink is not None:
+                sink(data)
             if stream is not None:
                 pending += data
                 even = len(pending) // 2 * 2
@@ -55,7 +57,9 @@ def speak(text, *, url, speed=1.5, play=True, device=None, output=None):
                     stream.write(pending[:even])
                     pending = pending[even:]
 
-        with tempo_output(speed, consume) as write_pcm:
+        # Continuous playback applies backpressure while paused. The parent owns
+        # cancellation/deadlines; a five-second EOF drain is not a synthesis failure.
+        with tempo_output(speed, consume, drain_timeout=None if sink is not None else 5) as write_pcm:
             while data := response.read(4096):
                 if first_pcm is None:
                     first_pcm = time.monotonic() - started
@@ -86,11 +90,17 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     try:
         request = json.loads(sys.stdin.readline(20000))
-        print(json.dumps({'type':'played', **speak(**request)}, ensure_ascii=False), flush=True)
+        raw='--pcm' in sys.argv
+        if raw:
+            request['play']=False
+            request['sink']=lambda data: (sys.stdout.buffer.write(data),sys.stdout.buffer.flush())
+        print(json.dumps({'type':'played', **speak(**request)}, ensure_ascii=False),
+              file=sys.stderr if raw else sys.stdout, flush=True)
     except KeyboardInterrupt:
         raise SystemExit(130)
     except Exception as error:
-        print(json.dumps({'type':'error', 'code':type(error).__name__}), flush=True)
+        print(json.dumps({'type':'error', 'code':type(error).__name__}),
+              file=sys.stderr if '--pcm' in sys.argv else sys.stdout, flush=True)
         raise SystemExit(1)
 
 

@@ -45,6 +45,14 @@ test('failed Harness turns cannot publish nonempty partial answers', () => {
   assert.throws(() => completedReply({finalResponse:'partial', events:[]}), /incomplete_agent_turn/);
 });
 
+test('a failed Harness turn preserves a known model error without publishing private details', () => {
+  const result = message => ({finalResponse:'',events:[
+    {type:'turn/end',data:{turn:1,reason:{kind:'error',error:{code:'UNKNOWN',message}}}},
+  ]});
+  assert.throws(() => completedReply(result('network_error')), /network_error/);
+  assert.throws(() => completedReply(result('private_secret')), /incomplete_agent_turn/);
+});
+
 test('only an uninterrupted assistant message from the completed turn is spoken', () => {
   const message = {type:'assistant/message', data:{turn:1, message:{content:[{type:'text', text:'你好'}]}}};
   const end = {type:'turn/end', data:{turn:1, reason:{kind:'completed'}}};

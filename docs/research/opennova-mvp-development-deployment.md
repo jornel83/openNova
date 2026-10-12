@@ -1,8 +1,10 @@
 # OpenNova MVP 开发环境部署方案
 
-日期：2026-10-12。状态：豆包 ASR 蓝牙麦克风试音通过；本地 VAD 与 Studio Vivian 已部署。OpenNova 在 Air 的独立 ChatGPT 授权、GPT-6.1 Sol 真实推理与 DeepSeek Harness 多轮会话已通过；完整 VAD → ASR → Agent → Vivian 链路已用两段测试录音验证。真人连续交流待现场试用，Studio 常驻 Agent 与 MVP 主服务尚未部署。
+日期：2026-10-12。状态：已有 VAD → 豆包 ASR → Harness / GPT-6.1 Sol → Vivian 闭环。新增的持续交流模式已实现并通过真实两轮文件链路、同会话生成取消与自动化回归；Air 原生 Voice Processing 音频桥已编译并完成无录音设备检查。**内置麦克风 / 扬声器下的 AEC、现场插话与听感尚未验证。** Studio 常驻 Agent 与 MVP 主服务尚未部署。
 
-当前可运行的终端 Demo 见 [语音对话说明](../../tools/voice/README.md)：Air 承担 VAD、ASR 适配、Harness 和独立授权，Studio 承担 Vivian 推理，Air 以 1.5 倍速播放。该安排复用 Air 已可用的 Keychain，首轮采用轮流说话；下文的 Studio 常驻架构仍是目标部署。当前 Harness 实测为 Air 已构建提交 `ddefc45fbc7f8e46dd73185e68295696d1297887`，区别于早期选型基线，不修改其上游源码。
+当前可运行的终端 Demo 见 [语音对话说明](../../tools/voice/README.md)：Air 承担原生音频、VAD、ASR 适配、Harness 和独立授权，Studio 承担 Vivian 推理，Air 以 1.5 倍速播放。传入 `--continuous` 启用持续交流，原轮流模式保留。该安排复用 Air 已可用的 Keychain；下文 Studio 常驻架构仍是目标部署。当前 Harness 实测为 Air 已构建提交 `ddefc45fbc7f8e46dd73185e68295696d1297887`，区别于早期选型基线，不修改其上游源码。
+
+本轮完成持续收音与 800 / 1600 ms 两档停顿、ASR 修订与最终结果隔离、模型增量分句、有限 TTS / 播放缓存、候选暂停与确认打断、旧输出过滤，以及静音、停止、结束 / 开始、音频重连。实现与运行限制见 [已确认技术设计](../superpowers/specs/2026-10-12-voice-interaction-design.md) 和语音说明。下一步先用 Air 内置设备完成现场样例，再按测量结果调整 VAD、回声处理和跨句衔接。Studio HTTP 断流后的 GPU 释放没有确认信号，仍列为待测，不视为已完成服务端取消。
 
 采用 **Air 交互与开发、Mac Studio 常驻 Agent 服务和本地 TTS、云端 ASR 与 LLM** 的部署方式。DGX Spark 保留为后续训练与实验节点，日常语音交流不依赖 Spark 在线。
 
@@ -12,7 +14,7 @@
 
 | 位置 | 首轮承担的工作 | 部署内容 |
 | --- | --- | --- |
-| MacBook Air | 开发操作、拾音、播放、查看结果与确认操作 | 浏览器交互端、SSH 连接；后续补充原生音频入口 |
+| MacBook Air | 开发操作、拾音、播放、查看结果与确认操作 | 当前已有终端与原生音频入口、SSH 连接；浏览器交互界面待开发 |
 | Mac Studio | 常驻运行、项目与任务执行、本地声音合成 | DeepSeek Harness、OpenNova 服务、MLX-Audio TTS、项目工作区、会话与任务存储 |
 | 云端 | 语音识别、语言推理与图片理解 | 豆包流式语音识别模型 2.0、GPT-6.1 Sol |
 | DGX Spark | 后续音色微调与模型实验 | 本阶段不部署；直接克隆效果不足时再制定训练方案 |
@@ -87,7 +89,7 @@ Harness 优先通过插件与 Core/Web 控制面适配，不假定 SDK 已完整
 | 音色配置 | `voice=Vivian`、中文、固定聊天语气指令、模型 revision 和生成参数 | 沿用已选样音配置；无需参考录音，完整参数见 TTS 运行说明 |
 | 输出语速 | Air 默认 1.5 倍，保持音调 | 测试客户端通过 FFmpeg `atempo` 流式处理；`--speed 1` 可恢复原速，Studio 原始生成参数不变 |
 
-MLX-Audio 提供 TTS、server 可选依赖。CustomVoice / Vivian 已在现有 Python 3.12 环境中独立生成样音，并通过 HTTP 音色与语气参数传递、流式回传及断流后新请求验证；现场插话与立即停播仍待实现。既有 Base 流式基线不能代替 Vivian 实测。[依赖定义](https://github.com/Blaizzy/mlx-audio/blob/e66ad2ff4eb96ce1149000187b30370cbcd707aa/pyproject.toml)、[Qwen 实现说明](https://github.com/Blaizzy/mlx-audio/blob/e66ad2ff4eb96ce1149000187b30370cbcd707aa/mlx_audio/tts/models/qwen3_tts/README.md)
+MLX-Audio 提供 TTS、server 可选依赖。CustomVoice / Vivian 已在现有 Python 3.12 环境中独立生成样音，并通过 HTTP 音色与语气参数传递、流式回传及断流后新请求验证；Air 已实现插话时暂停 / 清空播放，现场实际停声仍待测。既有 Base 流式基线不能代替 Vivian 实测。[依赖定义](https://github.com/Blaizzy/mlx-audio/blob/e66ad2ff4eb96ce1149000187b30370cbcd707aa/pyproject.toml)、[Qwen 实现说明](https://github.com/Blaizzy/mlx-audio/blob/e66ad2ff4eb96ce1149000187b30370cbcd707aa/mlx_audio/tts/models/qwen3_tts/README.md)
 
 当前已下载并用于验证的固定版本：
 
@@ -103,9 +105,9 @@ Vivian 沿用本次温柔、自然、放松的聊天语气，继续覆盖工作�
 
 ASR 已确定采用豆包流式语音识别模型 2.0，使用实时双向流式接口，接收中间和最终转写。先验证账号开通、实际模型/资源配置、中文术语、停顿改口、延迟和用量；Qwen 保留为备选，不阻塞首轮实施。依据见 [ASR 选型记录](opennova-asr-tts-selection.md)。
 
-Air 先采用浏览器拾音、AudioWorklet 播放/处理和本地 VAD。VAD 可评估 Silero ONNX 的浏览器接入，部署前验证所选模型与运行时组合；音频建议统一为单声道 16kHz PCM 上行，保留语音开始前的短缓存及话中停顿。[Silero VAD](https://github.com/snakers4/silero-vad)
+Air 当前采用 Swift AVAudioEngine 统一采集和播放，启用系统 Voice Processing；Python 使用 Silero ONNX 做 VAD，单声道 16kHz PCM 上行，保留 300 ms 前置缓存。Vivian 24kHz PCM 在同一音频引擎播放，模型增量文本经分句后合成。本版先支持系统默认内置输入、输出；浏览器 AudioWorklet 属于后续界面路径。[Silero VAD](https://github.com/snakers4/silero-vad)
 
-先验证按键发起交流，再加入持续拾音、设备指向判断、轮次判断和插话。浏览器闭环完成后，针对锁屏、后台驻留与设备切换评估原生音频入口；网页前台运行通过不等于 Always On 已完成。
+本版由用户明确启动和结束交流，期间持续拾音并支持候选暂停与确认插话。设备指向判断、锁屏后台驻留、蓝牙设备矩阵和全天免唤醒仍未完成；Voice Processing 接口启用不等于 AEC 声学效果通过。
 
 ## 4 目录、代码与数据安排
 
@@ -222,4 +224,4 @@ TTS 长句持续生成的 RTF 应小于 1，才有持续实时播放的基础；
 
 Vivian 接入无需真人参考录音。当前终端 Demo 已完成 LLM 接入、Harness 会话与文件输入语音闭环，豆包 ASR 账号与实时接口也已通过独立验证。
 
-下一步现场试用 SRS-XB100 的连续语音对话，再推进工具调用、Studio 常驻迁移以及插话与回声消除。文件输入闭环记录见 `output/voice/complete-loop-20261012/conversation.json`，不以该测试代替真人外放验证。
+下一步先用 MacBook Air 内置麦克风和扬声器现场验证持续交流：外放不自触发、用户插话及时停声、开头不丢字，以及静音 / 重连。之后再推进工具调用和 Studio 常驻迁移。新连续模式两轮记录见 `output/voice/continuous-real-04/conversation.json`；六句增量合成记录见 `output/voice/continuous-long-01/conversation.json`。原轮流模式记录继续保留，不以任何文件测试代替真人外放验证。

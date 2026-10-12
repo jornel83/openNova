@@ -33,7 +33,17 @@ node services/agent/worker.mjs --check
 - `result.mjs`：只接受当前轮次完整结束且未被中断的已提交回复。
 - `authorize.mjs`：独立 OpenNova 登录入口，已连接时不重新发起授权。
 
-此版本是文字对话适配，明确拒绝模型工具和图片输入；系统提示也告知模型没有执行工具。GPT 的视觉能力与未来工作工具仍需另行接入，不因模型本身支持就视为本 Demo 已实现。语音端只朗读完整回复，不朗读内部事件和错误堆栈。
+此版本是文字对话适配，明确拒绝模型工具和图片输入；系统提示也告知模型没有执行工具。GPT 的视觉能力与未来工作工具仍需另行接入，不因模型本身支持就视为本 Demo 已实现。原轮流模式只朗读完整回复；持续模式按用户可见的增量文本分句朗读，不朗读推理、内部事件或错误堆栈。
+
+## 持续对话桥接（2026-10-12）
+
+`stream-worker.mjs` 为 `--continuous` 提供 `ask(id,text)` / `cancel(id)` / `close` JSONL 控制，输出 `ready`、`delta`、`reply`、`cancelled` 或受控 `error`。`delta` 含应用请求 ID 与 Harness attempt ID；最终结果仍通过 `completedReply` 校验，部分生成失败不会作为成功回复。
+
+`stream.patch.yml` 加载 OpenNova 自有的 `voice-control.mjs` 插件，监听 Core 的 `agent/assistant-stream`，通过 `Agent.cancel()` / `whenIdle()` 结算取消。`voice-socket.mjs` 为每次进程建立当前用户独占的临时 Unix socket（目录 0700），退出清理。SDK 继续负责启动与提交；没有修改 Harness 上游或假定 SDK 有不存在的取消接口。
+
+当前只允许一个活跃模型请求，日常插话取消后复用同一 Harness 会话。Python 保持独立 stdout 读取器，取消不阻塞本地音频控制；迟到增量和音频按请求 / 播放代次过滤。模型中途失败时，已显示文字保留，剩余播报取消，不自动从头重播。
+
+真实固定版本验证：首个增量早于最终回复；取消后同一会话能回答并记住暗号。云端偶发过载仍可能导致单轮失败，取消成功不等于后续网络请求必然成功。所有 Agent 测试使用 `node --test services/agent/tests/*.test.mjs`。
 
 2026-10-12：两轮真实 Harness 对话通过；持久化日志含两个 `user/message` 和两个 `assistant/message`，第二轮能回忆第一轮暗号。官方独立授权记录见 [验证文档](../../docs/research/opennova-chatgpt-subscription-verification.md)。
 

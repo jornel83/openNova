@@ -9,6 +9,32 @@ import signal
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def failure_message(event):
+    stage = {'authorization':'ChatGPT 授权检查', 'model_catalog':'获取 GPT 模型列表',
+             'harness_start':'Harness 启动', 'conversation':'Agent 对话'}.get(event.get('stage'), 'Agent')
+    hints = {
+        'network_error':'无法连接 ChatGPT，请检查当前网络连接。',
+        'connection_error':'无法连接 ChatGPT，请检查当前网络连接。',
+        'cancelled':'请求已取消或超时。',
+        'chatgpt_authorization_required':'需要重新完成 OpenNova 的 ChatGPT 授权。',
+        'secure_storage_unavailable':'无法访问本机 Keychain 凭据存储。',
+        'gpt_6_1_sol_unavailable':'当前账号模型列表未提供 GPT-6.1 Sol。',
+        'harness_connection_closed':'Harness 子进程在初始化时提前退出，请检查运行环境。',
+        'harness_dependency_missing':'缺少 Harness 依赖或构建，请运行环境检查。',
+        'incomplete_agent_turn':'本轮模型回复未完整完成。',
+        'subscription_sharing_usage_limit_exceeded':'ChatGPT 共享用量已达上限。',
+    }
+    status = event.get('status')
+    http = f'（HTTP {status}）' if type(status) is int and 400 <= status <= 599 else ''
+    hint = hints.get(event.get('code'))
+    if hint is None:
+        hint = {401:'ChatGPT 拒绝了当前凭据，请检查授权。',
+                403:'ChatGPT 请求被拒绝，请检查网络连接及账号或应用的访问权限。',
+                429:'请求受限，请检查用量并稍后再试。'}.get(status if type(status) is int else None,
+                    '请检查 Agent 依赖与服务状态。')
+    return f'{stage}失败{http}：{hint}'
+
+
 async def stop_process(process):
     # Every caller creates a new session: this group belongs only to this worker.
     if process.returncode is None:
@@ -39,9 +65,10 @@ class Agent:
         self.request_id = 0
 
     async def start(self):
-        node = shutil.which('node')
+        selected = os.environ.get('OPENNOVA_NODE', '').strip() or 'node'
+        node = shutil.which(str(Path(selected).expanduser()))
         if not node:
-            raise ValueError('需要 Node.js 22.19+ 或 24+。')
+            raise ValueError('找不到 Node.js，请安装 Node 24，或通过 OPENNOVA_NODE 指定可执行文件。')
         self.process = await asyncio.create_subprocess_exec(
             node, str(ROOT / 'services/agent/worker.mjs'),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -57,7 +84,7 @@ class Agent:
             raise ValueError('Agent 进程已退出。')
         event = json.loads(line)
         if event.get('type') == 'error':
-            raise ValueError('Agent 失败：' + event.get('code', 'unknown'))
+            raise ValueError(failure_message(event))
         return event
 
     async def ask(self, text):

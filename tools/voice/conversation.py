@@ -74,10 +74,10 @@ def preflight(args):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(args.tts_url.rstrip('/')+'/v1/models', timeout=5) as response:
         json.load(response)
-    if not args.audio:
+    if not args.audio and not getattr(args, 'continuous', False):
         import sounddevice as sd
         sd.check_input_settings(device=args.device, channels=1, dtype='int16', samplerate=16000)
-    if not args.no_play:
+    if not args.no_play and not getattr(args, 'continuous', False):
         import sounddevice as sd
         sd.check_output_settings(device=args.output_device, channels=1, dtype='int16', samplerate=24000)
 
@@ -135,6 +135,8 @@ def main():
     parser.add_argument('--turns', type=int, default=20)
     parser.add_argument('--listen-seconds', type=float, default=60)
     parser.add_argument('--silence-ms', type=int, default=800)
+    parser.add_argument('--continuous', action='store_true', help='持续收音、增量播报与插话；当前使用内置麦克风和扬声器')
+    parser.add_argument('--extended-silence-ms', type=int, default=1600, help='连续模式下未完句的最长停顿等待')
     parser.add_argument('--tts-url', default=load_settings()['url'])
     parser.add_argument('--audio', type=Path, action='append', help='测试文件，一次一个自然发言；可重复提供多轮')
     parser.add_argument('--no-play', action='store_true', help='合成但不播放，用于自动验证')
@@ -143,12 +145,18 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.turns <= 100 or not 1 <= args.listen_seconds <= 600 or not 200 <= args.silence_ms <= 3000:
         parser.error('轮数 1–100、聆听上限 1–600 秒、静音阈值 200–3000 ms。')
+    if args.continuous and not args.silence_ms <= args.extended_silence_ms <= 3000:
+        parser.error('延长停顿必须不小于普通停顿，且不超过 3000 ms。')
     key = ''
     try:
         key = load_key()
         if args.output_dir:
             args.output_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
-        asyncio.run(run(args, key))
+        if args.continuous:
+            from continuous_run import run as run_continuous
+            asyncio.run(run_continuous(args, key))
+        else:
+            asyncio.run(run(args, key))
     except KeyboardInterrupt:
         print('\n对话已停止，麦克风和播放已关闭。', flush=True)
     except Exception as error:

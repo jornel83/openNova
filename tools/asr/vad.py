@@ -50,6 +50,10 @@ class SileroOnnx:
         self.state = np.zeros((2, 1, 128), dtype=np.float32)
         self.context = np.zeros((1, 64), dtype=np.float32)
 
+    def reset(self):
+        self.state.fill(0)
+        self.context.fill(0)
+
     def __call__(self, pcm):
         if len(pcm) != FRAME_BYTES:
             raise ValueError('VAD 每次需要 512 个 16-bit 音频样本。')

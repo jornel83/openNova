@@ -1,0 +1,3 @@
+- insert:
+    - id: opennova-voice-control
+      name: './voice-control.mjs'

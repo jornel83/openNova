@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createClient } from './chatgpt.mjs';
 import { completedReply } from './result.mjs';
 import { loadSettings } from './settings.mjs';
+import { errorEvent } from './errors.mjs';
 
 process.umask(0o077);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -14,6 +15,7 @@ const settings = loadSettings();
 const harnessRoot = settings.harnessRoot;
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 let harness;
+let stage = 'authorization';
 let stopping = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
   if (stopping) return;
@@ -24,11 +26,13 @@ try {
   const chatgpt = await createClient();
   const session = await chatgpt.getSession();
   if (session.status !== 'connected' || !session.sharing) throw new Error('chatgpt_authorization_required');
+  stage = 'model_catalog';
   const models = await chatgpt.listModels({signal:AbortSignal.timeout(30000)});
   if (!models.some(model => model.slug === 'gpt-6.1-sol')) throw new Error('gpt_6_1_sol_unavailable');
   if (process.argv.includes('--check')) {
     send({type:'ready', authorized:true, model:'gpt-6.1-sol'});
   } else {
+    stage = 'harness_start';
     const {DeepSeekHarness} = await import(pathToFileURL(join(harnessRoot, 'packages/sdk/client/lib/index.js')).href);
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD/.test(key)));
     harness = new DeepSeekHarness({
@@ -42,6 +46,7 @@ try {
     });
     await harness.start();
     send({type:'ready', authorized:true, model:'gpt-6.1-sol', harness:'DeepSeek Harness', tools:false});
+    stage = 'conversation';
     let sessionId;
     const input = createInterface({input:process.stdin, crlfDelay:Infinity});
     for await (const line of input) {
@@ -57,10 +62,7 @@ try {
     }
   }
 } catch (error) {
-  // Provider/SDK errors may include prompts or stderr; expose only controlled codes.
-  const code = /^[a-z0-9_]{1,100}$/.test(error.message ?? '') ? error.message : 'agent_runtime_failed';
-  send({type:'error', code});
-  if (process.env.OPENNOVA_DEBUG === '1') process.stderr.write(String(error.stack) + '\n');
+  send(errorEvent(error, stage));
   process.exitCode = 1;
 } finally {
   await harness?.close();

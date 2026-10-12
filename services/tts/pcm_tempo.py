@@ -7,7 +7,7 @@ from threading import Thread
 
 
 @contextmanager
-def tempo_output(speed, consume):
+def tempo_output(speed, consume, *, drain_timeout=5):
     """Yield a PCM writer; deliver adjusted PCM to consume before input EOF."""
     if not 0.5 <= speed <= 2.0:
         raise ValueError('Speed must be between 0.5 and 2.0.')
@@ -52,7 +52,7 @@ def tempo_output(speed, consume):
                 process.stdin.close()
             except BrokenPipeError:
                 pass
-            reader.join(timeout=5)
+            reader.join(timeout=drain_timeout)
             if reader.is_alive():
                 raise RuntimeError('Timed out draining tempo-adjusted audio.')
             return_code = process.wait(timeout=5)
