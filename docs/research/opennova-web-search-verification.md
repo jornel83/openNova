@@ -1,13 +1,15 @@
 # OpenNova 联网 Demo 开发与验收记录
 
-日期：2026-10-13。代码范围：订阅工具协议、Harness Web 工具、文字入口、持续语音联网模式及回归。**DeepSeek 实际搜索与 GPT 来源追问、真实网页读取与语音文件闭环已经分别通过；DeepSeek 搜索后的完整语音链路及现场听感仍待验收。Exa 保留为可选后端，未实测。**
+日期：2026-10-13。代码范围：订阅工具协议、Harness Web 工具、文字入口、持续语音联网模式及回归。**DeepSeek 实际搜索、GPT 来源追问，以及 ASR → GPT / DeepSeek 搜索 / 网页读取 → Vivian 语音文件闭环已经通过；现场听感仍待验收。Exa 保留为可选后端，未实测。**
 
 ## DeepSeek 搜索接入更新
 
 - 配置 `web.provider: deepseek` 后使用 Harness 原生 DeepSeek 插件；主模型仍是 GPT-6.1 Sol。密钥仅保存在本机忽略文件，只有所选搜索后端的密钥传入运行时；无付费后端自动回退。
 - 独立官方接口探针返回 HTTP 200、一次 `web_search` 与 10 条来源，耗时 6.570 秒。此探针直接调用 provider；正式工具由 Web 服务裁剪至最多 5 条。`input_tokens=10803`、`cache_read_input_tokens=256`、`output_tokens=836`，仅作为一次用量样本，非账单或平均值。
 - `deepseek-agent.json`：真实 GPT → Harness → DeepSeek → GPT 两轮成功；首轮两次搜索、23.519 秒，来源追问无需重搜、5.348 秒。返回了 python.org 的真实搜索来源，但并非纯主页 URL；本次证明协议与引用可用，不代表搜索质量已完成评测。
+- `deepseek-voice-proxy/conversation.json`：Silero VAD → 豆包 ASR → GPT / DeepSeek 搜索 / HTTP 读取 → Studio Vivian 文件验证成功，一次搜索及一次读取后返回 Python 官网，消费 PCM 658,664 字节。从最终转写提交到 Agent 完成为 18.528 秒、答案首 PCM 为 18.912 秒、文件管线完成为 23.253 秒。未开启麦克风或扬声器，不能代替现场听感验收。
 - 当前网络直连 DeepSeek 在 TLS 握手阶段失败，通过现有 `http://127.0.0.1:7897` 代理成功。测试保留代理环境变量；未更改系统网络或 VPN。
+- 首次直接运行 Python 文件入口时只设置了 `OPENNOVA_PROXY`，未设置标准 HTTP 代理变量，GPT 模型列表预检连接失败。改用正式 `run-continuous.command` 启动器后成功；该入口会设置 HTTP(S) 代理，并让本地 TTS 转发绕过代理。
 - 回归为 Agent 55、语音 63、安装 3、ASR 26、TTS 10，共 157 项通过。原 Exa 配置默认值与普通增量模式保留。
 
 已集成至原项目的 `codex/voice-vad-tts` 本地分支，功能修复提交 `de89bf0`，未推送远程。原有 Harness 升级与计划已单独保存在 `3159412`；无关 `skills/`、`tools/video/` 保持原样。原路径已重新构建并检查工具扩展，155 项测试再次通过；`integrated-fetch.json` 记录了集成后的真实读取 → 来源答复，耗时 9.189 秒，未调用搜索。开发决策、审查与 RED→GREEN 记录保存在本机 [开发审计](../../output/agent/web-verification/development-audit/progress.md)。
@@ -18,7 +20,7 @@
 | --- | --- | --- |
 | M1 工具协议 | 可复现 SIWC 扩展；实际 GPT 调用只读工具 → Harness 执行 → 回传 → 答复；取消后同会话继续 | 无账号能力阻塞 |
 | M2 文字联网 | 原生 Exa / DeepSeek / HTTP fetch 插件、次数与超时预算、来源、文字 CLI；DeepSeek 实际搜索、来源追问与公开网页读取通过 | DeepSeek 多语言效果矩阵与真实搜索阶段取消；Exa 可选验收 |
-| M3 语音联网 | `--web`、完整答复后播报、2 秒提示、插话取消、重连保留模式；真实两轮 ASR → GPT / 网页工具 → Vivian 文件链路通过 | 真实搜索语音链路；内置 / 蓝牙现场插话与听感 |
+| M3 语音联网 | `--web`、完整答复后播报、2 秒提示、插话取消、重连保留模式；真实 ASR → GPT / DeepSeek 搜索 / 网页读取 → Vivian 文件链路通过 | 内置 / 蓝牙现场插话与听感 |
 | M4 收尾交付 | 固定版本、重建脚本、回归测试、说明与本地提交 | 搜索服务依赖及真人验收不能由离线测试替代 |
 
 ## 明早开始测试

@@ -6,7 +6,7 @@
 
 ## 联网对话
 
-先按 [Agent 安装说明](../../services/agent/README.md#联网工具桥接2026-10-13) 构建扩展。本机使用 DeepSeek 搜索时，在 `config/voice.local.json` 设置 `web.provider` 为 `deepseek`，并在 Git 忽略的 `config/secrets.local.json` 配置 `web.deepseek_api_key`。也可选择 `exa` 并配置 `web.exa_api_key`。DeepSeek 搜索与 GPT 来源追问已通过真实文字验证；搜索后的语音听感仍需现场验收。
+先按 [Agent 安装说明](../../services/agent/README.md#联网工具桥接2026-10-13) 构建扩展。本机使用 DeepSeek 搜索时，在 `config/voice.local.json` 设置 `web.provider` 为 `deepseek`，并在 Git 忽略的 `config/secrets.local.json` 配置 `web.deepseek_api_key`。也可选择 `exa` 并配置 `web.exa_api_key`。DeepSeek 搜索、GPT 来源追问与搜索后的 Vivian 语音文件链路已通过真实验证；语音听感仍需现场验收。
 
 ```sh
 OPENNOVA_PROXY=http://127.0.0.1:7897 tools/voice/run-continuous.command --web \
