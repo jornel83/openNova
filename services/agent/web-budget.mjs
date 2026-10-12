@@ -12,6 +12,13 @@ export function createWebBudget({limits={},now=()=>performance.now()}={}) {
   };
   return {
     get size(){return requests.size;},
+    shouldFinalize(id) {
+      const r=check(id);
+      // Leave a model request and 15 seconds inside the existing hard deadline for the answer.
+      return r.models>=limits.modelCalls-1 || (r.webStarted!==undefined &&
+        (limits.webMs-(now()-r.webStarted)<=15000 ||
+         (r.counts.web_search>=limits.searchCalls && r.counts.web_fetch>=limits.fetchCalls)));
+    },
     startRequest(id) {
       if(requests.has(id))throw Error('request_already_active');
       const controller=new AbortController(),r={started:now(),controller,counts:{},models:0,active:new Set()};

@@ -50,6 +50,9 @@ DeepSeek 通过原生 `web-search-deepseek` 插件调用官方 Anthropic 兼容�
 - `patches/siwc/0001-stream-items.patch`：在官方 DevKit 的 authenticated 路径增加 `streamItems`，沿用刷新和 Keychain。按固定提交导出、应用补丁、npm 锁定安装及构建；产物位于 `output/deps/siwc/<revision>-<patch-sha>`，不修改原检出。没有向业务层暴露 token。
 - `responses-protocol.mjs`：把允许的工具放进 `opennova` namespace，往返保留 call ID、结果、reasoning replay。只接收完成的输出；兼容订阅流的空 completed.output + output_item.done，截断、失败和取消不会提交可执行调用。
 - `web.patch.yml`：加载 Harness 原生 Web / Exa / DeepSeek / HTTP fetch / tool-web / timeout-policy，按配置选择一个搜索后端。每轮最多 2 次搜索、3 次读取、6 次模型请求；每次搜索 1 个查询、最多 5 项，网页输出 12,000 字符。单次搜索 15 秒、读取 10 秒，从第一个 Web 工具启动至 Agent 完成最多 45 秒（包括工具间模型推理）、整轮 90 秒；不含 TTS。
+- `time-context.mjs`：通过 Harness 上下文每步刷新本机时区与纽约时间，支持跨日会话；缺省年份与相对日期由提示规则结合上下文理解。
+- `web-fetch-content.mjs`：复用原生公开 HTTP 传输及安全转换，将原始 HTML 上限与模型文本上限分开，避免脚本 / 导航耗尽正文预算。没有浏览器执行或绕过站点访问限制。
+- `web-policy.mjs`：同轮去重；连续两次读取失败或临近时间 / 模型请求上限时关闭工具，留出最终答复机会。硬超时和用户取消仍有效。
 - `web-policy.mjs`、`web-budget.mjs`：通过现有 control 插件注册 Harness hooks，原子计数、传播取消并清理定时器；不实现另一套 Agent 循环。
 - `web-events.mjs`、`speech-text.mjs`：真实工具结果关联来源；同进程保留最近 100 项来源供追问。显示文本保留已核对的链接，播报文本去除链接、编号和代码块；搜索摘要与读取正文用 `retrieval` 区分。
 

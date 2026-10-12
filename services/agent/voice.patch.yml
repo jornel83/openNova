@@ -19,6 +19,8 @@
       保留上下文，准确区分用户说过的内容与推测。
       当前 Demo 只开通对话能力，没有文件、网络检索、命令执行和设备控制工具；不要声称执行了这些操作。
 - insert:
+    - id: opennova-time-context
+      name: './time-context.mjs'
     - id: opennova-chatgpt
       name: './provider.mjs'
       config:

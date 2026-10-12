@@ -44,6 +44,7 @@ export class VoiceControl {
 }
 
 export const name='opennova-voice-control';
+export const inject=['systemPrompt'];
 export async function apply(ctx,config={}) {
   const path=process.env.OPENNOVA_VOICE_SOCKET;
   if (!path) throw new Error('voice_socket_required');
@@ -59,6 +60,7 @@ export async function apply(ctx,config={}) {
     const events=new WebEvents({book:new SourceBook(),current:()=>control.current,send});
     applyWebPolicy(ctx,{budget:control.budget,
       current:agent=>String(agent?.session.id)===control.current?.sessionId?control.current:undefined,
+      active:()=>control.current,
       onStatus:(r,phase,toolCallId)=>{if(!r.cancelled)send({type:'status',id:r.id,phase,step:r.step,...(toolCallId?{toolCallId}:{})});},
       onResult:(r,call,result)=>events.result(r,call,result),
       onFailure:(r,code)=>{if(!r.cancelled)send({type:'web_error',id:r.id,code});},
