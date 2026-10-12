@@ -39,6 +39,7 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check', action='store_true', help='Read-only local dependency checks; no login or microphone')
     mode.add_argument('--install', action='store_true', help='Download/build missing dependencies at pinned versions')
+    parser.add_argument('--web', action='store_true', help='Also prepare/check the pinned SIWC tool extension')
     args = parser.parse_args()
     try:
         if platform.system() != 'Darwin':
@@ -85,6 +86,11 @@ def main():
             raise RuntimeError('Keychain helper is not executable; existing file preserved')
         # Import artifacts, without authorizing or opening private credential storage.
         for module in (harness / harness_files[0], siwc / 'packages/local/dist/index.js'):
+            run(['node', '--input-type=module', '-e', f'await import({json.dumps(module.as_uri())});'])
+        if args.web:
+            from build_siwc_overlay import build_overlay
+            overlay = build_overlay(siwc, check=not args.install)
+            module = overlay / 'packages/local/dist/index.js'
             run(['node', '--input-type=module', '-e', f'await import({json.dumps(module.as_uri())});'])
         print('Agent dependencies ready: pinned Harness + SIWC + existing Keychain helper.')
         print('Next: configure local secrets/TTS; authorize; run conversation.py --check.')

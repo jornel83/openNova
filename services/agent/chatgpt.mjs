@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadSettings } from './settings.mjs';
+import { toolsModule } from './siwc-overlay.mjs';
 
 const settings = loadSettings();
 export const siwcRoot = settings.siwcRoot;
@@ -21,8 +22,10 @@ function secure(operation, input = Buffer.alloc(0)) {
   });
 }
 
-export async function createClient({openBrowser} = {}) {
-  const {createChatGPT} = await import(pathToFileURL(join(siwcRoot, 'packages/local/dist/index.js')).href);
+export async function createClient({openBrowser, capabilities='text'} = {}) {
+  if (!['text','tools'].includes(capabilities)) throw new Error('invalid_agent_configuration');
+  const modulePath=capabilities==='tools' ? toolsModule() : join(siwcRoot, 'packages/local/dist/index.js');
+  const {createChatGPT} = await import(pathToFileURL(modulePath).href);
   return createChatGPT({
     appName: 'OpenNova', appId: 'opennova', redirectPort: 14555, sendHostId: true,
     storageDir: settings.storageDir,
