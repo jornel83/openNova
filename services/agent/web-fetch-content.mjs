@@ -5,10 +5,25 @@ const HTML_LIMIT=500000;
 const TEXT_LIMIT=11000;
 function withoutNavigation(text) {
  return text.split(/\n\s*\n/).filter(block=>{
-  const links=block.match(/\[[^\]\n]*\]\([^\n]*?\)/g)??[];
-  if(links.length<6 || block.includes('|'))return true;
-  const rest=block.replace(/\[[^\]\n]*\]\([^\n]*?\)/g,'').replace(/[\s*#>·•—_-]/g,'');
-  return rest.length>30;
+  if(block.includes('|'))return true;
+  // Scan each span once. Unclosed/nested links keep the block rather than retrying suffixes.
+  let cursor=0,links=0;
+  const rest=[];
+  while(cursor<block.length) {
+   const start=block.indexOf('[',cursor);
+   if(start<0)break;
+   const labelEnd=block.indexOf('](',start+1);
+   if(labelEnd<0)return true;
+   const label=block.slice(start+1,labelEnd);
+   if(label.includes('[')||label.includes('\n'))return true;
+   const end=block.indexOf(')',labelEnd+2);
+   if(end<0||block.slice(labelEnd+2,end).includes('\n'))return true;
+   rest.push(block.slice(cursor,start));
+   links++;cursor=end+1;
+  }
+  if(links<6)return true;
+  rest.push(block.slice(cursor));
+  return rest.join('').replace(/[\s*#>·•—_-]/g,'').length>30;
  }).join('\n\n').trim();
 }
 export async function createContentFetcher(root) {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import {loadSettings} from '../settings.mjs';
 import {createContentFetcher} from '../web-fetch-content.mjs';
 const root=loadSettings().harnessRoot;
@@ -30,4 +31,20 @@ test('empty truncated pages fail clearly; HTTP blocks and cancellation remain ex
 test('content fetch keeps native public URL policy',async()=>{
  const p=await createContentFetcher(root);
  for(const url of ['http://127.0.0.1/','http://192.168.1.1/','file:///etc/passwd'])await assert.rejects(p.fetch({url}));
+});
+test('malformed link text cannot block page processing or cancellation timers',()=>{
+ // A parent-enforced timeout can stop synchronous parser stalls; an in-process timer cannot.
+ const moduleURL=new URL('../web-fetch-content.mjs',import.meta.url).href;
+ const script=`import assert from 'node:assert/strict';
+ import {createContentFetcher} from ${JSON.stringify(moduleURL)};
+ const p=await createContentFetcher(${JSON.stringify(root)});
+ for(const content of ['['.repeat(180000),'[x]('.repeat(40000)]) {
+  p.transport.fetch=async()=>({url:'https://example.com/report',statusCode:200,body:{kind:'text',content},truncated:false});
+  const result=await p.fetch({url:'https://example.com/report'});
+  assert.equal(result.body.content,content.slice(0,11000));
+  assert.equal(result.truncated,true);
+ }`;
+ const child=spawnSync(process.execPath,['--input-type=module','-e',script],{timeout:3000,encoding:'utf8'});
+ assert.equal(child.error,undefined,`page processing stalled: ${child.error?.message}`);
+ assert.equal(child.status,0,child.stderr);
 });
