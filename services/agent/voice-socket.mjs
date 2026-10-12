@@ -17,7 +17,7 @@ export async function voiceSocket(onDelta) {
         if (line.length > 128*1024) throw new Error();
         const event=JSON.parse(line);
         if (event.type === 'control_ready') readyResolve();
-        else if (event.type === 'delta') onDelta(event);
+        else if (['delta','status','sources','web_error'].includes(event.type)) onDelta(event);
         else if (event.type === 'ack') pending.get(event.rpc)?.resolve();
         else pending.get(event.rpc)?.reject(new Error('voice_control_failed'));
       } catch {socket.destroy();}

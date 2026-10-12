@@ -8,6 +8,11 @@ import {voiceSocket,bounded} from '../../services/agent/voice-socket.mjs';
 import {completedReply} from '../../services/agent/result.mjs';
 import {errorEvent} from '../../services/agent/errors.mjs';
 process.umask(0o077);
+if(process.argv.includes('--live-web')||process.argv.includes('--fetch-only')) {
+  const {liveWebProbe}=await import('./live-web-probe.mjs');
+  await liveWebProbe({fetchOnly:process.argv.includes('--fetch-only')});
+  process.exit(process.exitCode??0);
+}
 const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
 if (!process.argv.includes('--protocol-only')) throw Error('Use --protocol-only');
 const settings=loadSettings(), events=[];

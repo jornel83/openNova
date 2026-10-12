@@ -9,6 +9,8 @@ import {completedReply} from './result.mjs';
 import {loadSettings} from './settings.mjs';
 import {errorEvent} from './errors.mjs';
 import {voiceSocket,bounded} from './voice-socket.mjs';
+import {loadWebConfig,childEnvironment} from './web-config.mjs';
+import {SourceBook,projectWebReply} from './web-events.mjs';
 
 process.umask(0o077);
 const here=dirname(fileURLToPath(import.meta.url)), root=resolve(here,'../..');
@@ -16,6 +18,7 @@ const settings=loadSettings();
 const send=value => process.stdout.write(JSON.stringify(value)+'\n');
 let harness,control,active,stage='authorization',input,closing=false;
 const sessionId='session-'+randomUUID().replaceAll('-','');
+const sources=new SourceBook();
 async function cancel() {
   const current=active;
   if (!current) return;
@@ -35,7 +38,8 @@ for (const signal of ['SIGINT','SIGTERM']) process.on(signal,() => {
   void close().finally(() => process.exit(130));
 });
 try {
-  const client=await createClient();
+  const web=loadWebConfig({enabled:process.argv.includes('--web')});
+  const client=await createClient({capabilities:web.enabled?'tools':'text'});
   const session=await client.getSession();
   if (session.status !== 'connected' || !session.sharing) throw new Error('chatgpt_authorization_required');
   stage='model_catalog';
@@ -43,18 +47,21 @@ try {
   if (!models.some(m => m.slug === 'gpt-6.1-sol')) throw new Error('gpt_6_1_sol_unavailable');
   stage='harness_start';
   control=await voiceSocket(event => {
-    if (active && !active.cancelled && event.id === active.id) send(event);
+    if (active && !active.cancelled && event.id === active.id) {
+      if(event.type==='web_error')active.failure=event.code;
+      else send(event);
+    }
   });
   const {DeepSeekHarness}=await import(pathToFileURL(join(settings.harnessRoot,'packages/sdk/client/lib/index.js')).href);
-  const env=Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|SECRET|PASSWORD/.test(key)));
-  harness=new DeepSeekHarness({profile:'sdk-minimal',patches:[join(here,'voice.patch.yml'),join(here,'stream.patch.yml')],
+  const env=childEnvironment(process.env,web);
+  harness=new DeepSeekHarness({profile:'sdk-minimal',patches:[join(here,'voice.patch.yml'),join(here,'stream.patch.yml'),...(web.enabled?[join(here,'web.patch.yml')]:[])],
     provider:'opennova-chatgpt',model:'gpt-6.1-sol',cwd:root,processCwd:root,
     dshHome:join(homedir(),'.local/share/opennova/harness-home'),initializeTimeoutMs:30000,requestTimeoutMs:180000,
     env:{...env,OPENNOVA_HARNESS_ROOT:settings.harnessRoot,OPENNOVA_SIWC_ROOT:settings.siwcRoot,
       OPENNOVA_KEYCHAIN_HELPER:settings.keychainPath,OPENNOVA_SIWC_STORAGE:settings.storageDir,
-      OPENNOVA_VOICE_SOCKET:control.path}});
+      OPENNOVA_VOICE_SOCKET:control.path,OPENNOVA_WEB_LIMITS:JSON.stringify(web.limits)}});
   await harness.start();await control.ready();stage='conversation';
-  send({type:'ready',model:'gpt-6.1-sol',sessionId,streaming:true,cancellation:true,tools:false});
+  send({type:'ready',model:'gpt-6.1-sol',sessionId,streaming:!web.enabled,cancellation:true,tools:web.enabled,outputMode:web.enabled?'settled-answer':'incremental'});
   input=createInterface({input:process.stdin,crlfDelay:Infinity});
   for await (const line of input) {
     let request;
@@ -77,7 +84,12 @@ try {
           await current.armed;
           if (!current.cancelled) {
             const result=await harness.run(request.text,{sessionId});
-            if (!current.cancelled) event={type:'reply',id:current.id,text:completedReply(result),sessionId,elapsed_ms:Date.now()-current.started};
+            if (!current.cancelled) {
+              if(current.failure)throw Error(current.failure);
+              const text=completedReply(result);
+              if(web.enabled)sources.ingest(result.events);
+              event={type:'reply',id:current.id,...(web.enabled?projectWebReply(text,sources):{text}),sessionId,elapsed_ms:Date.now()-current.started};
+            }
           }
         } catch (error) {event={...errorEvent(error,'conversation'),id:current.id};}
         if (current.cancelled) event={type:'cancelled',id:current.id};
