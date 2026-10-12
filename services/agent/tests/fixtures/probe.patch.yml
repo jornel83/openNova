@@ -1,0 +1,11 @@
+- id: opennova-chatgpt
+  config:
+    harnessRoot: !!js process.env.OPENNOVA_HARNESS_ROOT
+    enableTools: true
+    allowedTools: [lookup_probe_value]
+- id: system-prompt
+  config:
+    personaPrefix: You are a tool protocol test assistant. Use lookup_probe_value whenever asked; answer briefly using its actual result. Never guess the probe value.
+- insert:
+    - id: opennova-probe-tool
+      name: './probe-tool.mjs'

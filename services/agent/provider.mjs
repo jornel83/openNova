@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { createClient } from './chatgpt.mjs';
 import { responseChunks } from './provider-core.mjs';
+import { responseToolChunks } from './responses-protocol.mjs';
 
 export const name = 'opennova-chatgpt';
 export const inject = ['llm'];
@@ -10,7 +11,7 @@ export const inject = ['llm'];
 export async function apply(ctx, config) {
   if (!config?.harnessRoot) throw new Error('harnessRoot_required');
   const {LlmAdapter} = await import(pathToFileURL(join(config.harnessRoot, 'packages/llm/llm/lib/index.js')).href);
-  const client = await createClient();
+  const client = await createClient({capabilities:config.enableTools?'tools':'text'});
   class SubscriptionAdapter extends LlmAdapter {
     async listModels(provider) {
       return [{provider, id:'gpt-6.1-sol', name:'GPT-6.1 Sol', inputModalities:['text']}];
@@ -19,7 +20,7 @@ export async function apply(ctx, config) {
       if (model !== 'gpt-6.1-sol') throw new Error('unsupported_model');
       return {provider, id:model, name:'GPT-6.1 Sol', inputModalities:['text']};
     }
-    stream(options) { return responseChunks(client, options); }
+    stream(options) { return config.enableTools ? responseToolChunks(client,options,config.allowedTools) : responseChunks(client, options); }
   }
   ctx.effect(() => ctx.llm.registerAdapter(['opennova-chatgpt'], new SubscriptionAdapter()));
 }

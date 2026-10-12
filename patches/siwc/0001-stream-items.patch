@@ -48,7 +48,7 @@
        return authenticated((accessToken, signal) => streamResponse(accessToken, options, signal), options.signal);
 --- /dev/null
 +++ b/packages/local/src/items.ts
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,109 @@
 +import OpenAI from "openai";
 +import { apiError, ChatGPTError, isObject } from "./errors.js";
 +import type { StreamItemsOptions } from "./types.js";
@@ -108,11 +108,15 @@
 +    let completed = false;
 +    let output: OpenAI.Responses.ResponseOutputItem[] = [];
 +    let eventBytes = 0;
++    const added = new Set<number>();
++    const settled = new Map<number, OpenAI.Responses.ResponseOutputItem>();
 +    for await (const event of result.data) {
 +      requestSignal.throwIfAborted();
 +      if (!isObject(event)) continue;
 +      eventBytes += JSON.stringify(event).length;
 +      if (eventBytes > 2_000_000) throw new ChatGPTError("response_too_large", "The response was too large.");
++      if (event.type === "response.output_item.added") added.add(event.output_index);
++      if (event.type === "response.output_item.done") settled.set(event.output_index, event.item);
 +      if (event.type === "response.failed" || event.type === "error") {
 +        const detail = event.type === "response.failed" ? event.response : event;
 +        throw apiError(detail, response.status, result.request_id);
@@ -121,6 +125,14 @@
 +      } else if (event.type === "response.completed") {
 +        if (!Array.isArray(event.response.output)) throw new ChatGPTError("invalid_stream", "Missing completed output.");
 +        output = event.response.output;
++        // SIWC can finish with an empty output array after sending complete items.
++        if (output.length === 0) {
++          const indices = [...settled.keys()].sort((a, b) => a - b);
++          if (!indices.length || indices.some((n, i) => n !== i) || [...added].some(n => !settled.has(n))) {
++            throw new ChatGPTError("invalid_stream", "Missing completed output items.");
++          }
++          output = indices.map(n => settled.get(n)!);
++        }
 +        options.onEvent?.(event);
 +        completed = true;
 +        break;

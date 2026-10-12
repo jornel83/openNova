@@ -32,6 +32,14 @@ test('caller abort after event does not report completion',async t=>{
  const c=new AbortController();t.mock.method(globalThis,'fetch',async()=>response([{type:'response.output_text.delta',delta:'hello'},done]));
  await assert.rejects(call({signal:c.signal,onEvent:()=>c.abort()}),e=>e.code==='cancelled');
 });
+test('subscription sparse completion uses ordered done items, never partial added items',async t=>{
+ const empty={type:'response.completed',response:{status:'completed',output:[]}};
+ const added={type:'response.output_item.added',output_index:0,item:{...output[0],arguments:'',status:'in_progress'}};
+ t.mock.method(globalThis,'fetch',async()=>response([added,{type:'response.function_call_arguments.delta',output_index:0,delta:'{'},{type:'response.output_item.done',output_index:0,item:output[0]},empty]));
+ assert.deepEqual(await call(),{output});
+ globalThis.fetch=async()=>response([added,empty]);
+ await assert.rejects(call(),e=>e.code==='invalid_stream');
+});
 test('callback failure closes the body and yields a sanitized failure',async t=>{
  let cancelled=false;t.mock.method(globalThis,'fetch',async()=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode(frame({type:'response.output_text.delta',delta:'hello'})));},cancel(){cancelled=true;}}),{headers:{'content-type':'text/event-stream'}}));
  await assert.rejects(call({onEvent(){throw Error('private callback');}}),e=>!e.message.includes('private callback'));assert.equal(cancelled,true);
