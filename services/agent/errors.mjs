@@ -9,7 +9,7 @@ const codes = new Set([
   'chatpass_v2_scope_not_authorized', 'chatpass_v2_invalid_authorization_context',
   'invalid_client', 'model_not_found', 'stream_interrupted', 'incomplete_agent_turn',
   'input_too_large', 'invalid_request', 'unsupported_model',
-  'web_api_key_missing','invalid_web_configuration','siwc_tools_extension_missing',
+  'web_api_key_missing','deepseek_api_key_missing','invalid_web_configuration','siwc_tools_extension_missing',
   'model_budget_exceeded','tool_budget_exceeded','agent_timeout','web_time_budget',
   'response_too_large','invalid_speech_text','invalid_tool_call','invalid_tool_arguments',
 ]);

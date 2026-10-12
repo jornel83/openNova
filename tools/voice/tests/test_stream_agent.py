@@ -9,6 +9,10 @@ from stream_agent import StreamingAgent
 from agent import failure_message
 
 class AgentTests(unittest.IsolatedAsyncioTestCase):
+    def test_deepseek_missing_key_names_the_selected_provider(self):
+        message=failure_message({'code':'deepseek_api_key_missing'})
+        self.assertIn('DeepSeek',message)
+        self.assertIn('web.deepseek_api_key',message)
     def test_retrieval_timeout_explains_the_budget_instead_of_a_service_fault(self):
         message=failure_message({'code':'web_time_budget','stage':'conversation'})
         self.assertIn('检索',message)

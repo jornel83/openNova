@@ -1,6 +1,14 @@
 # OpenNova 联网 Demo 开发与验收记录
 
-日期：2026-10-13。代码范围：订阅工具协议、Harness Web 工具、文字入口、持续语音联网模式及回归。**真实网页读取与语音文件闭环已经通过；Exa 搜索仍缺本机密钥，不能视为真实搜索已验收。**
+日期：2026-10-13。代码范围：订阅工具协议、Harness Web 工具、文字入口、持续语音联网模式及回归。**DeepSeek 实际搜索与 GPT 来源追问、真实网页读取与语音文件闭环已经分别通过；DeepSeek 搜索后的完整语音链路及现场听感仍待验收。Exa 保留为可选后端，未实测。**
+
+## DeepSeek 搜索接入更新
+
+- 配置 `web.provider: deepseek` 后使用 Harness 原生 DeepSeek 插件；主模型仍是 GPT-6.1 Sol。密钥仅保存在本机忽略文件，只有所选搜索后端的密钥传入运行时；无付费后端自动回退。
+- 独立官方接口探针返回 HTTP 200、一次 `web_search` 与 10 条来源，耗时 6.570 秒。此探针直接调用 provider；正式工具由 Web 服务裁剪至最多 5 条。`input_tokens=10803`、`cache_read_input_tokens=256`、`output_tokens=836`，仅作为一次用量样本，非账单或平均值。
+- `deepseek-agent.json`：真实 GPT → Harness → DeepSeek → GPT 两轮成功；首轮两次搜索、23.519 秒，来源追问无需重搜、5.348 秒。返回了 python.org 的真实搜索来源，但并非纯主页 URL；本次证明协议与引用可用，不代表搜索质量已完成评测。
+- 当前网络直连 DeepSeek 在 TLS 握手阶段失败，通过现有 `http://127.0.0.1:7897` 代理成功。测试保留代理环境变量；未更改系统网络或 VPN。
+- 回归为 Agent 55、语音 63、安装 3、ASR 26、TTS 10，共 157 项通过。原 Exa 配置默认值与普通增量模式保留。
 
 已集成至原项目的 `codex/voice-vad-tts` 本地分支，功能修复提交 `de89bf0`，未推送远程。原有 Harness 升级与计划已单独保存在 `3159412`；无关 `skills/`、`tools/video/` 保持原样。原路径已重新构建并检查工具扩展，155 项测试再次通过；`integrated-fetch.json` 记录了集成后的真实读取 → 来源答复，耗时 9.189 秒，未调用搜索。开发决策、审查与 RED→GREEN 记录保存在本机 [开发审计](../../output/agent/web-verification/development-audit/progress.md)。
 
@@ -9,7 +17,7 @@
 | 里程碑 | 已实现与验证 | 剩余验收 |
 | --- | --- | --- |
 | M1 工具协议 | 可复现 SIWC 扩展；实际 GPT 调用只读工具 → Harness 执行 → 回传 → 答复；取消后同会话继续 | 无账号能力阻塞 |
-| M2 文字联网 | 原生 Exa / HTTP fetch 插件、次数与超时预算、来源、文字 CLI；真实公开网页读取与来源追问通过 | 配置 Exa Key 后实测搜索与搜索阶段取消 |
+| M2 文字联网 | 原生 Exa / DeepSeek / HTTP fetch 插件、次数与超时预算、来源、文字 CLI；DeepSeek 实际搜索、来源追问与公开网页读取通过 | DeepSeek 多语言效果矩阵与真实搜索阶段取消；Exa 可选验收 |
 | M3 语音联网 | `--web`、完整答复后播报、2 秒提示、插话取消、重连保留模式；真实两轮 ASR → GPT / 网页工具 → Vivian 文件链路通过 | 真实搜索语音链路；内置 / 蓝牙现场插话与听感 |
 | M4 收尾交付 | 固定版本、重建脚本、回归测试、说明与本地提交 | 搜索服务依赖及真人验收不能由离线测试替代 |
 
@@ -17,7 +25,7 @@
 
 在项目根目录、现有 Studio TTS 转发可用的情况下执行。下列密钥配置与扩展安装只需完成一次。
 
-1. 在 `config/secrets.local.json` 的现有对象中加入 `web.exa_api_key`，值填写自己的 Exa Key。保留已有 `doubao` 字段；不要覆盖整份文件。也可使用 `EXA_API_KEY` 环境变量。文件保持 Git 忽略和 0600 权限，聊天、README 和提交中不放密钥。
+1. 使用 DeepSeek 时，在 `config/voice.local.json` 的 `web.provider` 填写 `deepseek`，在 `config/secrets.local.json` 的 `web.deepseek_api_key` 填入密钥（或使用 `DEEPSEEK_API_KEY`）。选择 Exa 时使用 `provider: exa` 和 `web.exa_api_key` / `EXA_API_KEY`。保留已有配置；不要覆盖整份文件。密钥文件保持 Git 忽略和 0600 权限。
 2. 安装 / 检查扩展：
 
    ```sh

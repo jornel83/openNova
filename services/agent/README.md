@@ -43,17 +43,19 @@ python3.11 tools/setup/bootstrap.py --check --web
 OPENNOVA_PROXY=http://127.0.0.1:7897 /opt/homebrew/opt/node@24/bin/node tools/agent/chat.mjs --web
 ```
 
-真实 Exa Key 放在 Git 忽略的 `config/secrets.local.json` 的 `web.exa_api_key` 字段；环境变量 `EXA_API_KEY` 优先。默认不启用工具，只有显式 `--web` 加载 Web patch。该模式需要密钥才能启动。CLI 支持 `/stop`、`/quit`；`--check` 只检查依赖、授权与运行时启动，不调用搜索。
+在 `config/voice.local.json` 的 `web.provider` 选择 `exa`（缺省）或 `deepseek`。真实密钥放在 Git 忽略的 `config/secrets.local.json`：分别使用 `web.exa_api_key` 或 `web.deepseek_api_key`；对应环境变量 `EXA_API_KEY` / `DEEPSEEK_API_KEY` 优先。只把所选后端的密钥交给 Harness，不自动切换或回退计费账号。默认不启用工具，只有显式 `--web` 加载 Web patch。CLI 支持 `/stop`、`/quit`；`--check` 只检查依赖、授权与运行时启动，不调用搜索。
+
+DeepSeek 通过原生 `web-search-deepseek` 插件调用官方 Anthropic 兼容接口，搜索模型为 `deepseek-flash`，每次辅助模型请求最多一次服务端搜索、输出上限 2,048 Token。主对话模型继续使用 GPT-6.1 Sol。每轮仍最多两次辅助搜索请求；这些限制不构成货币费用硬上限。仅取得链接和标题时，应按需 `web_fetch` 阅读正文后再做详细总结。
 
 - `patches/siwc/0001-stream-items.patch`：在官方 DevKit 的 authenticated 路径增加 `streamItems`，沿用刷新和 Keychain。按固定提交导出、应用补丁、npm 锁定安装及构建；产物位于 `output/deps/siwc/<revision>-<patch-sha>`，不修改原检出。没有向业务层暴露 token。
 - `responses-protocol.mjs`：把允许的工具放进 `opennova` namespace，往返保留 call ID、结果、reasoning replay。只接收完成的输出；兼容订阅流的空 completed.output + output_item.done，截断、失败和取消不会提交可执行调用。
-- `web.patch.yml`：加载 Harness 原生 Web / Exa / HTTP fetch / tool-web / timeout-policy。每轮最多 2 次搜索、3 次读取、6 次模型请求；每次搜索 1 个查询、最多 5 项，网页输出 12,000 字符。单次搜索 15 秒、读取 10 秒，从第一个 Web 工具启动至 Agent 完成最多 45 秒（包括工具间模型推理）、整轮 90 秒；不含 TTS。
+- `web.patch.yml`：加载 Harness 原生 Web / Exa / DeepSeek / HTTP fetch / tool-web / timeout-policy，按配置选择一个搜索后端。每轮最多 2 次搜索、3 次读取、6 次模型请求；每次搜索 1 个查询、最多 5 项，网页输出 12,000 字符。单次搜索 15 秒、读取 10 秒，从第一个 Web 工具启动至 Agent 完成最多 45 秒（包括工具间模型推理）、整轮 90 秒；不含 TTS。
 - `web-policy.mjs`、`web-budget.mjs`：通过现有 control 插件注册 Harness hooks，原子计数、传播取消并清理定时器；不实现另一套 Agent 循环。
 - `web-events.mjs`、`speech-text.mjs`：真实工具结果关联来源；同进程保留最近 100 项来源供追问。显示文本保留已核对的链接，播报文本去除链接、编号和代码块；搜索摘要与读取正文用 `retrieval` 区分。
 
 JSONL ready 包含 `outputMode: incremental | settled-answer`。联网模式仅发送 `status{id,phase,step,toolCallId?}`、`sources{id,items}` 和最终 `reply{id,text,speechText,sources,sessionId}`，不发送工具循环中的正文 delta。错误与取消没有成功 reply。两条路径共享 ask / cancel / close 和会话管理。
 
-显式探针：`node tools/agent/web_probe.mjs --protocol-only` 验证真实工具往返与取消后继续；`--live-web` 验证真实 Exa 搜索、读取及来源追问；`--fetch-only` 是不使用 Exa 的公开网页测试夹具，不代表真实搜索已通过。结果保存在 Git 忽略的 `output/agent/web-verification/`。详见[验收记录](../../docs/research/opennova-web-search-verification.md)。
+显式探针：`node tools/agent/web_probe.mjs --protocol-only` 验证真实工具往返与取消后继续；`--live-web` 使用当前所选后端验证真实搜索、读取及来源追问；`--fetch-only` 是公开网页测试夹具，禁止实际搜索，不代表真实搜索已通过。结果保存在 Git 忽略的 `output/agent/web-verification/`。详见[验收记录](../../docs/research/opennova-web-search-verification.md)。
 
 ## 持续对话桥接（2026-10-12）
 

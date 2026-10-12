@@ -22,13 +22,19 @@
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:
-        searchProvider: exa
+        searchProvider: !!js process.env.OPENNOVA_WEB_PROVIDER || 'exa'
         fetchProvider: http
     - id: web-search-exa
       name: '@deepseek-ai/dsh-web-search-exa'
       config:
         numResults: 5
         highlightsPerResult: 1
+    - id: web-search-deepseek
+      name: '@deepseek-ai/dsh-web-search-deepseek'
+      config:
+        model: deepseek-flash
+        maxTokens: 2048
+        maxUses: 1
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
       config:

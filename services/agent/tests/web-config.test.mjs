@@ -7,7 +7,22 @@ test('web defaults off and credentials are scrubbed except explicit Exa opt-in',
  const env={EXA_API_KEY:'secret-test',DOUBAO_API_KEY:'private-test',OPENAI_API_KEY:'private-test',PATH:'/bin'};
  assert.equal(childEnvironment(env,c).EXA_API_KEY,undefined);
  const web=loadWebConfig({enabled:true,env,configFile:'/missing',secretsFile:'/missing'});
- assert.deepEqual(childEnvironment(env,web),{PATH:'/bin',EXA_API_KEY:'secret-test'});
+ assert.deepEqual(childEnvironment(env,web),{PATH:'/bin',EXA_API_KEY:'secret-test',OPENNOVA_WEB_PROVIDER:'exa'});
+});
+test('DeepSeek selection isolates its key and preserves per-provider overrides',()=>{
+ const d=mkdtempSync(join(tmpdir(),'deepseek-config-'));try{
+  const configFile=join(d,'voice.json'),secretsFile=join(d,'secrets.json');
+  writeFileSync(configFile,JSON.stringify({web:{provider:'deepseek'}}));
+  writeFileSync(secretsFile,JSON.stringify({web:{deepseek_api_key:'synthetic-local-deepseek',exa_api_key:'synthetic-local-exa'}}));
+  const load=env=>loadWebConfig({enabled:true,env,configFile,secretsFile});
+  const web=load({});assert.equal(web.provider,'deepseek');assert.equal(web.apiKey,'synthetic-local-deepseek');
+  const env={DEEPSEEK_API_KEY:'synthetic-env-deepseek',EXA_API_KEY:'synthetic-env-exa',OPENAI_API_KEY:'private',PATH:'/bin'};
+  assert.equal(load(env).apiKey,'synthetic-env-deepseek');
+  assert.deepEqual(childEnvironment(env,load(env)),{PATH:'/bin',DEEPSEEK_API_KEY:'synthetic-env-deepseek',OPENNOVA_WEB_PROVIDER:'deepseek-official'});
+  assert.equal(childEnvironment(env,{enabled:false}).DEEPSEEK_API_KEY,undefined);
+  writeFileSync(secretsFile,JSON.stringify({web:{exa_api_key:'synthetic-exa-only'}}));
+  assert.throws(()=>load({}),/deepseek_api_key_missing/);
+ }finally{rmSync(d,{recursive:true,force:true});}
 });
 test('local key is used only without env override; invalid config fails',()=>{
  const d=mkdtempSync(join(tmpdir(),'web-config-'));try{

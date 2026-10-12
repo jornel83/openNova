@@ -6,7 +6,7 @@ OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI �
 
 ## 工程结构
 
-2026-10-13 新增可选联网模式 `--web`：Harness 原生 `web_search` / `web_fetch` → GPT 工具回传 → 带来源的完整答案 → Vivian。工具协议、真实公开网页读取与来源追问已通过；**真实 Exa 搜索验收还需要本机配置 Exa Key**。不传 `--web` 继续使用原增量语音模式。安装、命令和验收边界见[联网版验收记录](docs/research/opennova-web-search-verification.md)。
+2026-10-13 新增可选联网模式 `--web`：Harness 原生 `web_search` / `web_fetch` → GPT 工具回传 → 带来源的完整答案 → Vivian。搜索后端可选 Exa 或 DeepSeek；DeepSeek 实际搜索、GPT 来源答复与同会话追问已通过文字验证。网页读取与语音文件链路已有验证记录，搜索后的现场听感仍待验收。不传 `--web` 继续使用原增量语音模式。安装、命令和验收边界见[联网版验收记录](docs/research/opennova-web-search-verification.md)。
 
 | 目录 | 职责 |
 | --- | --- |
