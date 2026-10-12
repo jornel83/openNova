@@ -81,7 +81,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(instances),2)
         self.assertTrue(all(instance.closed for instance in instances))
 
-    async def recovery(self, *, agent_failed=False):
+    async def recovery(self, *, agent_failed=False, web=False):
         """Inject a native input failure, then drive the actual CLI retry loop."""
         audios, agents, messages, received = [], [], [], []
         failed, resumed = asyncio.Event(), asyncio.Event()
@@ -99,8 +99,9 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                     self.input.put_nowait((epoch,b'\1\0'*160))
             async def close(self): self.closed=True
         class Agent:
-            def __init__(self):
+            def __init__(self,**options):
                 self.error=None; self.process=SimpleNamespace(returncode=None); self.closed=False
+                self.options=options
                 agents.append(self)
             async def start(self): return {'sessionId':f'session-{len(agents)}'}
             async def close(self): self.closed=True
@@ -123,6 +124,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             await queue.put('/quit')
             await asyncio.Event().wait()
         args=SimpleNamespace(audio=None,no_play=False,output_dir=None,check=False,
+                             web=web,
                              device='SRS-XB100',output_device='SRS-XB100',
                              tts_url='http://unused',silence_ms=800,extended_silence_ms=1600)
         async def check(**devices): return {'input':'SRS-XB100','output':'SRS-XB100'}
@@ -141,6 +143,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(epoch,current_epoch)
         self.assertTrue(pcm)
         return agents,messages
+
+    async def test_retry_keeps_web_mode_on_replacement_agent(self):
+        agents,_=await self.recovery(agent_failed=True,web=True)
+        self.assertEqual([a.options for a in agents],[{'web':True},{'web':True}])
 
     async def test_audio_failure_retry_resumes_input_and_keeps_healthy_agent(self):
         agents,messages=await self.recovery()

@@ -38,7 +38,8 @@ async def run(args, key):
     if args.output_dir and not args.audio:
         # This mode stores metrics/text only, never microphone PCM.
         print('本次仅保存文字和时序报告，不保存原始收音。',flush=True)
-    agent = StreamingAgent()
+    agent_options = {'web': True} if getattr(args,'web',False) else {}
+    agent = StreamingAgent(**agent_options)
     audio = FileAudio() if args.audio else NativeAudio(device=args.device, output_device=args.output_device)
     owned_audio = {audio}
     owned_agents = {agent}
@@ -85,7 +86,7 @@ async def run(args, key):
                 await controller.wait_idle()
                 await agent.close()
                 owned_agents.discard(agent)
-                new_agent = StreamingAgent()
+                new_agent = StreamingAgent(**agent_options)
                 owned_agents.add(new_agent)
                 await new_agent.start()
             info = await new.start()
@@ -109,6 +110,7 @@ async def run(args, key):
         await asyncio.to_thread(preflight,args)
         ready = await agent.start()
         report['session_id'] = ready['sessionId']
+        report['output_mode'] = ready.get('outputMode','incremental')
         detector = SileroOnnx()
         if args.check:
             log('检查通过：流式 Agent、VAD、Vivian 及音频桥已就绪；未开启麦克风，AEC 听感尚未验证。')

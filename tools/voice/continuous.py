@@ -26,6 +26,7 @@ class Conversation:
         self.records = []
         self.interrupted = False
         self.unsubmitted = ''
+        self.notice_delay = 2.0
 
     async def invalidate(self, reason):
         self.generation += 1
@@ -96,7 +97,8 @@ class Conversation:
             text = '[语音状态：上一段回复的播报已被打断，用户可能未听完；无需从头重播。]\n'+text
             self.interrupted = False
         record = {'input':original,'text':'','status':'running','generation':self.generation,
-                  'submitted_at':time.monotonic(),'input_ended_at':ended_at,'segments':[], 'admitted':False}
+                  'submitted_at':time.monotonic(),'input_ended_at':ended_at,'segments':[], 'admitted':False,
+                  'output_mode':getattr(self.agent,'output_mode','incremental'),'speech_text':'','sources':[],'tool_events':[]}
         self.records.append(record)
         self.response_record = record
         task = asyncio.create_task(self._respond(text, record))
@@ -109,10 +111,17 @@ class Conversation:
     async def _respond(self, text, record):
         generation = record['generation']
         queue = asyncio.Queue(maxsize=8)
+        settled = record['output_mode'] == 'settled-answer'
+        answer_ready = asyncio.Event()
+        async def delayed_notice():
+            await asyncio.sleep(self.notice_delay)
+            if generation == self.generation and not answer_ready.is_set():
+                await queue.put((0,'我查一下，请稍等。',True))
         async def produce():
             buffer = SentenceBuffer()
             attempt = None
             seq = 0
+            notice_task = None
             async with self.agent_lock:
                 if generation != self.generation: return
                 record['admitted'] = True
@@ -120,7 +129,17 @@ class Conversation:
                 try:
                     async for event in stream:
                         if generation != self.generation: return
-                        if event['type'] == 'delta':
+                        if event['type'] == 'status':
+                            phase = event.get('phase')
+                            record['tool_events'].append({'phase':phase,'step':event.get('step'),'at':time.monotonic()})
+                            if phase in ('searching','reading'):
+                                self.log('正在联网搜索。' if phase == 'searching' else '正在读取网页。')
+                                if settled and notice_task is None: notice_task = asyncio.create_task(delayed_notice())
+                        elif event['type'] == 'sources':
+                            # Pending evidence is not presented as a completed answer.
+                            record['sources_received_at'] = time.monotonic()
+                        elif event['type'] == 'delta':
+                            if settled: raise ValueError('联网模式不应提前播报未完成的模型文本。')
                             current_attempt = event.get('attemptId')
                             if attempt and attempt != current_attempt:
                                 raise ValueError('模型重新生成了本轮回复，已停止旧播报，请重新说话。')
@@ -133,49 +152,86 @@ class Conversation:
                             self.render_text(event['text'])
                             for part in buffer.feed(event['text']):
                                 seq += 1
-                                await queue.put((seq,part))
+                                await queue.put((seq,part,False))
                         elif event['type'] == 'reply':
-                            self.render_text('\n')
                             record['agent_complete_at'] = time.monotonic()
                             record['agent'] = event
-                            # No silent fallback to whole-result replay if the live bridge is incomplete.
-                            if event['text'] != record['text']:
-                                raise ValueError('模型流式回复与最终结果不一致，已停止剩余播报。')
-                            for part in buffer.finish():
+                            answer_ready.set()
+                            if settled:
+                                speech = event.get('speechText')
+                                if not isinstance(speech,str) or not speech.strip() or len(speech)>6000 or len(event['text'])>16000:
+                                    raise ValueError('完整答案或播报内容无效。')
+                                record.update(text=event['text'],speech_text=speech,sources=event.get('sources',[]))
+                                self.render_text('OpenNova：'+event['text']+'\n')
+                                for source in record['sources']:
+                                    self.log(f"来源 {source['id']}：{source['title']} {source['url']}")
+                                parts = buffer.feed(speech)+buffer.finish()
+                            else:
+                                self.render_text('\n')
+                                # No fallback to whole-result replay if the live bridge is incomplete.
+                                if event['text'] != record['text']:
+                                    raise ValueError('模型流式回复与最终结果不一致，已停止剩余播报。')
+                                record['speech_text'] = record['text']
+                                parts = buffer.finish()
+                            for part in parts:
                                 seq += 1
-                                await queue.put((seq,part))
+                                await queue.put((seq,part,False))
                         elif event['type'] == 'cancelled':
                             raise ValueError('本轮模型回复已取消。')
                 except Exception as error:
                     await fail_output(error)
                     raise
                 finally:
+                    if notice_task:
+                        notice_task.cancel()
+                        await asyncio.gather(notice_task,return_exceptions=True)
                     await stream.aclose()
             if 'agent_complete_at' not in record: raise ValueError('模型回复未完整结束。')
             await queue.put(None)
 
+        async def play_segment(seq, part, notice):
+            if generation != self.generation or (notice and answer_ready.is_set()): return
+            segment = {'id':seq,'text':part,'kind':'status' if notice else 'answer','requested_at':time.monotonic()}
+            record['segments'].append(segment)
+            pending = b''
+            async with aclosing(self.synthesize(part,self.tts_url,speed=1.5,metrics=segment)) as stream:
+                async for pcm in stream:
+                    if generation != self.generation: return
+                    if notice and answer_ready.is_set() and 'notice_first_pcm_at' not in record: return
+                    pending += pcm
+                    size = len(pending)//2*2
+                    if not size: continue
+                    # Native chunks stay below the 8192-byte IPC limit.
+                    for offset in range(0,size,4096):
+                        chunk = pending[offset:min(offset+4096,size)]
+                        if notice: record.setdefault('notice_first_pcm_at',time.monotonic())
+                        else:
+                            record.setdefault('first_pcm_at', time.monotonic())
+                            record.setdefault('answer_first_pcm_at',record['first_pcm_at'])
+                        if not await self.audio.write(chunk,generation,seq): return
+                        record.setdefault('notice_first_enqueue_at' if notice else 'first_enqueue_at', time.monotonic())
+                    pending = pending[size:]
+            if pending: raise ValueError('合成音频尾部不完整。')
+            segment['http_closed_at'] = time.monotonic()
         async def speak():
             while item := await queue.get():
-                seq, part = item
-                if generation != self.generation: return
-                segment = {'id':seq,'text':part,'requested_at':time.monotonic()}
-                record['segments'].append(segment)
-                pending = b''
-                async with aclosing(self.synthesize(part,self.tts_url,speed=1.5,metrics=segment)) as stream:
-                    async for pcm in stream:
-                        if generation != self.generation: return
-                        pending += pcm
-                        size = len(pending)//2*2
-                        if not size: continue
-                        # Native chunks stay below the 8192-byte IPC limit.
-                        for offset in range(0,size,4096):
-                            chunk = pending[offset:min(offset+4096,size)]
-                            record.setdefault('first_pcm_at', time.monotonic())
-                            if not await self.audio.write(chunk,generation,seq): return
-                            record.setdefault('first_enqueue_at', time.monotonic())
-                        pending = pending[size:]
-                if pending: raise ValueError('合成音频尾部不完整。')
-                segment['http_closed_at'] = time.monotonic()
+                seq, part, notice = item
+                if not notice:
+                    await play_segment(seq,part,False)
+                    continue
+                if answer_ready.is_set(): continue
+                playing = asyncio.create_task(play_segment(seq,part,True))
+                ready = asyncio.create_task(answer_ready.wait())
+                try:
+                    await asyncio.wait((playing,ready),return_when=asyncio.FIRST_COMPLETED)
+                    if ready.done() and 'notice_first_pcm_at' not in record: playing.cancel()
+                    try: await playing
+                    except asyncio.CancelledError:
+                        if not answer_ready.is_set(): raise
+                finally:
+                    ready.cancel()
+                    if not playing.done(): playing.cancel()
+                    await asyncio.gather(playing,ready,return_exceptions=True)
             await self.audio.drained(generation)
             record['playback_drained_at'] = time.monotonic()
 

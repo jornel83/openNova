@@ -3,11 +3,20 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock,patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from stream_agent import StreamingAgent
 
 class AgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_web_flag_and_ready_mode_are_preserved(self):
+        agent=StreamingAgent(web=True)
+        stdout=asyncio.StreamReader();stdout.feed_data(b'{"type":"ready","outputMode":"settled-answer"}\n')
+        process=SimpleNamespace(stdout=stdout,returncode=0)
+        spawn=AsyncMock(return_value=process)
+        with patch('stream_agent.asyncio.create_subprocess_exec',spawn),patch('stream_agent.shutil.which',return_value='/node'):
+            await agent.start()
+        self.assertIn('--web',spawn.await_args.args);self.assertEqual(agent.output_mode,'settled-answer')
+        with patch('stream_agent.stop_process',AsyncMock()): await agent.close()
     async def test_idle_disconnect_fails_next_request_immediately(self):
         agent = StreamingAgent()
         agent.ready = asyncio.get_running_loop().create_future()

@@ -7,7 +7,9 @@ import shutil
 from agent import ROOT, failure_message, stop_process
 
 class StreamingAgent:
-    def __init__(self):
+    def __init__(self,web=False):
+        self.web=web
+        self.output_mode='incremental'
         self.process=None
         self.reader=None
         self.counter=0
@@ -20,7 +22,7 @@ class StreamingAgent:
         node=shutil.which(os.environ.get('OPENNOVA_NODE','node'))
         if not node: raise ValueError('找不到 Node，请通过 OPENNOVA_NODE 指定 Node 24。')
         self.ready=asyncio.get_running_loop().create_future()
-        self.process=await asyncio.create_subprocess_exec(node,str(ROOT/'services/agent/stream-worker.mjs'),
+        self.process=await asyncio.create_subprocess_exec(node,str(ROOT/'services/agent/stream-worker.mjs'),*(['--web'] if self.web else []),
             stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,limit=128*1024,start_new_session=True)
         self.reader=asyncio.create_task(self._read())
         return await asyncio.wait_for(asyncio.shield(self.ready),65)
@@ -30,7 +32,10 @@ class StreamingAgent:
             while line:=await self.process.stdout.readline():
                 event=json.loads(line)
                 if not self.ready.done():
-                    if event.get('type')=='ready': self.ready.set_result(event)
+                    if event.get('type')=='ready':
+                        self.output_mode=event.get('outputMode','incremental')
+                        if self.output_mode not in ('incremental','settled-answer'): raise ValueError('未知 Agent 输出模式。')
+                        self.ready.set_result(event)
                     elif event.get('type')=='error': self.ready.set_exception(ValueError(failure_message(event)))
                     continue
                 current=self.current

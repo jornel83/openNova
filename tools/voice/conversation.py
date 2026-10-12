@@ -137,6 +137,7 @@ def main():
     parser.add_argument('--listen-seconds', type=float, default=60)
     parser.add_argument('--silence-ms', type=int, default=800)
     parser.add_argument('--continuous', action='store_true', help='持续收音、增量播报与插话；用 --device / --output-device 选择设备')
+    parser.add_argument('--web', action='store_true', help='持续模式中启用联网检索，完整答案就绪后播报')
     parser.add_argument('--extended-silence-ms', type=int, default=1600, help='连续模式下未完句的最长停顿等待')
     parser.add_argument('--tts-url', default=load_settings()['url'])
     parser.add_argument('--audio', type=Path, action='append', help='测试文件，一次一个自然发言；可重复提供多轮')
@@ -144,6 +145,8 @@ def main():
     parser.add_argument('--output-dir', type=Path, help='显式保存回复音频和对话记录到一个新目录')
     parser.add_argument('--check', action='store_true', help='检查依赖和授权，不打开麦克风')
     args = parser.parse_args()
+    if args.web and not args.continuous:
+        parser.error('--web 需要 --continuous；普通轮流对话模式不启用联网工具。')
     if not 1 <= args.turns <= 100 or not 1 <= args.listen_seconds <= 600 or not 200 <= args.silence_ms <= 3000:
         parser.error('轮数 1–100、聆听上限 1–600 秒、静音阈值 200–3000 ms。')
     if args.continuous and not args.silence_ms <= args.extended_silence_ms <= 3000:
