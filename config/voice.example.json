@@ -5,6 +5,7 @@
     "keychain_helper": "",
     "siwc_storage": ""
   },
+  "web": {"enabled": false, "provider": "exa"},
   "tts": {
     "data_dir": "",
     "url": "http://127.0.0.1:18000"
