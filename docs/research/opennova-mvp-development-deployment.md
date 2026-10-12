@@ -2,7 +2,7 @@
 
 日期：2026-10-12。状态：已有 VAD → 豆包 ASR → Harness / GPT-6.1 Sol → Vivian 闭环。持续交流模式已实现并通过真实两轮文件链路、同会话生成取消与自动化回归；Air 原生 Voice Processing 音频桥已完成内置组合、SRS-XB100 组合及内置麦克风配蓝牙输出的实际启动、PCM 采集和静音播放检查。**外放 AEC、现场插话完整性与听感尚未完成专项验证。** Studio 常驻 Agent 与 MVP 主服务尚未部署。
 
-当前可运行的终端 Demo 见 [语音对话说明](../../tools/voice/README.md)：Air 承担原生音频、VAD、ASR 适配、Harness 和独立授权，Studio 承担 Vivian 推理，Air 以 1.5 倍速播放。传入 `--continuous` 启用持续交流，原轮流模式保留。该安排复用 Air 已可用的 Keychain；下文 Studio 常驻架构仍是目标部署。当前 Harness 实测为 Air 已构建提交 `ddefc45fbc7f8e46dd73185e68295696d1297887`，区别于早期选型基线，不修改其上游源码。
+当前可运行的终端 Demo 见 [语音对话说明](../../tools/voice/README.md)：Air 承担原生音频、VAD、ASR 适配、Harness 和独立授权，Studio 承担 Vivian 推理，Air 以 1.5 倍速播放。传入 `--continuous` 启用持续交流，原轮流模式保留。该安排复用 Air 已可用的 Keychain；下文 Studio 常驻架构仍是目标部署。2026-10-13 的 Harness 版本清单更新为用户仓库 `jornel83/deepseek-harness` 的 `v0.2.1-alpha.2` / `d743267388641bc76f17c45ce8b4c231aed1d32c`，不修改其源码；原语音基线使用 `ddefc45fbc7f8e46dd73185e68295696d1297887`。升级验证见 [Agent 运行说明](../../services/agent/README.md)。
 
 本轮完成持续收音与 800 / 1600 ms 两档停顿、ASR 修订与最终结果隔离、模型增量分句、有限 TTS / 播放缓存、候选暂停与确认打断、旧输出过滤，以及静音、停止、结束 / 开始、音频重连。另修复原生音频启动格式不匹配，加入进程内输入 / 输出设备选择。实现与运行限制见 [已确认技术设计](../superpowers/specs/2026-10-12-voice-interaction-design.md) 和语音说明。当前先收好开发基线；咳嗽误触发按用户决定暂不优化。Studio HTTP 断流后的 GPU 释放没有确认信号，仍列为待测，不视为已完成服务端取消。
 
@@ -63,7 +63,7 @@ PRD 与研究文档现已纳入版本管理。上表仓库提交为历史检查�
 | --- | --- | --- |
 | JavaScript 运行时 | 已有 Node 24.21.0 | OpenNova 和 Harness 使用相同主版本 |
 | 包管理 | pnpm 11.28.5 | 与评估的 Harness 提交一致，保留锁文件 |
-| Agent Harness | DeepSeek Harness 源码开发 | 固定提交 `d743267388641bc76f17c45ce8b4c231aed1d32c` 作为起始基线 |
+| Agent Harness | 用户仓库 `jornel83/deepseek-harness` | 固定 `v0.2.1-alpha.2` 提交 `d743267388641bc76f17c45ce8b4c231aed1d32c`；官方仓库保留为 upstream |
 | OpenNova 服务 | TypeScript；一个接入与编排服务 | 持有 Harness runtime，管理语音会话、任务归属、操作确认和 TTS 播报 |
 | 交互界面 | 先复用 Harness Web 验证文字能力；再增加 OpenNova 语音界面 | Air 浏览器访问 Studio；语音界面和协议需要开发 |
 | LLM | GPT-6.1 Sol，Responses API | 先验证文字流和工具回传，再验证图片输入 |

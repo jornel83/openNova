@@ -58,7 +58,7 @@ cp -n config/voice.example.json config/voice.local.json
    python3.11 tools/setup/bootstrap.py --check
    ```
 
-   安装入口使用[固定版本清单](config/runtime-versions.json)下载并构建 Harness 与官方 SIWC DevKit，在本机编译 `keychain.swift`。已有正确版本及构建会复用；版本不匹配或存在未提交文件时停止，保留原目录，可在配置中换一个路径再安装。不会重新登录或覆盖已有 helper。首次完整构建会联网下载依赖，需要一定时间和磁盘空间。
+   安装入口使用[固定版本清单](config/runtime-versions.json)下载并构建 Harness 与官方 SIWC DevKit，在本机编译 `keychain.swift`。Harness 固定为用户仓库 `git@github.com:jornel83/deepseek-harness.git` 的 `v0.2.1-alpha.2`，需要本机 GitHub SSH 访问权限。已有正确版本及构建会复用；版本不匹配或存在未提交文件时停止，保留原目录，可在配置中换一个路径再安装。已有检出升级后须重新安装依赖和构建。不会重新登录或覆盖已有 helper。首次完整构建会联网下载依赖，需要一定时间和磁盘空间。
 
 2. **准备 Studio 的 TTS**：将仓库放到 Studio，从 `services/tts/` 运行：
 

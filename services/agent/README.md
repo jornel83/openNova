@@ -8,7 +8,7 @@
 
 | 项目 | 位置 / 版本 |
 | --- | --- |
-| Harness | 相邻目录 `../deepseek-harness`，使用已有构建；本次实测提交 `ddefc45fbc7f8e46dd73185e68295696d1297887` |
+| Harness | 相邻目录 `../deepseek-harness`；用户仓库 `git@github.com:jornel83/deepseek-harness.git`，锁定 `v0.2.1-alpha.2` / `d743267388641bc76f17c45ce8b4c231aed1d32c`，pnpm `11.28.5` |
 | 启动方式 | 官方 SDK 启动 `dsh --profile sdk-minimal`，加载本目录 `voice.patch.yml`；不修改上游源码 |
 | 官方 DevKit | `~/.local/share/opennova/siwc-devkit`，提交 `0a36fefeb913055c8c7a1a29b63d82b96b2e841a`；`@siwc/local` 已构建 |
 | 凭据加密程序 | `~/.local/share/opennova/bin/siwc-keychain`；使用此前验证的 OpenNova Keychain 条目 `OpenNova.SIWC.Probe` |
@@ -28,7 +28,7 @@ node services/agent/worker.mjs --check
 - `chatgpt.mjs`：官方客户端和 Keychain 加密读写，凭据不进入 stdout。
 - `provider-core.mjs`：把 Harness 完整文字历史投影为官方 DevKit 的消息；仅完整成功的模型响应可提交，失败时不提交部分文字。
 - `provider.mjs`：外部 Cordis 模型插件，只注册 `opennova-chatgpt / gpt-6.1-sol`。
-- `voice.patch.yml`：中文语音交互提示词，关闭 Bash、PowerShell 和自动重试。
+- `voice.patch.yml`：中文语音交互提示词，关闭 Bash、PowerShell、工作目录工具和自动重试；保留运行时所需的工作目录服务。
 - `worker.mjs`：校验授权和模型权限，维持单个 Harness 会话，退出时清理子进程。
 - `result.mjs`：只接受当前轮次完整结束且未被中断的已提交回复。
 - `authorize.mjs`：独立 OpenNova 登录入口，已连接时不重新发起授权。
@@ -49,6 +49,21 @@ node services/agent/worker.mjs --check
 
 测试：`node --test services/agent/tests/provider.test.mjs`。调试可显式设置 `OPENNOVA_DEBUG=1` 查看本机 SDK 堆栈；正常运行只显示受控错误码。
 
+## Harness 升级验证（2026-10-13）
+
+本机从 `v0.1.6-alpha.2` / `ddefc45f` 快进到用户仓库 `origin/master` 的 `v0.2.1-alpha.2` / `d7432673`，使用 Node `24.14.1`、pnpm `11.28.5` 完成锁定依赖安装、清理旧产物和完整构建。
+
+新版 `sdk-minimal` 默认注册 `working_directory` 工具，真实对话首先复现 `voice_demo_tools_disabled`。在 OpenNova 的 `voice.patch.yml` 中禁用 `tool-working-directory` 后通过验证；Harness 源码保持干净，适配器继续拒绝工具调用。
+
+- `bootstrap.py --check` 通过；环境安装测试 1 项、Agent 测试 16 项、语音客户端测试 53 项通过。
+- 真实 GPT 流式对话通过：收到文本增量后完成回复，增量拼接与最终提交文字一致。
+- 生成中取消后，在同一会话继续提问，能回忆前一完整轮次的暗号；测试进程退出并完成清理。
+- 原轮流模式的 `worker.mjs` 真实回复与进程清理通过。
+
+本机验证记录位于 Git 忽略的 `output/setup/harness-upgrade-20261013/`。本轮验证覆盖 Agent 升级及相关回归，未重新进行麦克风 → ASR → Vivian 的现场听感测试。
+
 ## 环境重建
 
-从仓库根目录运行 `python3 tools/setup/bootstrap.py --install`；`--check` 只检查依赖，不打开凭据。版本由 `config/runtime-versions.json` 固定，路径可在 Git 忽略的 `config/voice.local.json` 配置，详见[根目录说明](../../README.md)。`keychain.swift` 已纳入源码；安装过程保留已有 helper 与授权数据。
+从仓库根目录运行 `python3.11 tools/setup/bootstrap.py --install`；`--check` 只检查依赖，不打开凭据。版本由 `config/runtime-versions.json` 固定，路径可在 Git 忽略的 `config/voice.local.json` 配置，详见[根目录说明](../../README.md)。Harness 源码从用户的 GitHub SSH 仓库获取，需要本机有相应访问权限。`keychain.swift` 已纳入源码；安装过程保留已有 helper 与授权数据。
+
+已有 Harness 检出切换版本后，需使用新版本声明的 pnpm 安装锁定依赖并重新构建；bootstrap 只检查构建入口存在，不会按源码提交自动判定旧产物是否失效。本机 `origin` 指向用户仓库，`upstream` 保留官方仓库；旧提交由 `codex/baseline-0.1.6-alpha.2-20261012` 保留。回退代码时也必须重新安装与构建，不能混用不同版本的产物。

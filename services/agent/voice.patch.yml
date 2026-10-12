@@ -4,6 +4,8 @@
   disabled: true
 - id: persistent-pwsh
   disabled: true
+- id: tool-working-directory
+  disabled: true
 - id: llm-retry
   disabled: true
 - id: system-prompt
