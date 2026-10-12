@@ -6,19 +6,25 @@ from pathlib import Path
 from agent import ROOT, stop_process
 
 
-def audio_error(code):
+def audio_error(code, system_code=None):
+    if code == 'audio_engine_start_failed':
+        detail = f'（系统错误 {system_code}）' if type(system_code) is int else ''
+        return ValueError(f'原生音频引擎启动失败{detail}，请重新运行；若仍失败，请提供此错误信息。')
     hints = {
         'microphone_permission_denied':'请在 macOS 隐私设置中允许终端访问麦克风。',
-        'builtin_route_required':'连续对话目前需要系统默认的 MacBook 内置麦克风和扬声器。',
-        'audio_route_changed':'音频设备已变化，请恢复内置输入、输出后输入 /retry。',
+        'audio_device_not_found':'找不到指定方向的音频设备，请用 --list-devices 查看名称并重新运行。',
+        'audio_device_ambiguous':'设备名称匹配多项，请用 --list-devices 查看完整名称。',
+        'audio_device_selection_failed':'无法启用所选音频设备，请检查连接后重试。',
+        'voice_processing_unavailable':'所选音频组合无法开启 Voice Processing，请换用其他输入或输出设备。',
+        'audio_route_changed':'音频设备已断开或默认设备已变化，请恢复设备后输入 /retry。',
         'capture_overflow':'收音缓冲已满，请输入 /retry 重试。',
         'macos_15_required':'连续对话需要 macOS 15 或更高版本。',
     }
-    return ValueError(hints.get(code, '原生音频服务不可用，请检查麦克风权限和设备后输入 /retry。'))
+    return ValueError(hints.get(code, '原生音频服务不可用，请检查音频设备或重新启动 Demo。'))
 
 
 async def build_helper():
-    sources = [ROOT/'tools/voice/native'/name for name in ('PlaybackQueue.swift', 'AudioBridge.swift')]
+    sources = [ROOT/'tools/voice/native'/name for name in ('PlaybackQueue.swift', 'AudioDevices.swift', 'AudioBridge.swift')]
     output = ROOT/'output/voice/bin/opennova-audio'
     if output.is_file() and output.stat().st_mtime >= max(p.stat().st_mtime for p in sources):
         return output
@@ -34,24 +40,31 @@ async def build_helper():
         await stop_process(process)
 
 
-async def check_native():
+def device_arguments(device=None, output_device=None):
+    args = []
+    if device is not None: args.extend(('--device', device))
+    if output_device is not None: args.extend(('--output-device', output_device))
+    return args
+
+
+async def check_native(device=None, output_device=None, *, list_devices=False):
     binary = await build_helper()
-    process = await asyncio.create_subprocess_exec(str(binary), '--check', stdout=asyncio.subprocess.PIPE,
+    process = await asyncio.create_subprocess_exec(str(binary), '--list-devices' if list_devices else '--check',
+                                                   *device_arguments(device, output_device), stdout=asyncio.subprocess.PIPE,
                                                    start_new_session=True)
     try:
         output, _ = await asyncio.wait_for(process.communicate(), 15)
         result = json.loads(output)
-        if process.returncode or result.get('type') != 'check':
+        if process.returncode or result.get('type') != ('devices' if list_devices else 'check'):
             raise audio_error(result.get('code'))
-        if not result.get('builtin_route'):
-            raise audio_error('builtin_route_required')
         return result
     finally:
         await stop_process(process)
 
 
 class NativeAudio:
-    def __init__(self):
+    def __init__(self, device=None, output_device=None):
+        self.device_args = device_arguments(device, output_device)
         self.process = self.reader = self.ready = None
         self.input = asyncio.Queue(maxsize=64)
         self.pending = {}
@@ -66,7 +79,7 @@ class NativeAudio:
     async def start(self):
         binary = await build_helper()
         self.ready = asyncio.get_running_loop().create_future()
-        self.process = await asyncio.create_subprocess_exec(str(binary), stdin=asyncio.subprocess.PIPE,
+        self.process = await asyncio.create_subprocess_exec(str(binary), *self.device_args, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, limit=64*1024, start_new_session=True)
         self.reader = asyncio.create_task(self._read())
         return await asyncio.wait_for(asyncio.shield(self.ready), 40)
@@ -81,7 +94,9 @@ class NativeAudio:
                     self.deliver({'type':'error', 'code':'capture_overflow'})
             return
         if kind == 'error':
-            self.error = audio_error(event.get('code'))
+            # The helper's subsequent EOF must not replace the actual failure.
+            if self.error is not None: return
+            self.error = audio_error(event.get('code'), event.get('system_code'))
             self.enabled = False
             while not self.input.empty(): self.input.get_nowait()
             self.input.put_nowait(self.error)

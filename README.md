@@ -2,7 +2,7 @@
 
 OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI 超级助手。本仓库保存产品定义、技术预研与开发实现。
 
-当前版本是 **v0.1.0-alpha 语音 MVP 开发基线**：本地 VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Qwen3-TTS Vivian，采用 1.5 倍保调语速。用户已确认现场对话可运行；当前版本轮流说话，思考和播放期间关闭麦克风。
+当前开发基线为 **持续语音 Demo（2026-10-12）**：本地 VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Qwen3-TTS Vivian，采用 1.5 倍保调语速。持续模式已实现边听边说、增量分句合成、候选插话暂停与确认打断，以及输入 / 输出设备选择；原轮流模式保留。用户已确认原有完整对话可运行，持续模式的外放回声和插话听感仍需现场验证。
 
 ## 工程结构
 
@@ -49,13 +49,13 @@ cp -n config/voice.example.json config/voice.local.json
 
 ## 搭建与启动
 
-以下命令在仓库根目录执行。Air 需要 macOS、Xcode Command Line Tools、Git、Python 3.11+、Node **22.19+（22.x）或 24+**（含 npm/npx）、uv 和 FFmpeg。Studio 需要 Apple Silicon、uv 和 Python 3.12（由 uv 安装）。
+以下命令在仓库根目录执行。Air 需要 macOS 15+、Xcode Command Line Tools、Git、Python 3.11+、**Node 24**（含 npm/npx）、uv 和 FFmpeg。本机已验证 Node 24；虽上游声明兼容部分 Node 22 版本，本机曾遇到 Node 22 初始化退出，因此启动脚本优先使用 Homebrew Node 24。Studio 需要 Apple Silicon、uv 和 Python 3.12（由 uv 安装）。
 
 1. **准备 Air 的 Agent 环境**：
 
    ```sh
-   python3 tools/setup/bootstrap.py --install
-   python3 tools/setup/bootstrap.py --check
+   python3.11 tools/setup/bootstrap.py --install
+   python3.11 tools/setup/bootstrap.py --check
    ```
 
    安装入口使用[固定版本清单](config/runtime-versions.json)下载并构建 Harness 与官方 SIWC DevKit，在本机编译 `keychain.swift`。已有正确版本及构建会复用；版本不匹配或存在未提交文件时停止，保留原目录，可在配置中换一个路径再安装。不会重新登录或覆盖已有 helper。首次完整构建会联网下载依赖，需要一定时间和磁盘空间。
@@ -82,27 +82,30 @@ cp -n config/voice.example.json config/voice.local.json
 4. **检查并开始对话**：
 
    ```sh
-   uv run tools/voice/conversation.py --check --device 'SRS-XB100' --output-device 'SRS-XB100'
-   uv run tools/voice/conversation.py --device 'SRS-XB100' --output-device 'SRS-XB100'
+   tools/voice/run-continuous.command --list-devices
+   tools/voice/run-continuous.command --check --device 'SRS-XB100' --output-device 'SRS-XB100'
+   tools/voice/run-continuous.command --device 'SRS-XB100' --output-device 'SRS-XB100'
    ```
 
-   可省略设备参数使用系统默认设备。`--check` 不打开麦克风，不调用 ASR 识别或生成模型回复；会检查授权、模型目录、Harness 启动、VAD 依赖和 TTS 服务可达性。实际合成与识别仍需完整对话验证。首次使用需要系统麦克风权限。按 `Ctrl+C` 退出。
+   内置设备可改为 `--device 'MacBook Air麦克风' --output-device 'MacBook Air扬声器'`，省略参数则使用系统默认设备。参数只影响本进程，不修改系统默认路由。`--check` 不打开麦克风，不调用 ASR 识别或生成模型回复；会检查音频设备、授权、Harness、VAD 依赖和 TTS 可达性。首次使用需要系统麦克风权限。输入 `/mute` 静音、`/stop` 停止回复、`/retry` 重建音频、`/quit` 或 `Ctrl+C` 退出。代理设置和原轮流模式见[完整运行说明](tools/voice/README.md)。
 
 ## 验证与当前边界
 
 离线回归（需要 FFmpeg，不使用麦克风或云端推理）：
 
 ```sh
-python3 -m unittest discover -s tools/asr/tests -v
-python3 -m unittest discover -s tools/voice/tests -v
-python3 -m unittest discover -s services/tts/tests -v
-python3 -m unittest discover -s tools/setup/tests -v
+python3.11 -m unittest discover -s tools/asr/tests -v
+python3.11 -m unittest discover -s tools/voice/tests -v
+python3.11 -m unittest discover -s services/tts/tests -v
+python3.11 -m unittest discover -s tools/setup/tests -v
 node --test services/agent/tests/*.test.mjs
 ```
 
-完整链路可使用 `--audio <一次自然发言.wav> --no-play`，可重复 `--audio` 验证多轮记忆；文件最长 60 秒，单次连续发言应小于 45 秒。显式传 `--output-dir output/voice/<新目录>` 才保存回复 WAV 与对话报告。Harness 文字会话保存在 `~/.local/share/opennova/harness-home/sessions/`。
+完整链路可向持续模式入口传入 `--audio <一次自然发言.wav> --no-play`，可重复 `--audio` 验证多轮上下文；文件最长 60 秒，单次连续发言应小于 45 秒，尾部保留至少 2 秒静音。显式传 `--output-dir output/voice/<新目录>` 时，持续模式只保存文字与时序 JSON，原轮流模式另保存回复 WAV。Harness 文字会话保存在 `~/.local/share/opennova/harness-home/sessions/`；重新启动 Demo 会新建模型会话。
 
-目前支持当前进程内的多轮文字上下文与 Vivian 固定音色。工作工具执行、长期记忆、视觉输入、硬件集成、插话打断、AEC、服务自动恢复尚未完成。Base 真人声音克隆作为独立实验保留，当前对话默认使用 CustomVoice / Vivian。此版本可作为后续 MVP 开发起点，尚未覆盖完整 PRD。
+目前支持当前进程内的多轮文字上下文与 Vivian 固定音色。已接入系统 Voice Processing 和打断流程，声学效果仍待验证；Studio GPU 停算未获得确认。工作工具执行、长期记忆、视觉输入、硬件集成与服务自动恢复尚未完成。Base 真人声音克隆作为独立实验保留，当前对话默认使用 CustomVoice / Vivian。此版本可作为后续 MVP 开发起点，尚未覆盖完整 PRD。
+
+已知限制：蓝牙音频进程刚启动即被终止后，立即重建可能报告路由变化；等待几秒再 `/retry` 的复测已通过。具体结果和其余待测项见[版本收尾记录](tools/voice/README.md#版本收尾验证2026-10-12)。
 
 - [MVP PRD](docs/product/opennova-mvp-prd.md)
 - [开发部署方案](docs/research/opennova-mvp-development-deployment.md)

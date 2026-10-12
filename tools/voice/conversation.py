@@ -130,12 +130,13 @@ async def run(args, key):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--device', help='Air 输入设备名称，例如 SRS-XB100')
+    parser.add_argument('--device', help='输入设备名称，例如 SRS-XB100 或 MacBook Air麦克风；默认系统输入')
     parser.add_argument('--output-device', help='Air 播放设备；默认系统输出')
+    parser.add_argument('--list-devices', action='store_true', help='列出可用输入、输出设备，不打开麦克风')
     parser.add_argument('--turns', type=int, default=20)
     parser.add_argument('--listen-seconds', type=float, default=60)
     parser.add_argument('--silence-ms', type=int, default=800)
-    parser.add_argument('--continuous', action='store_true', help='持续收音、增量播报与插话；当前使用内置麦克风和扬声器')
+    parser.add_argument('--continuous', action='store_true', help='持续收音、增量播报与插话；用 --device / --output-device 选择设备')
     parser.add_argument('--extended-silence-ms', type=int, default=1600, help='连续模式下未完句的最长停顿等待')
     parser.add_argument('--tts-url', default=load_settings()['url'])
     parser.add_argument('--audio', type=Path, action='append', help='测试文件，一次一个自然发言；可重复提供多轮')
@@ -149,6 +150,17 @@ def main():
         parser.error('延长停顿必须不小于普通停顿，且不超过 3000 ms。')
     key = ''
     try:
+        if args.list_devices:
+            from audio_bridge import check_native
+            info = asyncio.run(check_native(list_devices=True))
+            for device in info['devices']:
+                directions = []
+                if device['input_channels']:
+                    directions.append('输入' + ('（默认）' if device['id'] == info['default_input'] else ''))
+                if device['output_channels']:
+                    directions.append('输出' + ('（默认）' if device['id'] == info['default_output'] else ''))
+                if directions: print(f"{device['name']} | {' / '.join(directions)}")
+            return
         key = load_key()
         if args.output_dir:
             args.output_dir.mkdir(parents=True, exist_ok=False, mode=0o700)

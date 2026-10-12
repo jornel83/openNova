@@ -4,9 +4,21 @@ import sys
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from audio_bridge import NativeAudio
+from unittest.mock import AsyncMock, patch
 
 
 class NativeProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_selected_devices_are_passed_to_helper_as_separate_arguments(self):
+        audio = NativeAudio(device='MacBook Air 麦克风', output_device='SRS-XB100')
+        async def ready():
+            audio.deliver({'type':'ready', 'voice_processing':True})
+        audio._read = ready
+        with patch('audio_bridge.build_helper', AsyncMock(return_value=Path('/test/audio'))), \
+             patch('audio_bridge.asyncio.create_subprocess_exec', AsyncMock()) as spawn:
+            await audio.start()
+            self.assertEqual(spawn.call_args.args,
+                ('/test/audio', '--device', 'MacBook Air 麦克风', '--output-device', 'SRS-XB100'))
+
     async def test_clear_rejects_late_pcm_and_waiter_wakes(self):
         audio = NativeAudio()
         audio.generation = 1
@@ -43,3 +55,24 @@ class NativeProtocolTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, '设备'):
             await asyncio.wait_for(waiting, 1)
         self.assertIsInstance(await audio.input.get(), Exception)
+
+    async def test_startup_error_survives_helper_exit(self):
+        audio = NativeAudio()
+        audio.ready = asyncio.get_running_loop().create_future()
+        audio.deliver({'type':'error', 'code':'audio_engine_start_failed',
+                       'system_code':-10875, 'detail':'untrusted native error detail'})
+        original = audio.error
+        audio.deliver({'type':'error', 'code':'audio_closed'})
+        with self.assertRaisesRegex(ValueError, '音频引擎启动失败.*-10875'):
+            await audio.ready
+        self.assertIs(audio.error, original)
+        self.assertIs(await audio.input.get(), original)
+        self.assertNotIn('/retry', str(original))
+        self.assertNotIn('untrusted', str(original))
+
+    async def test_startup_error_only_displays_numeric_system_code(self):
+        audio = NativeAudio()
+        audio.deliver({'type':'error', 'code':'audio_engine_start_failed',
+                       'system_code':'arbitrary diagnostic text'})
+        self.assertIn('音频引擎启动失败', str(audio.error))
+        self.assertNotIn('arbitrary', str(audio.error))

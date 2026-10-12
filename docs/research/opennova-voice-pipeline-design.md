@@ -6,7 +6,9 @@ OpenNova 的语音部署方向为本地音频处理、云端 ASR、Studio 常驻
 
 已确定 DeepSeek Harness、GPT-6.1 Sol，以及当前默认 TTS **Qwen3-TTS-12Hz-1.7B-CustomVoice / Vivian**，语气保持温柔自然。ASR 采用豆包流式语音识别模型 2.0 的实时双向流式接口，本地 ASR 暂不推进。Base 保留为后续自定义声音克隆路线；现有约 20 分钟录音可供后续验证，不阻塞 Vivian 接入。
 
-本地 TTS 已部署在 Mac Studio，使用 MLX-Audio；Spark 留作后续训练与实验，不作为实时语音链路依赖。实施顺序见 [MVP 开发环境部署方案](opennova-mvp-development-deployment.md)。下图表示目标链路与备选关系；当前终端 Demo 先在 Air 运行 VAD、ASR 适配与 Harness，复用本机独立授权，Studio 合成 Vivian。Demo 采用轮流说话，关闭思考及播报期间的拾音；Studio 常驻会话管理、插话与回声消除尚未实现。
+本地 TTS 已部署在 Mac Studio，使用 MLX-Audio；Spark 留作后续训练与实验，不作为实时语音链路依赖。实施顺序见 [MVP 开发环境部署方案](opennova-mvp-development-deployment.md)。当前终端 Demo 在 Air 运行原生 Voice Processing、VAD、ASR 适配与 Harness，复用本机独立授权，Studio 合成 Vivian。`--continuous` 模式持续拾音并支持增量播报、候选暂停、确认插话后取消旧输出，以及内置 / 蓝牙设备选择；无此参数时保留原轮流模式。原生启动、PCM 采集与静音播放已通过，AEC 声学效果、真人插话完整性和 Studio GPU 停算仍待验证。
+
+**下文架构与模块职责描述目标链路，不代表全部已部署。** Studio 常驻会话服务、工作任务、长期记忆和多设备接入仍待实现；当前代码边界与运行命令以 [语音对话 Demo](../../tools/voice/README.md) 为准。
 
 ## 1 部署与模块职责
 

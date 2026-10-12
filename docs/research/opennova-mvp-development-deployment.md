@@ -1,10 +1,10 @@
 # OpenNova MVP 开发环境部署方案
 
-日期：2026-10-12。状态：已有 VAD → 豆包 ASR → Harness / GPT-6.1 Sol → Vivian 闭环。新增的持续交流模式已实现并通过真实两轮文件链路、同会话生成取消与自动化回归；Air 原生 Voice Processing 音频桥已编译并完成无录音设备检查。**内置麦克风 / 扬声器下的 AEC、现场插话与听感尚未验证。** Studio 常驻 Agent 与 MVP 主服务尚未部署。
+日期：2026-10-12。状态：已有 VAD → 豆包 ASR → Harness / GPT-6.1 Sol → Vivian 闭环。持续交流模式已实现并通过真实两轮文件链路、同会话生成取消与自动化回归；Air 原生 Voice Processing 音频桥已完成内置组合、SRS-XB100 组合及内置麦克风配蓝牙输出的实际启动、PCM 采集和静音播放检查。**外放 AEC、现场插话完整性与听感尚未完成专项验证。** Studio 常驻 Agent 与 MVP 主服务尚未部署。
 
 当前可运行的终端 Demo 见 [语音对话说明](../../tools/voice/README.md)：Air 承担原生音频、VAD、ASR 适配、Harness 和独立授权，Studio 承担 Vivian 推理，Air 以 1.5 倍速播放。传入 `--continuous` 启用持续交流，原轮流模式保留。该安排复用 Air 已可用的 Keychain；下文 Studio 常驻架构仍是目标部署。当前 Harness 实测为 Air 已构建提交 `ddefc45fbc7f8e46dd73185e68295696d1297887`，区别于早期选型基线，不修改其上游源码。
 
-本轮完成持续收音与 800 / 1600 ms 两档停顿、ASR 修订与最终结果隔离、模型增量分句、有限 TTS / 播放缓存、候选暂停与确认打断、旧输出过滤，以及静音、停止、结束 / 开始、音频重连。实现与运行限制见 [已确认技术设计](../superpowers/specs/2026-10-12-voice-interaction-design.md) 和语音说明。下一步先用 Air 内置设备完成现场样例，再按测量结果调整 VAD、回声处理和跨句衔接。Studio HTTP 断流后的 GPU 释放没有确认信号，仍列为待测，不视为已完成服务端取消。
+本轮完成持续收音与 800 / 1600 ms 两档停顿、ASR 修订与最终结果隔离、模型增量分句、有限 TTS / 播放缓存、候选暂停与确认打断、旧输出过滤，以及静音、停止、结束 / 开始、音频重连。另修复原生音频启动格式不匹配，加入进程内输入 / 输出设备选择。实现与运行限制见 [已确认技术设计](../superpowers/specs/2026-10-12-voice-interaction-design.md) 和语音说明。当前先收好开发基线；咳嗽误触发按用户决定暂不优化。Studio HTTP 断流后的 GPU 释放没有确认信号，仍列为待测，不视为已完成服务端取消。
 
 采用 **Air 交互与开发、Mac Studio 常驻 Agent 服务和本地 TTS、云端 ASR 与 LLM** 的部署方式。DGX Spark 保留为后续训练与实验节点，日常语音交流不依赖 Spark 在线。
 
@@ -53,7 +53,7 @@
 | MLX / TTS | 已建立 Python 3.12.14 隔离环境并下载固定 BF16 模型；真实合成、回环 HTTP 服务与 Air 取回音频通过 | Vivian 流式回传已通过；继续验证现场播放与插话 |
 | 云端服务 | 豆包 ASR 已完成真实 API 与蓝牙麦克风试音；Air 独立订阅授权与 GPT-6.1 Sol 真实推理通过 | Studio 独立授权仍待完成 |
 
-Air 上本轮 PRD 与研究文档仍有未跟踪文件，Studio 的现有检出并不包含这些本地修改。同步前应明确纳入版本管理的文件；模型、录音、凭据与运行日志独立保存。
+PRD 与研究文档现已纳入版本管理。上表仓库提交为历史检查快照；Air 与 Studio 同步前仍需核对各自分支、提交和工作区，不假定两端已同步。模型、录音、凭据与运行日志独立保存。
 
 ## 3 技术组件与版本基线
 
@@ -105,7 +105,7 @@ Vivian 沿用本次温柔、自然、放松的聊天语气，继续覆盖工作�
 
 ASR 已确定采用豆包流式语音识别模型 2.0，使用实时双向流式接口，接收中间和最终转写。先验证账号开通、实际模型/资源配置、中文术语、停顿改口、延迟和用量；Qwen 保留为备选，不阻塞首轮实施。依据见 [ASR 选型记录](opennova-asr-tts-selection.md)。
 
-Air 当前采用 Swift AVAudioEngine 统一采集和播放，启用系统 Voice Processing；Python 使用 Silero ONNX 做 VAD，单声道 16kHz PCM 上行，保留 300 ms 前置缓存。Vivian 24kHz PCM 在同一音频引擎播放，模型增量文本经分句后合成。本版先支持系统默认内置输入、输出；浏览器 AudioWorklet 属于后续界面路径。[Silero VAD](https://github.com/snakers4/silero-vad)
+Air 当前采用 Swift AVAudioEngine 统一采集和播放，启用系统 Voice Processing；Python 使用 Silero ONNX 做 VAD，单声道 16kHz PCM 上行，保留 300 ms 前置缓存。Vivian 24kHz PCM 在同一音频引擎播放，模型增量文本经分句后合成。使用 `--device` / `--output-device` 选择输入 / 输出，省略参数则使用系统默认；不修改系统全局路由。已验证内置设备、SRS-XB100，以及内置麦克风配 SRS-XB100 输出的启动与静音播放。设备变更后可 `/retry`，完整蓝牙兼容矩阵和真实热插拔仍待验证；浏览器 AudioWorklet 属于后续界面路径。[Silero VAD](https://github.com/snakers4/silero-vad)
 
 本版由用户明确启动和结束交流，期间持续拾音并支持候选暂停与确认插话。设备指向判断、锁屏后台驻留、蓝牙设备矩阵和全天免唤醒仍未完成；Voice Processing 接口启用不等于 AEC 声学效果通过。
 
@@ -117,7 +117,7 @@ Air 当前采用 Swift AVAudioEngine 统一采集和播放，启用系统 Voice 
 ~/Documents/project/
 ├── openNova/                       # 已有仓库：承载文档与后续应用代码
 │   ├── apps/                      # 拟新增：服务与交互界面
-│   ├── services/tts/               # 拟新增：TTS 环境定义与适配
+│   ├── services/tts/               # 已有：TTS 环境定义与适配
 │   ├── packages/                  # 拟新增：协议、Harness 插件
 │   └── docs/
 └── deepseek-harness/               # 拟新增：独立上游源码检出，固定提交
@@ -134,7 +134,7 @@ Air 当前采用 Swift AVAudioEngine 统一采集和播放，启用系统 Voice 
 
 `openNova` 保存自己的插件和服务适配；Harness 独立检出便于跟踪上游变更。起步时可通过明确记录的本地工作区依赖开发，后续固定打包版本。若必须修改 Harness 核心，单独记录补丁及原因。
 
-建议在 Air 操作编辑器、主要代码构建与任务执行放在 Studio 的同一开发检出中；两台机器各自有独立修改时，通过明确提交与分支同步。当前文档未提交部分需要先整理，不能仅靠一次拉取假定已同步。
+目标部署建议在 Air 操作编辑器、主要任务执行放在 Studio；当前 Demo 的开发与 Harness 仍在 Air。两台机器各自有独立修改时，通过明确提交与分支同步，不能仅靠一次拉取假定运行环境已同步。
 
 代码、依赖锁文件与非敏感配置模板进入 Git。参考录音、模型、凭据、数据库、日志和生成音频放在运行目录；音色配置中的非敏感参数可另存模板。重要声音素材、会话状态和实验结果需独立备份。遵循 infra 的 [数据位置约定](https://github.com/jornel83/infra/blob/main/docs/architecture.md)，内部存储优先于外接交换盘。
 
@@ -145,10 +145,10 @@ Air 当前采用 Swift AVAudioEngine 统一采集和播放，启用系统 Voice 
 | 服务 | 计划监听地址 | 使用方式 |
 | --- | --- | --- |
 | OpenNova 接入服务 | Studio `127.0.0.1:8787` | 承载界面静态文件、API 与语音 WebSocket；需要开发 |
-| MLX-Audio TTS | Studio `127.0.0.1:8000` | 仅供 OpenNova 服务调用 |
+| MLX-Audio TTS | Studio `127.0.0.1:8000` | 当前供 Air CLI 经 SSH 转发至 `127.0.0.1:18000` 调用；后续接入常驻服务 |
 | Harness 原生 Web | Studio `127.0.0.1:3080` | 首轮文字链路验证及开发排查使用 |
 
-本次 Studio 监听快照未见上述端口占用，启动前仍需检查。Harness Web 的默认端口来自 [上游运行说明](https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/README.md)；8787 是 OpenNova 的拟定端口。
+TTS 已使用 8000 端口，已有服务时勿重复启动；8787 和 3080 属于后续部署，启动前检查占用。Harness Web 的默认端口来自 [上游运行说明](https://github.com/deepseek-ai/deepseek-harness/blob/d743267388641bc76f17c45ce8b4c231aed1d32c/README.md)；8787 是 OpenNova 的拟定端口。
 
 开发期建议通过现有 SSH 连接转发服务。对应 Studio 服务启动后，可在 Air 执行：
 
@@ -224,4 +224,4 @@ TTS 长句持续生成的 RTF 应小于 1，才有持续实时播放的基础；
 
 Vivian 接入无需真人参考录音。当前终端 Demo 已完成 LLM 接入、Harness 会话与文件输入语音闭环，豆包 ASR 账号与实时接口也已通过独立验证。
 
-下一步先用 MacBook Air 内置麦克风和扬声器现场验证持续交流：外放不自触发、用户插话及时停声、开头不丢字，以及静音 / 重连。之后再推进工具调用和 Studio 常驻迁移。新连续模式两轮记录见 `output/voice/continuous-real-04/conversation.json`；六句增量合成记录见 `output/voice/continuous-long-01/conversation.json`。原轮流模式记录继续保留，不以任何文件测试代替真人外放验证。
+当前版本收尾验证与命令集中在 [Demo 运行说明](../../tools/voice/README.md)。下一轮仍需用内置和蓝牙设备检查外放自触发、插话及时停声、开头不丢字与真实设备重连；咳嗽误触发优化暂缓。后续工程方向为统一启动 / 网络诊断，以及首个 Agent 工作协同闭环，Studio 常驻迁移另行推进。连续模式两轮记录见 `output/voice/continuous-real-04/conversation.json`；六句增量合成记录见 `output/voice/continuous-long-01/conversation.json`。不以文件测试或静音播放代替真人外放验证。

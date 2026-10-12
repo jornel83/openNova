@@ -51,23 +51,6 @@ final class CaptureRing {
     }
 }
 
-func property<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, initial: T) -> T {
-    var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-    var result = initial
-    var size = UInt32(MemoryLayout<T>.size)
-    let status = withUnsafeMutablePointer(to: &result) {
-        AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0)
-    }
-    return status == noErr ? result : initial
-}
-
-func deviceInfo(_ selector: AudioObjectPropertySelector) -> (AudioObjectID, String, Bool) {
-    let id: AudioObjectID = property(AudioObjectID(kAudioObjectSystemObject), selector, initial: 0)
-    let name: CFString = property(id, kAudioObjectPropertyName, initial: "unknown" as CFString)
-    let transport: UInt32 = property(id, kAudioDevicePropertyTransportType, initial: 0)
-    return (id, name as String, transport == kAudioDeviceTransportTypeBuiltIn)
-}
-
 func emit(_ value: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }
     FileHandle.standardOutput.write(data)
@@ -91,14 +74,47 @@ final class AudioBridge {
     var alive = true
     var checkTick = 0
     var hasTap = false
+    let options: DeviceOptions
+    let inputDevice: AudioDevice
+    let outputDevice: AudioDevice
+
+    init(options: DeviceOptions, input: AudioDevice, output: AudioDevice) {
+        self.options = options; inputDevice = input; outputDevice = output
+    }
+
+    func selectHardware(_ node: AVAudioIONode, bus: UInt32, id: AudioObjectID) throws {
+        guard let unit = node.audioUnit else { throw NSError(domain: "audio_device_selection_failed", code: 1) }
+        var device = id
+        let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global, bus, &device, UInt32(MemoryLayout<AudioObjectID>.size))
+        guard status == noErr else { throw NSError(domain: "audio_device_selection_failed", code: Int(status)) }
+    }
+
+    func currentDevice(_ node: AVAudioIONode, bus: UInt32) -> AudioObjectID {
+        guard let unit = node.audioUnit else { return 0 }
+        var id: AudioObjectID = 0
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global, bus, &id, &size)
+        return status == noErr ? id : 0
+    }
+
+    func routeMatches() -> Bool {
+        currentDevice(engine.inputNode, bus: 1) == inputID &&
+        currentDevice(engine.outputNode, bus: 0) == outputID
+    }
 
     func start() throws {
-        let input = deviceInfo(kAudioHardwarePropertyDefaultInputDevice)
-        let output = deviceInfo(kAudioHardwarePropertyDefaultOutputDevice)
-        guard input.2 && output.2 else { throw NSError(domain: "builtin_route_required", code: 1) }
-        inputID = input.0; outputID = output.0
-        try engine.inputNode.setVoiceProcessingEnabled(true)
+        inputID = inputDevice.id; outputID = outputDevice.id
+        do { try engine.inputNode.setVoiceProcessingEnabled(true) }
+        catch { throw NSError(domain: "voice_processing_unavailable", code: (error as NSError).code) }
         guard engine.inputNode.isVoiceProcessingEnabled else { throw NSError(domain: "voice_processing_unavailable", code: 1) }
+        // Select on the Voice Processing unit after enabling it, before prepare/start.
+        // VPIO has separate input (1) and output (0) buses. This is process-local;
+        // setting the ordinary output unit before enabling VPIO rejects input-only devices.
+        try selectHardware(engine.outputNode, bus: 0, id: outputID)
+        try selectHardware(engine.inputNode, bus: 1, id: inputID)
+        guard routeMatches() else { throw NSError(domain: "audio_device_selection_failed", code: 1) }
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
         let hardware = engine.inputNode.outputFormat(forBus: 0)
@@ -106,23 +122,28 @@ final class AudioBridge {
             throw NSError(domain: "input_format_unavailable", code: 1)
         }
         sourceFormat = AVAudioFormat(standardFormatWithSampleRate: hardware.sampleRate, channels: 1)!
+        // Voice Processing requires matching capture/playback client formats.
+        // The mixer converts 24 kHz TTS to this format; the capture converter
+        // separately produces 16 kHz ASR PCM. Never monitor the mic to speakers.
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: sourceFormat)
         captureFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
         converter = AVAudioConverter(from: sourceFormat, to: captureFormat)
         guard converter != nil else { throw NSError(domain: "capture_converter_unavailable", code: 1) }
         let ring = self.ring
-        engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardware) { buffer, _ in
+        engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: sourceFormat) { buffer, _ in
             guard let data = buffer.floatChannelData?[0] else { return }
             ring.push(data, count: Int(buffer.frameLength), stride: buffer.format.isInterleaved ? Int(buffer.format.channelCount) : 1)
         }
         hasTap = true
         engine.prepare()
-        try engine.start()
+        do { try engine.start() }
+        catch { throw NSError(domain: "audio_engine_start_failed", code: (error as NSError).code) }
         player.play()
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now(), repeating: .milliseconds(10))
         timer.setEventHandler { [weak self] in self?.drainCapture() }
         timer.resume(); self.timer = timer
-        emit(["type":"ready", "voice_processing":true, "input":input.1, "output":output.1, "sample_rate":16000])
+        emit(["type":"ready", "voice_processing":true, "input":inputDevice.name, "output":outputDevice.name, "sample_rate":16000])
     }
 
     func fail(_ code: String) {
@@ -138,8 +159,11 @@ final class AudioBridge {
         if ring.overflow.load(ordering: .acquiring) { fail("capture_overflow"); return }
         checkTick += 1
         if checkTick % 100 == 0 {
-            if deviceInfo(kAudioHardwarePropertyDefaultInputDevice).0 != inputID ||
-               deviceInfo(kAudioHardwarePropertyDefaultOutputDevice).0 != outputID || !engine.isRunning {
+            let inputAlive: UInt32 = property(inputID, kAudioDevicePropertyDeviceIsAlive, initial: 0)
+            let outputAlive: UInt32 = property(outputID, kAudioDevicePropertyDeviceIsAlive, initial: 0)
+            if (options.input == nil && defaultDevice(true) != inputID) ||
+               (options.output == nil && defaultDevice(false) != outputID) ||
+               inputAlive == 0 || outputAlive == 0 || !engine.isRunning || !routeMatches() {
                 fail("audio_route_changed"); return
             }
         }
@@ -229,17 +253,32 @@ final class AudioBridge {
 @main struct Main {
     static func main() {
         guard #available(macOS 15.0, *) else { emit(["type":"error", "code":"macos_15_required"]); exit(1) }
-        if CommandLine.arguments.contains("--check") {
-            let input = deviceInfo(kAudioHardwarePropertyDefaultInputDevice)
-            let output = deviceInfo(kAudioHardwarePropertyDefaultOutputDevice)
-            emit(["type":"check", "input":input.1, "output":output.1, "builtin_route":input.2 && output.2,
+        let options: DeviceOptions
+        let input: AudioDevice
+        let output: AudioDevice
+        do {
+            options = try DeviceOptions(Array(CommandLine.arguments.dropFirst()))
+            if options.list {
+                emit(["type":"devices", "devices":audioDevices().map { $0.json },
+                      "default_input":defaultDevice(true), "default_output":defaultDevice(false)])
+                return
+            }
+            (input, output) = try options.resolve()
+        } catch { emit(["type":"error", "code":(error as NSError).domain]); exit(1) }
+        if options.check {
+            emit(["type":"check", "input":input.name, "output":output.name,
+                  "builtin_route":input.builtin && output.builtin,
                   "authorization":AVCaptureDevice.authorizationStatus(for: .audio).rawValue, "capture_started":false])
             return
         }
-        let bridge = AudioBridge()
+        let bridge = AudioBridge(options: options, input: input, output: output)
         let start = {
             do { try bridge.start() }
-            catch { emit(["type":"error", "code":(error as NSError).domain]); exit(1) }
+            catch {
+                let failure = error as NSError
+                emit(["type":"error", "code":failure.domain, "system_code":failure.code])
+                bridge.shutdown(); exit(1)
+            }
         }
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: start()

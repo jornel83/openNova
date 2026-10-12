@@ -1,4 +1,6 @@
 #!/bin/zsh
+# Append --device '麦克风名称' and optionally --output-device '扬声器名称'.
+# Omitted devices follow system defaults; --list-devices lists available names.
 set -eu
 project_dir="${0:A:h:h:h}"
 cd "$project_dir"

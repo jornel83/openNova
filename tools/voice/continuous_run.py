@@ -39,7 +39,7 @@ async def run(args, key):
         # This mode stores metrics/text only, never microphone PCM.
         print('本次仅保存文字和时序报告，不保存原始收音。',flush=True)
     agent = StreamingAgent()
-    audio = FileAudio() if args.audio else NativeAudio()
+    audio = FileAudio() if args.audio else NativeAudio(device=args.device, output_device=args.output_device)
     owned_audio = {audio}
     owned_agents = {agent}
     tasks = set()
@@ -76,7 +76,7 @@ async def run(args, key):
         with suppress(Exception): await controller.audio.capture(False,controller.epoch)
         log(message)
     async def new_audio():
-        new = NativeAudio()
+        new = NativeAudio(device=args.device, output_device=args.output_device)
         owned_audio.add(new)
         new_agent = None
         published = False
@@ -102,13 +102,11 @@ async def run(args, key):
                     owned_agents.discard(new_agent)
     try:
         log('正在检查流式 Agent、Vivian 和原生音频……')
-        await asyncio.to_thread(preflight,args)
         if not args.audio:
-            info = await check_native()
-            for requested, actual in ((args.device,info['input']),(args.output_device,info['output'])):
-                if requested and requested.replace(' ','') != actual.replace(' ',''):
-                    raise ValueError('连续模式使用系统默认内置输入、输出；指定名称与当前默认设备不一致。')
+            info = await check_native(device=args.device, output_device=args.output_device)
             report['audio_check'] = info
+            log(f"设备选择：{info['input']} → {info['output']}")
+        await asyncio.to_thread(preflight,args)
         ready = await agent.start()
         report['session_id'] = ready['sessionId']
         detector = SileroOnnx()
