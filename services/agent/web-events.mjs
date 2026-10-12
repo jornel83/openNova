@@ -1,4 +1,5 @@
 import {toSpeechText} from './speech-text.mjs';
+import {mapWebLinks} from './web-links.mjs';
 function canonical(raw) {
   try {const u=new URL(raw);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||raw.length>2048)return;
     if(u.hostname==='localhost'||u.hostname==='127.0.0.1'||u.hostname==='[::1]')return;
@@ -44,8 +45,8 @@ export function projectWebReply(original,book) {
   if(typeof original!=='string'||original.length>16000)throw Error('response_too_large');
   const selected=new Map();
   const accept=raw=>{const s=book.known.get(canonical(raw));if(s)selected.set(s.id,s);return s;};
-  let text=original.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(_,label,url)=>accept(url)?`[${label}](${url})`:label);
-  text=text.replace(/https?:\/\/[^\s<>\[\](，。！？；、）)]+/g,url=>accept(url)?url:'');
+  const bare=url=>accept(url)?url:'';
+  let text=mapWebLinks(original,{bare,markdown:(label,url)=>accept(url)?`[${label}](${url})`:mapWebLinks(label,{bare})});
   // Native tools cite URLs; ungrounded numeric markers cannot be assigned by guessing.
   text=text.replace(/\[\d+(?:\s*[,，-]\s*\d+)*\]/g,'');
   const speechText=toSpeechText(text);

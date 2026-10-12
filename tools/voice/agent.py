@@ -27,6 +27,7 @@ def failure_message(event):
         'invalid_web_configuration':'联网配置格式有误，请参考 config/voice.example.json。',
         'siwc_tools_extension_missing':'请先运行 python3.11 tools/setup/bootstrap.py --install --web。',
         'agent_timeout':'本轮已超过 90 秒，请重试或缩小问题范围。',
+        'web_time_budget':'本轮检索已达到时间预算，请缩小问题范围后重试。',
         'model_budget_exceeded':'本轮工具推理步骤已达上限，请缩小问题范围。',
     }
     status = event.get('status')

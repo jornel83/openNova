@@ -6,8 +6,14 @@ import unittest
 from unittest.mock import AsyncMock,patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from stream_agent import StreamingAgent
+from agent import failure_message
 
 class AgentTests(unittest.IsolatedAsyncioTestCase):
+    def test_retrieval_timeout_explains_the_budget_instead_of_a_service_fault(self):
+        message=failure_message({'code':'web_time_budget','stage':'conversation'})
+        self.assertIn('检索',message)
+        self.assertIn('时间预算',message)
+        self.assertNotIn('依赖',message)
     async def test_web_flag_and_ready_mode_are_preserved(self):
         agent=StreamingAgent(web=True)
         stdout=asyncio.StreamReader();stdout.feed_data(b'{"type":"ready","outputMode":"settled-answer"}\n')

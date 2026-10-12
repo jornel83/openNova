@@ -8,7 +8,7 @@ export function apply(ctx,{budget,current,onStatus=()=>{},onResult=()=>{},onFail
     try {budget.claimModel(r.id);}catch(e){onFailure(r,e.message);throw e;}
     r.step=step;
     if(!r.abortListener) {
-      r.abortListener=()=>{onFailure(r,'agent_timeout');agent.cancel({kind:'user'});};
+      r.abortListener=()=>{onFailure(r,r.signal.reason?.message==='web_time_budget'?'web_time_budget':'agent_timeout');agent.cancel({kind:'user'});};
       r.signal.addEventListener('abort',r.abortListener,{once:true});
     }
     onStatus(r,'answering');return next();

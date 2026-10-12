@@ -7,6 +7,24 @@ test('web mode suppresses every attempt delta; legacy still streams',()=>{
  for(const attemptId of ['one','two','three']){c.frame(agent,{type:'start',attemptId});c.frame(agent,{type:'chunk',attemptId,chunk:{type:'text-delta',text:'工具前说明'}});}
  assert.equal(events.length,0);c.finish();
 });
+test('verified bare URLs retain citations beside sentence punctuation',()=>{
+ const b=new SourceBook();b.add([source]);
+ for(const suffix of ['.',',',';',':','!','?']) {
+  const text=`See https://example.com/report${suffix}`;
+  const r=projectWebReply(text,b);assert.equal(r.text,text);assert.equal(r.sources[0]?.url,source.url);
+  assert.equal(r.speechText,`See ${suffix}`);
+ }
+ const r=projectWebReply('See (https://example.com/report).',b);
+ assert.equal(r.text,'See (https://example.com/report).');assert.equal(r.sources.length,1);
+ assert.equal(projectWebReply('Ignore https://invented.example/report.',b).text,'Ignore .');
+});
+test('balanced parentheses remain in verified Markdown and bare URL destinations',()=>{
+ const url='https://en.wikipedia.org/wiki/Transformer_(deep_learning)',b=new SourceBook();b.add([{url}]);
+ const text=`Read [Transformer](${url}).`;
+ const r=projectWebReply(text,b);assert.equal(r.text,text);assert.equal(r.sources[0]?.url,url);assert.equal(r.speechText,'Read Transformer.');
+ const bare=projectWebReply(`See (${url}).`,b);assert.equal(bare.sources[0]?.url,url);assert.equal(bare.text,`See (${url}).`);
+ assert.equal(projectWebReply(`See [${url}](${url}).`,b).speechText,'See en.wikipedia.org.');
+});
 test('only structured successful results become sources; old or cancelled requests stay silent',()=>{
  const events=[],book=new SourceBook();let current={id:1};const e=new WebEvents({book,current:()=>current,send:v=>events.push(v)});
  const old=current;e.result(old,{name:'web_search'},{meta:{sources:[source]},isError:false});assert.equal(book.items().length,1);

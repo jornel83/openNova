@@ -26,7 +26,7 @@ try {
     for(const s of e.sources??[])console.log(`来源 ${s.id}：${s.title}\n${s.url}`);
    }).catch(e=>console.error(`对话失败：${e.message}`)).finally(()=>{task=undefined;});
   });
-  await new Promise(r=>lines.once('close',r));await task;
+  await new Promise(r=>lines.once('close',r));
  }
 }catch(e){console.error(`启动失败：${e.message}`);process.exitCode=1;}
-finally{await client.close();}
+finally{client.cancel();await client.close();await task;}
