@@ -2,6 +2,8 @@
 
 日期：2026-10-13。代码范围：订阅工具协议、Harness Web 工具、文字入口、持续语音联网模式及回归。**真实网页读取与语音文件闭环已经通过；Exa 搜索仍缺本机密钥，不能视为真实搜索已验收。**
 
+已集成至原项目的 `codex/voice-vad-tts` 本地分支，功能修复提交 `de89bf0`，未推送远程。原有 Harness 升级与计划已单独保存在 `3159412`；无关 `skills/`、`tools/video/` 保持原样。原路径已重新构建并检查工具扩展，155 项测试再次通过；`integrated-fetch.json` 记录了集成后的真实读取 → 来源答复，耗时 9.189 秒，未调用搜索。开发决策、审查与 RED→GREEN 记录保存在本机 [开发审计](../../output/agent/web-verification/development-audit/progress.md)。
+
 ## 四个里程碑
 
 | 里程碑 | 已实现与验证 | 剩余验收 |
