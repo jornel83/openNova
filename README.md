@@ -2,7 +2,25 @@
 
 OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI 超级助手。本仓库保存产品定义、技术预研与开发实现。
 
-当前开发基线为 **持续语音 Demo（2026-10-12）**：本地 VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Qwen3-TTS Vivian，采用 1.5 倍保调语速。持续模式已实现边听边说、增量分句合成、候选插话暂停与确认打断，以及输入 / 输出设备选择；原轮流模式保留。用户已确认原有完整对话可运行，持续模式的外放回声和插话听感仍需现场验证。
+当前桌面开发版（2026-10-19，`codex/desktop-browser-m0`）已接入 **工作窗口 + 深空 Nova 对话窗口 + 原生持续语音**。语音链路为本地 VAD → 豆包 ASR → DeepSeek-Bot / Harness / GPT → Studio Vivian 或豆包 VV。文字与语音共享会话、工作引用和执行记录。
+
+## 一键启动
+
+完成本机配置与依赖安装后，在本仓库执行：
+
+```sh
+./start.command --ui --tts-provider studio --device 'SRS-XB100' --output-device 'SRS-XB100'
+# 办公室 / 不连接 Studio
+./start.command --ui --tts-provider doubao --device 'MacBook Air麦克风' --output-device '外置耳机'
+./start.command --list-devices
+./start.command --check --tts-provider doubao
+```
+
+`--ui` 按 Bot → Chrome 扩展及双窗口 → TTS → 原生语音的顺序启动。默认 `--no-ui` 保留终端模式。省略设备参数使用系统默认设备；设备名以 `--list-devices` 为准。`--check` 和设备列表均不开窗或收音。
+
+首次在 Chrome 加载 `extensions/browser` 并按终端提示配对；已配对后自动复用窗口。扩展尚未连接时打开普通文字入口，文字、语音和本地文件仍可使用。TTS / 音频失败不会关闭文字入口；重复 `--ui` 不重复开麦克风，不改变已有窗口布局。终端 `/quit` 或 Ctrl+C 只清理本次语音与 SSH 转发，保留 Bot、浏览器及文件应用。
+
+隔离开发版使用独立数据目录和 18564 端口，不能直接复用日常工作区的 Bot。当前机器的一键命令、首次扩展设置和验收边界见 [M4 启动说明](docs/research/opennova-desktop-interaction-test-cases.md#m4一键启动与双窗口)。
 
 ## 工程结构
 
@@ -107,7 +125,7 @@ node --test services/agent/tests/*.test.mjs
 
 完整链路可向持续模式入口传入 `--audio <一次自然发言.wav> --no-play`，可重复 `--audio` 验证多轮上下文；文件最长 60 秒，单次连续发言应小于 45 秒，尾部保留至少 2 秒静音。显式传 `--output-dir output/voice/<新目录>` 时，持续模式只保存文字与时序 JSON，原轮流模式另保存回复 WAV。Harness 文字会话保存在 `~/.local/share/opennova/harness-home/sessions/`；重新启动 Demo 会新建模型会话。
 
-目前支持当前进程内的多轮文字上下文与 Vivian 固定音色。已接入系统 Voice Processing 和打断流程，声学效果仍待验证；Studio GPU 停算未获得确认。工作工具执行、长期记忆、视觉输入、硬件集成与服务自动恢复尚未完成。Base 真人声音克隆作为独立实验保留，当前对话默认使用 CustomVoice / Vivian。此版本可作为后续 MVP 开发起点，尚未覆盖完整 PRD。
+目前支持当前进程内的多轮文字上下文与 Vivian 固定音色。已接入系统 Voice Processing 和打断流程，声学效果仍待验证；Studio GPU 停算未获得确认。Bot 已接入工程文件、Shell 与基础持续记忆；视觉输入、硬件集成、完善的记忆管理和生产级服务自动恢复仍未完成。Base 真人声音克隆作为独立实验保留，当前对话默认使用 CustomVoice / Vivian。此版本可作为后续 MVP 开发起点，尚未覆盖完整 PRD。
 
 已知限制：蓝牙音频进程刚启动即被终止后，立即重建可能报告路由变化；等待几秒再 `/retry` 的复测已通过。具体结果和其余待测项见[版本收尾记录](tools/voice/README.md#版本收尾验证2026-10-12)。
 

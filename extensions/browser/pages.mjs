@@ -88,7 +88,7 @@ export function createPageAdapter({chrome,windows,publish}){
     return {...receipt,page:undefined,pagePending:true};
     }finally{if(command.method==='click')windows.clearPopup?.(command.id);}
    }
-   if(command.method==='windows.ensure'){const result=await windows.ensureWindows({chatUrl:base+'/',...command.args});navigation=null;await this.refresh({activate:true});return {status:'completed',windows:result};}
+   if(command.method==='windows.ensure'){const result=await windows.ensureWindows({chatUrl:base+'/',...command.args});navigation=null;await this.refresh({activate:command.args?.activate===true});return {status:'completed',windows:result};}
    if(command.method==='read')return serial(()=>{check();return read(command.page);});
    if(command.method==='open'){
     const url=new URL(command.args.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('invalid_url');

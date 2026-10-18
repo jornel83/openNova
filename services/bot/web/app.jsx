@@ -25,6 +25,7 @@ const storage={get(){try{return JSON.parse(sessionStorage.getItem('opennova.web.
 
 function App(){
   const [snapshot,setSnapshot]=useState(null),[online,setOnline]=useState(false),[draft,setDraft]=useState(savedDraft),[error,setError]=useState(''),[sending,setSending]=useState(false),[limit,setLimit]=useState(50),[outbox,setOutbox]=useState(storage.get);
+  const [openingWork,setOpeningWork]=useState(false);
   const [voicePending,setVoicePending]=useState(false),[lastControl,setLastControl]=useState(null);
   const inflight=useRef(false),outgoing=useRef(outbox),count=useRef(0),applied=useRef(0),scroll=useRef(),stick=useRef(true),input=useRef();
   const setOutgoing=value=>{outgoing.current=value;storage.set(value);setOutbox(value);};
@@ -74,6 +75,11 @@ function App(){
     catch(e){setError(errorText(e));if(e.code&&e.code!=='network')setOutgoing(null);}
     finally{inflight.current=false;setSending(false);input.current?.focus();}
   }
+  async function openWork(){
+    setOpeningWork(true);setError('');
+    try{const result=await api.call('desktop-open');if(result.status!=='completed')throw Error(result.error||'browser_open_unknown');await refresh();}
+    catch(e){setError(errorText(e));}finally{setOpeningWork(false);}
+  }
   async function reopen(fileId){
     setError('');try{await api.call('document-open',{id:crypto.randomUUID(),fileId});await refresh();}catch(e){setError(errorText(e));}
   }
@@ -98,7 +104,7 @@ function App(){
   }
   return <main className="nova-app">
     <header className="nova-header">
-      <div className="window-heading"><span>OPENNOVA</span><span className={'connection '+(online?'online':'')}><i/>{online?'已连接':'连接中'}</span></div>
+      <div className="window-heading"><span>OPENNOVA</span><button type="button" className="open-work" disabled={!online||openingWork} onClick={()=>void openWork()} title="打开浏览器工作窗口"><Icon name="open"/>{openingWork?'正在打开':'打开工作窗口'}</button><span className={'connection '+(online?'online':'')}><i/>{online?'已连接':'连接中'}</span></div>
       <div className="nova-identity"><NovaRing state={novaState}/><h1>NOVA</h1><p role="status">{novaStatus}</p></div>
     </header>
     {!online&&<div className="connection-banner" role="status">连接中断时可以继续编辑，草稿会保留。正在自动重连…</div>}

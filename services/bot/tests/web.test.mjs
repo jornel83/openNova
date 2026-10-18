@@ -122,3 +122,11 @@ test('voice commands require browser credentials; native telemetry is Bearer-onl
  }
  assert.equal(calls[0].path,'/voice-control');
 });
+test('desktop-open uses same-origin web session without exposing pairing or desktop commands',async t=>{
+ const {post,calls}=await fixture(t);const login=await post('/web/session'),{csrf}=await login.json();
+ const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ assert.equal((await post('/web/api/desktop-open',{},headers)).status,200);
+ assert.deepEqual(calls[0],{path:'/desktop-open',body:{}});
+ assert.equal((await post('/web/api/desktop-open')).status,401);
+ assert.equal((await post('/web/api/desktop/pair',{},headers)).status,404);
+});

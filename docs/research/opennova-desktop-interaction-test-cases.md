@@ -221,7 +221,7 @@ M2 继续位于隔离分支 `codex/desktop-browser-m0`，启动环境和命令�
 
 ## M3：语音与环形 Nova 联动
 
-M3 继续保留在 `codex/desktop-browser-m0` 隔离工作区。实现已完成；真实麦克风说话与插话听感仍待现场验收。M4 的统一 `--ui` 启动入口尚未开发，日常 Demo 主工作区未切换到本分支。
+M3 继续保留在 `codex/desktop-browser-m0` 隔离工作区。实现已完成；真实麦克风说话与插话听感仍待现场验收。M4 已提供下方统一 `--ui` 启动入口；日常 Demo 主工作区未切换到本分支。
 
 ### 启动当前开发版
 
@@ -280,3 +280,75 @@ uv run tools/voice/conversation.py --continuous --bot --tts-provider doubao \
 - 自动回归：186 项 Node（Bot / 扩展 / Agent）、100 项语音、26 项 ASR、19 项 TTS、3 项 setup，共 334 项；网页构建通过。证据位于本机 Git 忽略目录 `output/voice/m3` 与 `output/playwright/m3-*`。
 
 本次执行环境的实际麦克风持续返回全零信号，因此真人说话、远场噪声与插话听感没有验收结论。请在自己的终端按上述流程验收；M3 不把“音频引擎已开启”当成有效收音。Studio/Vivian 分支沿用原实现与自动回归，本次真实 TTS 服务验证使用豆包。语音自动拉起、窗口排列及日常 Demo 的统一启动留待 M4。
+
+## M4：一键启动与双窗口
+
+2026-10-19：M4 代码已实现，继续保留在 `codex/desktop-browser-m0` 隔离分支。日常主工作区未切换，未推送 GitHub。Chrome 扩展、宿主和网页资源应一起更新；本次开发预览为 `http://127.0.0.1:18564/`。
+
+### 当前这台机器直接启动
+
+已生成一个本机专用入口（Git 忽略，里面只有路径和端口，没有密钥）。它选择独立的开发 Bot home / 18564 端口，读取主工作区既有配置和密钥文件，不复制这些文件：
+
+```sh
+# 家中：Studio / Vivian，蓝牙麦克风和音响
+/Users/chenzhuoping/.codex/worktrees/desktop-browser-m0/openNova/output/desktop/start-m4.command --tts-provider studio --device 'SRS-XB100' --output-device 'SRS-XB100'
+
+# 办公室：豆包 VV，设备省略时使用系统默认输入输出
+/Users/chenzhuoping/.codex/worktrees/desktop-browser-m0/openNova/output/desktop/start-m4.command --tts-provider doubao
+```
+
+需要指定 GPT 代理时，在命令前加 `OPENNOVA_PROXY=http://127.0.0.1:7897`，或使用 `--proxy`。复用的 Bot 沿用原启动环境，不会在当前任务中热切换代理。耳机或麦克风名称变化时先加 `--list-devices` 查看；可用 `--no-ui` 覆盖本机入口默认的 `--ui`，仅启动终端语音。
+
+本机入口等价于在隔离目录设置以下环境后运行根目录脚本；换电脑时不要照抄本机绝对路径：
+
+```sh
+cd /Users/chenzhuoping/.codex/worktrees/desktop-browser-m0/openNova
+export OPENNOVA_BOT_HOME="$PWD/output/bot/m1-home"
+export OPENNOVA_BOT_PORT=18564
+export OPENNOVA_BOT_WEB_PORT=18565
+export OPENNOVA_HARNESS_ROOT=/Users/chenzhuoping/Documents/work/project/deepseek-harness
+export OPENNOVA_CONFIG=/Users/chenzhuoping/Documents/work/project/openNova/config/voice.local.json
+export OPENNOVA_SECRETS_FILE=/Users/chenzhuoping/Documents/work/project/openNova/config/secrets.local.json
+./start.command --ui --tts-provider studio
+```
+
+以后合入日常工作区，使用该工作区的 `./start.command --ui` 即可。默认仍是 `--no-ui`；`--device`、`--output-device`、`--tts-provider`、`--tts-voice`、`--studio-host`、`--studio-tts-dir` 与 `--tts-port` 保留。启动顺序：Bot → 扩展及窗口 → TTS → 原生语音。
+
+### Chrome 首次设置
+
+1. 安装 Chrome，在 `chrome://extensions` 开启开发者模式，“加载已解压的扩展”，选择当前工作区的 `extensions/browser`。
+2. 用 `--ui` 启动。未配对时终端显示当前服务地址和 60 秒一次性配对码；在 OpenNova 扩展的设置页填写并配对。长期凭据不放入网页 URL 或终端日志。
+3. 配对码过期时，在相同环境变量下运行 `node tools/desktop/setup.mjs` 重新生成。配对完成后再次运行启动命令，或点击 Nova 顶部的“打开工作窗口”。
+4. 已配对的 Chrome 关闭时，启动器会尝试打开 Google Chrome，等待扩展连接。仍未连接则打开普通文字入口，语音和文件协作继续可用；同一次 Bot 运行期间不反复新增文字页。手动关掉降级文字页后可用终端打印的 URL 再打开。
+
+开发实测使用独立 Chrome for Testing 配置，以免改动日常 Chrome 登录状态；配对属于该浏览器配置。日常 Google Chrome 需按以上步骤单独安装并配对。旧 Bot 如果未启用桌面能力，不会被启动器自动终止；结束当前任务后，在同一环境中执行 `tools/bot/run.command --stop`，再以 `--ui` 启动。
+
+### 复用与降级规则
+
+| 情况 | 实际行为 |
+| --- | --- |
+| 重复 `--ui` | 复用同一 Bot、已有语音会话和两个 Chrome 窗口；缺失窗口补齐；不重放历史文件打开 |
+| 已有语音会话 | 第二次启动只准备界面后退出，沿用原终端的设备和 TTS；更换设备前先在原终端 `/quit` |
+| 用户移动窗口 | 重复启动保留现有位置；首次新建的两个窗口按 Chrome 实际尺寸校正 |
+| 关联文件已存在 | 自动开窗不抢文件引用；点击“打开工作窗口”明确返回网页引用并聚焦工作窗口 |
+| Studio / TTS / 麦克风失败 | Bot 和文字窗口保留，终端给出错误；修复后重新运行相同启动命令，Studio 不可用时可显式选豆包 |
+| 扩展未连接 / 未安装 | 网页协作降级；普通文字、语音和本地文件打开仍可使用 |
+| 开窗请求发出但回执丢失 | 提示结果未确认；不自动再打开额外文字页，重新启动仅核对和补齐窗口 |
+| `/quit` / Ctrl+C | 关闭本次收音、播放与新建 SSH 转发；已有 Bot、Studio 服务、浏览器和文件应用保留 |
+| `--check` / `--list-devices` | 不打开窗口、不收音；`--check` 会启动缺失的 Bot / TTS 依赖，豆包模式含短句合成预检 |
+
+### 本次验证结果
+
+- 自动回归：Node 211 项（含启动器 19 项），Python 语音 100 项、ASR 26 项、TTS 19 项、安装 3 项；网页构建和 `git diff --check` 通过。完整证据保存在本机 `output/voice/m4/`。
+- 冷启动：真实 Bot 从停止状态启动，扩展开出两个 Chrome 窗口，豆包 TTS 短句预检通过，原生音频进入聆听；网页同步静音，退出后显示语音未启动。
+- 窗口：实际尺寸为工作窗口 2938×1410、对话窗口 400×1410，初始顶部同为 30，间距 12；移动后重复启动保留窗口编号与移动后的布局。仅操作测试浏览器窗口，未排列原生文件应用。
+- 上下文：恢复 PRD 文件引用后重新创建窗口，引用仍为文件；重复启动没有新增文件打开记录；网页“打开工作窗口”恢复浏览器引用，未出现报错。400 px 对话窗口无横向溢出。
+- 家中链路：本机入口 `--tts-provider studio --check` 成功复用 Bot、连接 Studio、确认 Vivian / VAD / 音频桥可用，退出后清理本次 SSH 转发；未开始收音或播放。
+- 降级：扩展缺失、TTS SSH 失败、音频入口失败、并发启动及中断清理均由本地进程夹具验证；不会实际修改路由器、关闭用户应用或暴露密钥。
+- 本次执行环境内置麦克风连续返回全零信号，因此没有把真人语音、误唤醒、回声或插话听感计为通过。M3 的真实 ASR 文件输入和原生播放回执记录仍可参考。
+
+### 合并前现场验收
+
+开发计划 UI-01、UI-06 的程序控制、UI-07 的重连 / 快照、UI-08 的两条服务启动、UI-14/15 的启动不抢文件引用 / 不重放已经有自动或实机证据。此前 M0–M3 的网页操作、文件打开、工程工具与共享会话结果沿用本页已有记录；本次没有把全部 15 项真人端到端清单重新计为通过。
+
+现场还需：用实际麦克风说“打开 OpenNova 的 PRD”，再用文字追问；切到浏览器选区后语音讨论；播报时停止、静音和插话；分别听 Studio 与豆包；连续运行一段时间，观察误触发与重连。首次使用系统麦克风的 macOS 权限仍由用户在系统提示中授予。

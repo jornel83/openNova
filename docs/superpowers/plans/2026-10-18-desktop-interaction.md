@@ -10,7 +10,7 @@
 
 **Spec:** [双窗口交互技术方案](../specs/2026-10-18-desktop-interaction-design.md)
 
-状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现并完成审查与实测；M2（任务 4、5）已实现并完成真实 Bot 与窄窗口验收；M3–M4 尚未实施。测试范围、限制和启动步骤见 [验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
+状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现并完成审查与实测；M2（任务 4、5）已实现并完成真实 Bot 与窄窗口验收；M3–M4 已实现；真人语音听感和长期运行待现场验收。测试范围、限制和启动步骤见 [验证记录](../../research/opennova-desktop-interaction-test-cases.md)。已实现接口与验证边界见该记录。
 
 ## Global Constraints
 
@@ -228,12 +228,12 @@
 - Produces: `start.command --ui` / `--no-ui`；新增本机 Bearer `/desktop/open` 让启动器请求扩展开窗，网页“打开浏览器工作窗口”复用同一实现；本地文件另走 `document_open`，不依赖扩展开窗。
 - 新设备参数仍是 `--device`、`--output-device`；TTS 参数仍是 `--tts-provider studio|doubao`，不另造一套配置。
 
-- [ ] 扩展启动测试：重复执行不重复开浏览器窗口或占麦克风，不重放历史文件打开；缺少扩展只降级页面协作，本地文件打开仍可用；TTS / 麦克风失败保留文字入口；`--check` 和 `--list-devices` 无开窗 / 收音副作用。
-- [ ] 运行 `node --test tools/voice/tests/launcher.test.mjs`，确认新增断言失败。
-- [ ] 实现启动顺序、窗口恢复、扩展安装 / 配对引导和清晰失败原因。浏览器窗口布局按 Chrome 实际返回的尺寸校正；用户移动后不反复抢回位置；原生窗口由应用决定，退出启动器不关闭用户应用。保留终端作为首版语音进程入口，不在此任务引入 macOS 常驻后台服务。
-- [ ] 运行启动测试、`node --test services/bot/tests/*.test.mjs` 与 `python3.11 -m unittest discover -s tools/voice/tests -v`；构建网页，并记录通过的命令及结果。
-- [ ] 按下表做真人端到端验收；在部署文档中写入实测命令、扩展设置步骤、未通过项。不要把以下预期命令提前标为当前可用。
-- [ ] 核对产品 PRD 与实现状态，精确提交本任务，建议 `feat: launch the dual-window Nova experience`。用户请求推送后再发布到远端。
+- [x] 扩展启动测试：重复执行不重复开浏览器窗口或占麦克风，不重放历史文件打开；缺少扩展只降级页面协作，本地文件打开仍可用；TTS / 麦克风失败保留文字入口；`--check` 和 `--list-devices` 无开窗 / 收音副作用。
+- [x] 运行 `node --test tools/voice/tests/launcher.test.mjs`，确认新增断言失败。
+- [x] 实现启动顺序、窗口恢复、扩展安装 / 配对引导和清晰失败原因。浏览器窗口布局按 Chrome 实际返回的尺寸校正；用户移动后不反复抢回位置；原生窗口由应用决定，退出启动器不关闭用户应用。保留终端作为首版语音进程入口，不在此任务引入 macOS 常驻后台服务。
+- [x] 运行启动测试、`node --test services/bot/tests/*.test.mjs` 与 `python3.11 -m unittest discover -s tools/voice/tests -v`；构建网页，并记录通过的命令及结果。
+- [ ] 完成人真端到端现场验收（程序控制、两条服务预检和真实窗口已验证；麦克风返回零信号，听感未计通过）；在部署文档中写入实测命令、扩展设置步骤、未通过项。不要把以下预期命令提前标为当前可用。
+- [x] 核对产品 PRD 与实现状态，精确提交本任务，建议 `feat: launch the dual-window Nova experience`。用户请求推送后再发布到远端。
 
 ## 端到端验收清单
 
@@ -255,7 +255,7 @@
 | UI-14 | 打开文件后让网页后台刷新，再主动返回工作网页 | 后台刷新不抢文件引用；显式返回网页恢复网页引用；旧网页选区不混入文件问题 |
 | UI-15 | 文件打开后停止回复、刷新网页或重启 Bot | 已打开应用保持；历史记录不触发重新打开；状态未知时不自动重试 |
 
-实现后的预期命令示例（目前尚未支持 `--ui`）：
+当前已支持的命令示例：
 
 ```bash
 ./start.command --ui --tts-provider studio --device 'SRS-XB100' --output-device 'SRS-XB100'

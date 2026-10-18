@@ -8,7 +8,7 @@ export function createDesktop(options){
   if(path==='/desktop/context')return context.snapshot();
   if(path==='/desktop/pair')return bridge.pairing();
   if(path==='/desktop/status')return {...bridge.status(),context:context.snapshot()};
-  if(path==='/desktop/windows')return bridge.ensureWindows({chatUrl:options.chatUrl,...body});
+  if(path==='/desktop/windows'||path==='/desktop/open'&&!Object.hasOwn(body,'url'))return bridge.ensureWindows({...body,chatUrl:options.chatUrl,activate:body.activate===true});
   if(['read','open','click','fill','scroll'].some(method=>path==='/desktop/'+method))return bridge.execute({id:body.id||randomUUID(),method:path.slice('/desktop/'.length),page:body.page,args:body,deadlineAt:Date.now()+15000});
   throw Error('unknown_desktop_route');
  }};

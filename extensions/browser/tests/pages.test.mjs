@@ -103,3 +103,10 @@ test('reselecting the same text gets a fresh selection identity while passive re
  await f.pages.selection({text:'quote'},sender);assert.notEqual(f.published.at(-1).c.selection.id,first);
  const {pageContext}=await import('../../../services/bot/desktop/protocol.mjs');assert.equal(pageContext(f.published.at(-1).c).selection.id,f.published.at(-1).c.selection.id);
 });
+test('startup window ensure preserves file focus; explicit work-window action activates browser',async()=>{
+ const f=fixture();f.windows.ensureWindows=async()=>({workWindowId:1,chatWindowId:2});
+ await f.pages.execute({method:'windows.ensure',args:{}},'http://127.0.0.1:18562');
+ assert.equal(f.published.at(-1).a,false);
+ await f.pages.execute({method:'windows.ensure',args:{activate:true}},'http://127.0.0.1:18562');
+ assert.equal(f.published.at(-1).a,true);
+});

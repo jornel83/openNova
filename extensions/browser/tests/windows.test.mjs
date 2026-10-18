@@ -30,3 +30,25 @@ test('only a matching clicked link can adopt its new tab; unrelated popups canno
  assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:100,url:'https://example.com/article'}),true);assert.equal((await m.binding()).workTabId,100);assert.equal(m.isCommandDestination('click',await m.binding()),true);assert.equal(m.isCommandDestination('other',await m.binding()),false);m.clearPopup('click');assert.equal(m.isCommandDestination('click',await m.binding()),false);
  assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:99,url:'https://example.com/article'}),false);
 });
+test('new windows accommodate actual Chrome bounds once; later user positions are preserved',async()=>{
+ const chrome=fake(),create=chrome.windows.create;let updates=0;
+ chrome.windows.create=async props=>{
+  const w=await create({...props,width:props.type==='popup'?480:props.width,height:props.height-10});return w;
+ };
+ chrome.windows.update=async(id,props)=>{updates++;Object.assign(chrome.windowsMap.get(id),props);return structuredClone(chrome.windowsMap.get(id));};
+ const m=createWindowManager(chrome),args={chatUrl:'http://127.0.0.1:18562/'};
+ const b=await m.ensureWindows(args),work=chrome.windowsMap.get(b.workWindowId),chat=chrome.windowsMap.get(b.chatWindowId);
+ assert.ok(work.left+work.width<=chat.left,'actual popup width must not overlap work window');
+ assert.ok(chat.left+chat.width<=1440,'actual right edge must fit display');
+ assert.equal(work.height,chat.height);assert.ok(updates>0);
+ const count=updates;work.left=150;chat.top=90;
+ await m.ensureWindows(args);assert.equal(updates,count);assert.equal(work.left,150);assert.equal(chat.top,90);
+});
+test('programmatic window creation cannot impersonate user focus or steal a file reference',async()=>{
+ const chrome=fake(),m=createWindowManager(chrome),create=chrome.windows.create;
+ let automatic;
+ chrome.windows.create=async props=>{const w=await create(props);automatic=await m.focused(w.id);assert.equal(props.type==='normal'?props.focused:false,false);return w;};
+ const b=await m.ensureWindows({chatUrl:'http://127.0.0.1:18562/'});assert.equal(automatic,false);
+ assert.equal(await m.focused(b.workWindowId),true);
+ assert.equal(await m.focused(b.chatWindowId),false);
+});

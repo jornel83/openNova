@@ -14,3 +14,7 @@
 
 
 M3 接入现有 `--continuous --bot` 原生语音进程：环形 Nova 与收音、识别、TTS 缓冲和播放状态联动，支持停止、静音、开始 / 结束及音频重连。网页不启动另一套麦克风、ASR 或 TTS。临时转写仅存于语音桥内存，最终请求仍由 Python 提交；历史共用原 Bot 会话。开发分支启动、控制语义与现场验收见 [M3 验收说明](../../../docs/research/opennova-desktop-interaction-test-cases.md#m3语音与环形-nova-联动)。
+
+M4 使用根目录 `start.command --ui` 统一启动：Bot → 扩展及双窗口 → TTS → 原生语音。对话页顶部“打开工作窗口”调用同源 `/web/api/desktop-open`，只接受空请求，由宿主使用可信聊天地址调用同一开窗协调器；本机启动器使用 Bearer `/desktop/open`（空请求开窗，原有 URL 请求仍用于页面导航）。浏览器不能借此设置任意地址、窗口边界或配对凭据。
+
+自动开窗不切走文件引用、不重放打开文件；显式点击“打开工作窗口”会聚焦浏览器并恢复网页引用。扩展首次安装与当前开发机一键命令见 [M4 启动说明](../../../docs/research/opennova-desktop-interaction-test-cases.md#m4一键启动与双窗口)。TTS / 麦克风失败时仍能文字交流；恢复语音需要重新运行终端启动器。已有不带桌面能力的旧 Bot 不会被自动强杀，需结束当前工作后停止旧服务并用 `--ui` 重启。

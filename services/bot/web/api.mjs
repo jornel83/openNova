@@ -1,5 +1,5 @@
 import {readEvents} from './events.mjs';
-export const labels={voice_unavailable:'语音进程未连接，请在终端启动语音。',stale_voice_control:'语音状态已变化，请重试当前操作。',voice_control_busy:'语音控制正在处理中，请稍候。',bot_busy:'OpenNova 正在处理另一条消息，请稍后再试。',file_conflict:'文件已被其他操作修改。请让 OpenNova 重新读取并提出修改。',
+export const labels={browser_disconnected:'浏览器扩展未连接。请打开已配对的 Chrome，再点击打开工作窗口；文字和本地文件仍可使用。',browser_not_enabled:'当前 Bot 未启用浏览器接入。结束当前任务后用 start.command --ui 重启服务。',browser_open_unknown:'开窗结果暂未确认。请查看 Chrome；再次点击只会补齐缺失窗口。',voice_unavailable:'语音进程未连接，请在终端启动语音。',stale_voice_control:'语音状态已变化，请重试当前操作。',voice_control_busy:'语音控制正在处理中，请稍候。',bot_busy:'OpenNova 正在处理另一条消息，请稍后再试。',file_conflict:'文件已被其他操作修改。请让 OpenNova 重新读取并提出修改。',
   approval_not_pending:'这项修改已经处理，请查看最新状态。',unknown_id:'没有找到这条记录。',host_stopping:'服务正在停止，请重新启动 Bot。',
   memory_match_changed:'原记忆已经变化，请重新提出修改。',invalid_request:'消息不能为空，且不能超过 8000 个字符。',
   cancelled:'回复已停止。',interrupted:'服务曾重启，这条回复未完成。',agent_timeout:'本轮回复超时，请重试。'};

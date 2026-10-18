@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {createVoiceChannel} from './desktop/voice.mjs';
 import {createEvents} from './desktop/events.mjs';
 /** Real DeepSeek-Bot runtime, with a small loopback adapter for OpenNova clients. */
@@ -54,7 +55,7 @@ export async function apply(ctx,config) {
   const context=createWorkContext({inspectFile:inspectFileReference,initial:ops.list('context')[0]?.value,
     onChange:value=>{ops.put({id:'work-context',kind:'context',value});events.publish('work.context',value);}});
   const documents=createDocumentOpener({workspace:config.workspace,ops,context});
-  let desktop;
+  let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
   const memory=new MemoryApprovals(ops,{
@@ -142,7 +143,8 @@ export async function apply(ctx,config) {
   await memory.recover();
   resources.assertOpen();
   const handle=createControls({ops,requests,memory,context,documents,events,voice,browserState:()=>desktop?.status()??{connected:false},
-    health:()=>({ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
+    health:()=>({runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

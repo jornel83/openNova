@@ -21,3 +21,5 @@ button,textarea{font:inherit}button{cursor:pointer;color:inherit}button:disabled
 @keyframes voice-pulse{50%{stroke-width:2.5;opacity:.45}}
 .speech-draft{border-left:1px solid var(--nv-accent);padding:2px 0 2px 12px;margin:16px 0 12px;color:var(--nv-text)}.speech-draft>span{font-size:10px;color:var(--nv-muted)}.speech-draft p{font-size:13px;line-height:1.7;white-space:pre-wrap;margin:6px 0}
 .voice-symbol{background:transparent}.voice-symbol:disabled{opacity:.5}.voice-symbol:not(:disabled){color:var(--nv-accent)}.voice-actions{display:flex;gap:6px;margin-left:auto}.voice-actions button{padding:4px 6px;color:var(--nv-muted);background:transparent;border:1px solid var(--nv-line);border-radius:6px;font-size:10px;white-space:nowrap}.voice-actions button:hover:not(:disabled){color:var(--nv-text);border-color:#528a9b}
+
+.open-work{display:flex;gap:5px;align-items:center;background:transparent;border:0;color:var(--nv-muted);font:inherit;font-size:11px;letter-spacing:0;cursor:pointer;padding:8px}.open-work:hover{color:var(--nv-accent)}.open-work:disabled{opacity:.45;cursor:default}

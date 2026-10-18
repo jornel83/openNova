@@ -14,7 +14,7 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,memory,health,memoryView,shutdown,context,documents,events,voice,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
     if(path==='/voice/publish')return voice.publish(body);
     if(path==='/voice/poll')return voice.poll(body.voiceInstanceId);
@@ -25,6 +25,11 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,c
       const receipt=voice.enqueue(body);
       if(['stop','end'].includes(body.action)&&receipt.requestId)await requests.cancel(receipt.requestId);
       return receipt;
+    }
+    if(path==='/desktop-open'){
+      if(Object.keys(body).length)throw Error('invalid_desktop_request');
+      if(!desktopOpen)throw Error('browser_not_enabled');
+      return desktopOpen();
     }
     if(path==='/health')return health();
     if(path==='/snapshot'){

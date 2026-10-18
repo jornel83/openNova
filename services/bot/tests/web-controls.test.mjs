@@ -88,3 +88,10 @@ test('context-clear removes selection only, resists old refresh, and accepts a n
  context.updateBrowser({page,selection:{...selection,id:'s2'}});assert.equal(context.capture().selection.text,'讨论这段');
  context.selectFile({id:'f',name:'report.pdf'});await handle('/context-clear',{});assert.equal(context.capture().file.id,'f');
 });
+test('web desktop-open delegates an empty trusted request; arbitrary URL or bounds are rejected',async t=>{
+ const {ops,requests}=fixture(t);let opened=0;
+ const handle=createControls({ops,requests,desktopOpen:async()=>{opened++;return {status:'completed'};}});
+ assert.equal((await handle('/desktop-open',{})).status,'completed');
+ await assert.rejects(handle('/desktop-open',{chatUrl:'https://evil.example',bounds:{width:100}}),/invalid_desktop_request/);
+ assert.equal(opened,1);
+});

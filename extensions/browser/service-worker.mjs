@@ -49,7 +49,7 @@ chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==='reconnect')void conne
 chrome.action.onClicked.addListener(async tab=>{try{await windows.bind(tab);await pages.refresh({activate:true});await chrome.action.setBadgeText({text:'ON',tabId:tab.id});}catch{await chrome.runtime.openOptionsPage();}});
 chrome.tabs.onActivated.addListener(info=>{void windows.activated(info).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.webNavigation.onCreatedNavigationTarget.addListener(details=>{void windows.createdTarget(details).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
-chrome.windows.onFocusChanged.addListener(id=>{void windows.binding().then(b=>id===b.workWindowId&&pages.refresh({activate:true})).catch(()=>{});});
+chrome.windows.onFocusChanged.addListener(id=>{void windows.focused(id).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.tabs.onRemoved.addListener(tabId=>{void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='complete'||change.title)void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
 chrome.webNavigation.onBeforeNavigate.addListener(d=>{void pages.navigation({...d,loading:true}).catch(()=>{});});
