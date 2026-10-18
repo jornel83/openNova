@@ -5,13 +5,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createBridge} from '../http.mjs';
 import {request} from 'node:http';
+import {createEvents} from '../desktop/events.mjs';
 
-async function fixture(t) {
+async function fixture(t,events) {
   const assets=mkdtempSync(join(tmpdir(),'nova-web-'));
   mkdirSync(join(assets,'assets'));writeFileSync(join(assets,'index.html'),'<!doctype html><title>OpenNova</title>');
   writeFileSync(join(assets,'assets','app.js'),'window.app=true;');
   const calls=[];
-  const server=createBridge({token:'cli-only-secret',web:{assets},handle:async(path,body)=>{calls.push({path,body});return {path,body};}});
+  const server=createBridge({token:'cli-only-secret',web:{assets,events},handle:async(path,body)=>{calls.push({path,body});return {path,body};}});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   t.after(()=>{server.closeAllConnections();server.close();rmSync(assets,{recursive:true,force:true});});
   const origin=`http://127.0.0.1:${server.address().port}`;
@@ -82,4 +83,30 @@ test('document-open route retains same origin Cookie and CSRF requirements',asyn
  assert.equal((await post('/web/api/document-open',{id:'one',fileId:'file-1'},{Cookie:headers.Cookie})).status,403);
  assert.equal((await post('/web/api/document-open',{id:'one',fileId:'file-1'},headers)).status,200);
  assert.deepEqual(calls[0],{path:'/document-open',body:{id:'one',fileId:'file-1'}});
+});
+
+test('event stream requires all browser credentials and replays snapshot gap before live delivery',async t=>{
+ const events=createEvents(),{post}=await fixture(t,events),cursor=events.snapshot(()=>null).cursor;
+ const login=await post('/web/session'),{csrf}=await login.json(),headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ for(const [auth,status] of [[{},401],[{Cookie:headers.Cookie},403],[{...headers,Origin:'https://example.org'},403],[{...headers,'Sec-Fetch-Site':'cross-site'},403]])assert.equal((await post('/web/events',{cursor},auth)).status,status);
+ events.publish('request.updated',{status:'completed'},'gap');
+ const response=await post('/web/events',{cursor},headers);assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/text\/event-stream/);
+ const reader=response.body.getReader(),first=new TextDecoder().decode((await reader.read()).value);
+ assert.match(first,/"requestId":"gap"/);
+ events.publish('work.context',{kind:'none'});assert.match(new TextDecoder().decode((await reader.read()).value),/work.context/);await reader.cancel();
+ const stale=await post('/web/events',{cursor:{...cursor,hostEpoch:'old'}},headers);assert.equal(stale.status,409);assert.equal((await stale.json()).error,'cursor_reset');events.close();
+});
+test('slow SSE sockets and disconnects release subscriptions',async()=>{
+ const {streamEvents}=await import('../web-http.mjs'),{EventEmitter}=await import('node:events');
+ for(const slow of [true,false]){
+ const events=createEvents(),cursor=events.snapshot(()=>null).cursor;let writes=0;
+ const res=new EventEmitter();res.writeHead=()=>{};res.write=()=>{writes++;return !slow;};res.destroy=()=>{res.destroyed=true;res.emit('close');};
+ streamEvents(events,cursor,res);if(!slow)res.emit('close');const before=writes;
+ events.publish('request.updated',{});assert.equal(writes,before);assert.equal(res.listenerCount('close'),0);events.close();
+ }
+});
+test('clearing browser selection is authenticated like other controls',async t=>{
+ const {post,calls}=await fixture(t);const login=await post('/web/session'),{csrf}=await login.json();const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ assert.equal((await post('/web/api/context-clear')).status,401);
+ assert.equal((await post('/web/api/context-clear',{},headers)).status,200);assert.equal(calls.at(-1).path,'/context-clear');
 });

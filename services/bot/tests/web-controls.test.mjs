@@ -78,3 +78,13 @@ test('web document reopen only accepts a server registered file and serializes w
  await assert.rejects(handle('/document-open',{id:'busy-open',fileId:initial.file.id}),/bot_busy/);release({text:'done'});await requests.active.work;
  assert.equal((await handle('/snapshot',{})).workContext.file.name,'demo.txt');
 });
+test('context-clear removes selection only, resists old refresh, and accepts a new selection identity',async t=>{
+ const {ops,requests}=fixture(t);const {createWorkContext}=await import('../desktop/context.mjs');
+ const context=createWorkContext(),page={bindingId:'b',tabId:1,documentId:'d',revision:1};
+ const selection={id:'s1',text:'讨论这段',documentId:'d',revision:1};context.updateBrowser({page,selection});
+ const handle=createControls({ops,requests,context,health:()=>({ready:true})});
+ await handle('/context-clear',{});assert.equal(context.capture().selection,null);
+ context.updateBrowser({page,selection});assert.equal(context.capture().selection,null);
+ context.updateBrowser({page,selection:{...selection,id:'s2'}});assert.equal(context.capture().selection.text,'讨论这段');
+ context.selectFile({id:'f',name:'report.pdf'});await handle('/context-clear',{});assert.equal(context.capture().file.id,'f');
+});

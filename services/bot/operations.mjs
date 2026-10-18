@@ -7,9 +7,9 @@ import {randomUUID,createHash} from 'node:crypto';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const copy=x=>JSON.parse(JSON.stringify(x));
 export class Operations {
-  constructor({home,workspace,legacyWorkspace=workspace}) {
+  constructor({home,workspace,legacyWorkspace=workspace,events,getRequestId=()=>undefined}) {
     mkdirSync(home,{recursive:true,mode:0o700});mkdirSync(workspace,{recursive:true,mode:0o700});
-    this.workspace=realpathSync(workspace);
+    this.workspace=realpathSync(workspace);this.events=events;this.getRequestId=getRequestId;
     this.db=new DatabaseSync(join(home,'bridge.sqlite'));
     this.db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, kind TEXT NOT NULL, body TEXT NOT NULL)');
     // Pre-project records referred to the isolated test directory. Bind once;
@@ -17,7 +17,11 @@ export class Operations {
     for(const r of this.list('approval'))if(r.operation==='file'&&!r.workspace)this.put({...r,workspace:resolve(legacyWorkspace)});
   }
   close(){this.db.close();}
-  put(record){this.db.prepare('INSERT INTO records VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(record.id,record.kind,JSON.stringify(record));return copy(record);}
+  put(record){
+    if(record.kind==='approval'&&!record.requestId&&!this.db.prepare('SELECT id FROM records WHERE id=?').get(record.id))record={...record,requestId:this.getRequestId()};
+    this.db.prepare('INSERT INTO records VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(record.id,record.kind,JSON.stringify(record));if(record.kind==='request')this.events?.publish('request.updated',record,record.id);
+    else if(['tool','approval'].includes(record.kind))this.events?.publish('operation.updated',record,record.requestId);
+    return copy(record);}
   get(id){const row=this.db.prepare('SELECT body FROM records WHERE id=?').get(id);if(!row)throw Error('unknown_id');return JSON.parse(row.body);}
   list(kind){return this.db.prepare('SELECT body FROM records WHERE kind=? ORDER BY rowid DESC').all(kind).map(r=>JSON.parse(r.body));}
   filePath(name) {

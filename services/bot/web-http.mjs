@@ -3,12 +3,12 @@ import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 
-const routes=new Set(['snapshot','document-open','ask','result','cancel','approvals','approve','reject']);
+const routes=new Set(['snapshot','context-clear','document-open','ask','result','cancel','approvals','approve','reject']);
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.svg':'image/svg+xml'};
 const equal=(a,b)=>typeof a==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
 
-export function browserHandler({assets},handle) {
+export function browserHandler({assets,events},handle) {
   const cookie=randomBytes(32).toString('hex'),csrf=randomBytes(32).toString('hex');
   const root=resolve(assets);
   return async(req,res)=>{
@@ -39,15 +39,33 @@ export function browserHandler({assets},handle) {
     if(!equal(supplied,cookie)){json(res,401,{error:'web_session_expired'});return true;}
     if(!equal(req.headers['x-opennova-csrf'],csrf)){json(res,403,{error:'unauthorized'});return true;}
     const name=path.slice('/web/api/'.length);
-    if(!path.startsWith('/web/api/')||!routes.has(name)){json(res,404,{error:'unknown_route'});return true;}
+    if(path!=='/web/events'&&(!path.startsWith('/web/api/')||!routes.has(name))){json(res,404,{error:'unknown_route'});return true;}
     try{
       const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>100000)throw Error('request_too_large');chunks.push(chunk);}
       const raw=Buffer.concat(chunks).toString('utf8');
       const body=JSON.parse(raw||'{}');
       if(!body||typeof body!=='object'||Array.isArray(body))throw Error('invalid_request');
+      if(path==='/web/events'){if(!events)throw Error('events_not_enabled');streamEvents(events,body.cursor,res);return true;}
       if(name==='ask')body.source='web';
       json(res,200,await handle('/'+name,body));
-    }catch(error){json(res,400,{error:String(error.message||'bot_error').slice(0,300)});}
+    }catch(error){json(res,error.message==='cursor_reset'?409:400,{error:String(error.message||'bot_error').slice(0,300)});}
     return true;
   };
+}
+
+/** Backpressure closes this stream; reconnect obtains a snapshot, never replays work. */
+export function streamEvents(events,cursor,res) {
+ let started=false,stopped=false,off,heartbeat;
+ const stop=()=>{if(stopped)return;stopped=true;clearInterval(heartbeat);off?.();res.off('close',stop);};
+ const write=frame=>{
+  if(stopped||res.destroyed)return false;
+  if(!started){started=true;res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-store','X-Accel-Buffering':'no'});}
+  if(!res.write(frame)){stop();res.destroy();return false;}return true;
+ };
+ res.once('close',stop);
+ try{off=events.subscribe(cursor,event=>write('data: '+JSON.stringify(event)+'\n\n'));}
+ catch(error){stop();throw error;}
+ if(stopped){off();return;}
+ if(!write(': connected\n\n'))return;
+ heartbeat=setInterval(()=>write(': heartbeat\n\n'),15000);heartbeat.unref();
 }

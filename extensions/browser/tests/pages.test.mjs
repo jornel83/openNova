@@ -96,3 +96,10 @@ test('cancelled or rejected clicks cannot leave a popup expectation armed',async
   assert.equal(armed,false);assert.equal(actions,fail==='cancel'?0:1);
  }
 });
+test('reselecting the same text gets a fresh selection identity while passive refresh preserves it',async()=>{
+ const f=fixture(),sender={tab:{id:1},frameId:0,documentId:'d1'};await f.pages.selection({text:'quote'},sender);
+ const first=f.published.at(-1).c.selection.id;assert.equal(typeof first,'string');
+ await f.pages.refresh();assert.equal(f.published.at(-1).c.selection.id,first);
+ await f.pages.selection({text:'quote'},sender);assert.notEqual(f.published.at(-1).c.selection.id,first);
+ const {pageContext}=await import('../../../services/bot/desktop/protocol.mjs');assert.equal(pageContext(f.published.at(-1).c).selection.id,f.published.at(-1).c.selection.id);
+});

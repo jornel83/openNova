@@ -1,7 +1,7 @@
 /** Serial foreground admission; client lifetimes do not own the running work. */
 export class Requests {
-  constructor(ops,run,{context}={}) {
-    this.context=context;
+  constructor(ops,run,{context,events}={}) {
+    this.context=context;this.events=events;
     this.ops=ops;this.run=run;
     for(const r of ops.list('request'))if(['queued','running'].includes(r.status))ops.finish(r.id,{status:'interrupted',error:'host_restarted_check_state_before_retry'});
   }
@@ -26,7 +26,7 @@ export class Requests {
     if(this.closed)throw Error('host_stopping');
     if(this.active||this.mutation)throw Error('bot_busy');
     const work=Promise.resolve().then(fn);this.mutation=work;
-    try{return await work;}finally{if(this.mutation===work)this.mutation=undefined;}
+    try{return await work;}finally{if(this.mutation===work){this.mutation=undefined;this.events?.publish('request.updated',{busy:false});}}
   }
   async close() {
     this.closed=true;
@@ -47,6 +47,6 @@ export class Requests {
   }
   settle(current){
     if(current.cancelled)this.ops.finish(current.id,{status:current.timedOut?'failed':'cancelled',error:current.timedOut?'agent_timeout':undefined});
-    if(this.active===current)this.active=undefined;
+    if(this.active===current){this.active=undefined;this.events?.publish('request.updated',this.ops.request(current.id),current.id);}
   }
 }

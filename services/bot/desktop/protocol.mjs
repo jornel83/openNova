@@ -9,8 +9,8 @@ export function pageRef(p){
 export function pageContext(value){
  if(!value||!('page' in value)||value.page!==null&&!pageRef(value.page))throw Error('invalid_context');
  const p=value.page,s=value.selection;
- if(s!=null&&(!p||typeof s.text!=='string'||s.text.length>4000||s.documentId!==p.documentId||s.revision!==p.revision))throw Error('invalid_selection');
- return {page:p?{...p}:null,selection:s?{text:s.text,documentId:s.documentId,revision:s.revision,truncated:!!s.truncated}:null};
+ if(s!=null&&(!p||typeof s.text!=='string'||s.text.length>4000||s.id!=null&&!id(s.id)||s.documentId!==p.documentId||s.revision!==p.revision))throw Error('invalid_selection');
+ return {page:p?{...p}:null,selection:s?{...(s.id?{id:s.id}:{}),text:s.text,documentId:s.documentId,revision:s.revision,truncated:!!s.truncated}:null};
 }
 export function result(value){
  if(!value||!id(value.id)||!['completed','failed','cancelled','unknown'].includes(value.status))throw Error('invalid_result');

@@ -47,7 +47,7 @@ export function createPageAdapter({chrome,windows,publish}){
    });
   },
   async selection(message,sender){const b=await windows.binding();if(sender.tab?.id!==b.workTabId||sender.frameId!==0||typeof message.text!=='string'||message.text.length>4000)return;
-   return serial(async()=>{const c=await refresh();if(!c.page?.readable||c.page.documentId!==sender.documentId||!message.text.trim())return;return save({...c,selection:{text:message.text,documentId:c.page.documentId,revision:c.page.revision,truncated:!!message.truncated}});});},
+   return serial(async()=>{const c=await refresh();if(!c.page?.readable||c.page.documentId!==sender.documentId||!message.text.trim())return;return save({...c,selection:{id:crypto.randomUUID(),text:message.text,documentId:c.page.documentId,revision:c.page.revision,truncated:!!message.truncated}});});},
   async execute(command,base,isCancelled=()=>false){
    const check=()=>{if(isCancelled()||command.deadlineAt&&command.deadlineAt<Date.now())throw Error('command_cancelled');};
    check();

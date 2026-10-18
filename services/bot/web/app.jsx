@@ -55,12 +55,20 @@ function App(){
     const order=++count.current;
     try{
       const next=await api.call('snapshot',{limit});
-      if(order<applied.current)return;applied.current=order;setSnapshot(next);setOnline(true);
+      if(order<applied.current)return null;applied.current=order;setSnapshot(next);setOnline(true);
       const pending=outgoing.current;
       if(pending&&next.messages.some(m=>m.id===pending.id)){setOutgoing(null);setDraft(value=>value===pending.text?'':value);}
+      return next;
     }catch(e){if(order>=applied.current){applied.current=order;setOnline(false);}throw e;}
   }
-  useEffect(()=>{let stopped=false,timer;const poll=async()=>{try{await refresh();}catch{}if(!stopped)timer=setTimeout(poll,document.hidden?5000:1000);};void poll();return()=>{stopped=true;clearTimeout(timer);};},[limit]);
+  useEffect(()=>{
+    let stopped=false,pollTimer,retryTimer,eventTimer;const controller=new AbortController();
+    const poll=async()=>{try{await refresh();}catch{}if(!stopped)pollTimer=setTimeout(poll,document.hidden?15000:5000);};
+    const invalidate=()=>{if(stopped||eventTimer)return;eventTimer=setTimeout(()=>{eventTimer=null;if(!stopped)void refresh().catch(()=>{});},40);};
+    const connect=async()=>{try{const next=await refresh();if(!stopped&&next?.cursor)await api.events(next.cursor,invalidate,{signal:controller.signal});}catch{}if(!stopped)retryTimer=setTimeout(connect,2000);};
+    void connect();pollTimer=setTimeout(poll,5000);
+    return()=>{stopped=true;controller.abort();clearTimeout(pollTimer);clearTimeout(retryTimer);clearTimeout(eventTimer);};
+  },[limit]);
   const messages=snapshot?.messages||[],approvals=snapshot?.approvals||[],issues=approvals.filter(p=>['applying','failed','conflict'].includes(p.status));
   const bot={id:snapshot?.health.botId||'opennova',name:'OpenNova',color:'blue',avatar:{shape:'drop'}},sessionId=snapshot?.health.sessionId||bot.id;
   const roster={bots:[bot],byId:{[bot.id]:bot,[sessionId]:bot},roomsById:{}};

@@ -1,3 +1,4 @@
+import {createEvents} from './desktop/events.mjs';
 /** Real DeepSeek-Bot runtime, with a small loopback adapter for OpenNova clients. */
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -38,16 +39,20 @@ export async function apply(ctx,config) {
   rt.dropKickoff(bot.id);bot.model='opennova-chatgpt/gpt-6.1-sol';bot.instructions=INSTRUCTIONS;
   await rt.save();await rt.applyModel(bot);resources.assertOpen();
   await bindProject(ctx,rt,bot,config.workspace);resources.assertOpen();
-  const ops=new Operations(config);
+  const events=createEvents();
+  resources.add(()=>events.close());
+  let requests;
+  const ops=new Operations({...config,events,getRequestId:()=>requests?.active?.id});
   recoverToolRuns(ops);
   resources.add(()=>ops.close());
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
   const allowed=new Set(ALLOWED_TOOLS),approved=new WeakSet();
-  const context=createWorkContext({inspectFile:inspectFileReference});
+  const context=createWorkContext({inspectFile:inspectFileReference,initial:ops.list('context')[0]?.value,
+    onChange:value=>{ops.put({id:'work-context',kind:'context',value});events.publish('work.context',value);}});
   const documents=createDocumentOpener({workspace:config.workspace,ops,context});
   let desktop;
-  const requests=new Requests(ops,run,{context});
+  requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
@@ -133,14 +138,14 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,context,documents,
+  const handle=createControls({ops,requests,memory,context,documents,events,browserState:()=>desktop?.status()??{connected:false},
     health:()=>({ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
   const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),
     handle:(path,body)=>path.startsWith('/desktop/')&&desktop?desktop.handle(path,body):handle(path,body),
-    extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets}:undefined});
+    extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets,events}:undefined});
   if(config.desktop){
     const {createDesktop}=await import('./desktop/controller.mjs');
     desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/',context});
