@@ -16,11 +16,12 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         state={'quitting':False}
         class Audio:
             def __init__(self, **devices):
-                self.input=asyncio.Queue(); self.closed=False; self.enabled=[]; self.frames=0
+                self.input=asyncio.Queue(); self.closed=False; self.capture_history=[]; self.frames=0
                 self.devices=devices
                 instances.append(self)
             async def start(self):
                 if len(instances)>1:
+                    assert self.enabled is False
                     second_started.set(); await release_second.wait()
                 return {'input':'Air','output':'Air','voice_processing':True}
             async def clear(self,generation):
@@ -28,7 +29,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                     release_second.set()
                     await asyncio.sleep(.03)  # let the already-pending queue.get own audio_ready
             async def capture(self,enabled,epoch):
-                self.enabled.append(enabled)
+                self.capture_history.append(enabled)
                 if self is instances[0]: command_applied.set()
             async def pause(self): pass
             async def resume(self): pass
@@ -72,10 +73,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retry_preserves_later_mute(self):
         instances=await self.scenario('/mute')
-        self.assertNotIn(True,instances[1].enabled)
+        self.assertNotIn(True,instances[1].capture_history)
     async def test_retry_preserves_later_end(self):
         instances=await self.scenario('/end')
-        self.assertNotIn(True,instances[1].enabled)
+        self.assertNotIn(True,instances[1].capture_history)
     async def test_quit_owns_ready_resource_already_consumed_by_event_wait(self):
         instances=await self.scenario('/quit',quit_during_ready=True)
         self.assertEqual(len(instances),2)

@@ -12,8 +12,11 @@ def effective(text):
 
 
 class Conversation:
-    def __init__(self, agent, audio, tts_url, *, synthesize=synthesize_pcm, log=print, reset_input=None, render_text=None, tts_speed=1.5):
+    def __init__(self, agent, audio, tts_url, *, synthesize=synthesize_pcm, log=print, reset_input=None, render_text=None, tts_speed=1.5, on_state=None):
         self.agent, self.audio, self.tts_url = agent, audio, tts_url
+        self.on_state = on_state
+        self.draft = None
+        self.audio_failed = False
         self.tts_speed = tts_speed
         self.synthesize, self.log, self.reset_input = synthesize, log, reset_input
         self.render_text = render_text or log
@@ -31,6 +34,27 @@ class Conversation:
         self.notice_delay = 2.0
         self.paused_at = None
 
+    def voice_state(self):
+        record = self.response_record or {}
+        running = record.get('status') == 'running'
+        playback = getattr(self.audio,'playback','idle') if running else 'idle'
+        if playback == 'idle' and running and record.get('tts_started'): playback = 'buffering'
+        return dict(generation=self.generation,captureEpoch=self.epoch,
+            capture='error' if self.audio_failed else 'off' if not self.active or self.quit else 'muted' if self.muted else 'listening',
+            recognition='recognizing' if any(not t['finished'] for t in self.inputs.values()) else 'idle',
+            playback='error' if self.audio_failed else playback,requestId=record.get('requestId'),draft=self.draft)
+
+    def notify(self):
+        if self.on_state: self.on_state(self.voice_state())
+
+    async def handle(self, event):
+        try: await self._handle(event)
+        finally: self.notify()
+
+    async def control(self, command):
+        try: await self._control(command)
+        finally: self.notify()
+
     async def invalidate(self, reason):
         self.paused_at = None
         self.generation += 1
@@ -46,6 +70,7 @@ class Conversation:
         # Stop locally before waiting for model/HTTP cleanup, which runs in the cancelled task.
         await self.audio.clear(self.generation)
         if record: record['local_clear_ack_at'] = time.monotonic()
+        self.notify()
 
     def trace_candidate(self, turn, action):
         record = turn.get('record')
@@ -66,7 +91,7 @@ class Conversation:
             await self.audio.resume()
             self.log('未确认有效插话，恢复播报。')
 
-    async def handle(self, event):
+    async def _handle(self, event):
         if event.get('epoch') != self.epoch or self.muted or not self.active: return
         kind = event['type']
         now = event.get('time', time.monotonic())
@@ -83,6 +108,7 @@ class Conversation:
             self.inputs[ident] = {'final':None,'finished':False,'confirmed':False,'text':'',
                 'candidate':BargeInCandidate() if guarded else None,
                 'generation':self.generation,'record':self.response_record if guarded else None}
+            self.draft = {'text':'','utteranceId':str(ident),'requestId':None}
             if guarded:
                 self.inputs[ident]['candidate'].update({**event,'time':now})
                 self.trace_candidate(self.inputs[ident], 'candidate')
@@ -93,6 +119,7 @@ class Conversation:
         accepted = candidate.update({**event,'time':now}) if candidate else effective(event.get('text',''))
         if kind in ('partial','final'):
             turn['text'] = event.get('text','')  # ASR full-result revisions replace, never append.
+            self.draft = {'text':'\n'.join(t['text'] for _,t in sorted(self.inputs.items()) if t['text']), 'utteranceId':str(ident),'requestId':None}
             if accepted and not turn['confirmed']:
                 turn['confirmed'] = True
                 if candidate: self.trace_candidate(turn, 'confirmed')
@@ -127,6 +154,7 @@ class Conversation:
             else:
                 await self.resume_candidate('unconfirmed')
                 self.inputs.clear()
+                self.draft = None
 
     async def ask(self, text, ended_at=None):
         await self.invalidate('replacement')
@@ -146,6 +174,7 @@ class Conversation:
         self.response = task
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
+        self.notify()
         self.log('你：'+original)
         self.log('正在思考，麦克风继续聆听。')
 
@@ -170,7 +199,11 @@ class Conversation:
                 try:
                     async for event in stream:
                         if generation != self.generation: return
-                        if event['type'] == 'status':
+                        if event['type'] == 'request':
+                            record['requestId'] = event['id']
+                            if self.draft: self.draft = {**self.draft,'requestId':event['id']}
+                            self.notify()
+                        elif event['type'] == 'status':
                             phase = event.get('phase')
                             record['tool_events'].append({'phase':phase,'step':event.get('step'),'at':time.monotonic()})
                             if phase in ('searching','reading'):
@@ -234,6 +267,8 @@ class Conversation:
             if generation != self.generation or (notice and answer_ready.is_set()): return
             segment = {'id':seq,'text':part,'kind':'status' if notice else 'answer','requested_at':time.monotonic()}
             record['segments'].append(segment)
+            record['tts_started'] = True
+            self.notify()
             pending = b''
             async with aclosing(self.synthesize(part,self.tts_url,speed=self.tts_speed,metrics=segment)) as stream:
                 async for pcm in stream:
@@ -311,16 +346,21 @@ class Conversation:
             await fail_output(error)
         finally:
             record['pipeline_closed_at'] = time.monotonic()
+            if generation == self.generation:
+                if not self.inputs: self.draft = None
+                self.notify()
 
-    async def control(self, command):
+    async def _control(self, command):
         if command == '/stop':
             await self.invalidate('stop')
             self.unsubmitted = ''
+            if not self.inputs: self.draft = None
             self.log('已停止当前回复，继续聆听。')
         elif command in ('/mute','/unmute','/end','/start'):
             self.paused_at = None
             self.epoch += 1
             self.inputs.clear()
+            self.draft = None
             if self.reset_input: self.reset_input(self.epoch)
             if command == '/end':
                 self.intent_active = self.active = False
@@ -345,10 +385,13 @@ class Conversation:
         self.epoch += 1
         self.inputs.clear()
         if self.reset_input: self.reset_input(self.epoch)
+        self.audio_failed = False
         self.active = self.intent_active and not self.quit
         await self.audio.clear(self.generation)
         await self.audio.capture(self.active and not self.muted,self.epoch)
         self.log('正在聆听。' if self.active and not self.muted else '已静音。' if self.active else '交流已结束；输入 /start 重新开始。')
+
+        self.notify()
 
     async def close(self):
         try: await self.invalidate('close')

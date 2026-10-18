@@ -13,11 +13,13 @@ class NativeProtocolTests(unittest.IsolatedAsyncioTestCase):
         async def ready():
             audio.deliver({'type':'ready', 'voice_processing':True})
         audio._read = ready
+        audio.command = AsyncMock(return_value={'type':'ack'})
         with patch('audio_bridge.build_helper', AsyncMock(return_value=Path('/test/audio'))), \
              patch('audio_bridge.asyncio.create_subprocess_exec', AsyncMock()) as spawn:
             await audio.start()
             self.assertEqual(spawn.call_args.args,
                 ('/test/audio', '--device', 'MacBook Air 麦克风', '--output-device', 'SRS-XB100'))
+            audio.command.assert_awaited_once_with('capture',enabled=True,epoch=0)
 
     async def test_clear_rejects_late_pcm_and_waiter_wakes(self):
         audio = NativeAudio()
@@ -76,3 +78,15 @@ class NativeProtocolTests(unittest.IsolatedAsyncioTestCase):
                        'system_code':'arbitrary diagnostic text'})
         self.assertIn('音频引擎启动失败', str(audio.error))
         self.assertNotIn('arbitrary', str(audio.error))
+
+    async def test_native_playback_receipts_and_old_generation_are_isolated(self):
+        states=[];audio=NativeAudio();audio.on_state=lambda:states.append(audio.playback)
+        audio.deliver({'type':'ack','generation':0,'frames':2400,'playback':'playing'})
+        self.assertEqual(states,['playing'])
+        audio.deliver({'type':'ack','generation':0,'frames':2400,'playback':'paused'})
+        self.assertEqual(states[-1],'paused')
+        audio.deliver({'type':'played','generation':0,'segment':1,'frames':0,'playback':'idle'})
+        self.assertEqual(states[-1],'idle')
+        audio.generation=1
+        audio.deliver({'type':'ack','generation':0,'frames':2400,'playback':'playing'})
+        self.assertEqual(states[-1],'idle')

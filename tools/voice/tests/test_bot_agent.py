@@ -17,8 +17,10 @@ class BotAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await a.start())['outputMode'],'settled-answer')
         events=[e async for e in a.stream('你好')]
         self.assertEqual(events[-1]['text'],'你好')
+        self.assertEqual(events[0]['type'],'request')
+        self.assertEqual(events[0]['id'],events[-1]['id'])
         await a.close()
-        self.assertFalse(any(p in ('/shutdown','/cancel') for p,_ in calls))
+        self.assertFalse(any(p in ('/shutdown','/voice/cancel-request') for p,_ in calls))
 
     async def test_interruption_cancels_foreground_only_not_independent_tasks(self):
         calls=[];waiting=asyncio.Event()
@@ -26,13 +28,13 @@ class BotAgentTests(unittest.IsolatedAsyncioTestCase):
             calls.append((path,body))
             if path=='/ask':return {'status':'queued'}
             if path=='/result':waiting.set();await asyncio.Future()
-            if path=='/cancel':return {'status':'cancelled'}
+            if path=='/voice/cancel-request':return {'status':'cancelled'}
         a=BotAgent(api=api)
         async def consume():
             async for _ in a.stream('start'):pass
         task=asyncio.create_task(consume());await waiting.wait();task.cancel()
         with self.assertRaises(asyncio.CancelledError):await task
-        self.assertTrue(any(p=='/cancel' for p,_ in calls))
+        self.assertTrue(any(p=='/voice/cancel-request' for p,_ in calls))
         self.assertFalse(any(p=='/cancel-task' for p,_ in calls))
 
     async def test_control_task_status_and_explicit_cancel(self):

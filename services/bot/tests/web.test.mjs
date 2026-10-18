@@ -110,3 +110,15 @@ test('clearing browser selection is authenticated like other controls',async t=>
  assert.equal((await post('/web/api/context-clear')).status,401);
  assert.equal((await post('/web/api/context-clear',{},headers)).status,200);assert.equal(calls.at(-1).path,'/context-clear');
 });
+test('voice commands require browser credentials; native telemetry is Bearer-only',async t=>{
+ const {post,origin,calls}=await fixture(t);const login=await post('/web/session'),{csrf}=await login.json();const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ assert.equal((await post('/web/api/voice-control',{})).status,401);
+ assert.equal((await post('/web/api/voice-control',{action:'mute'},{Cookie:headers.Cookie})).status,403);
+ assert.equal((await post('/web/api/voice-control',{action:'mute'},headers)).status,200);
+ for(const route of ['publish','poll','ack','cancel-request']){
+  assert.equal((await post('/voice/'+route,{},headers)).status,403);
+  assert.equal((await post('/web/api/voice/'+route,{},headers)).status,404);
+  assert.equal((await fetch(origin+'/voice/'+route,{method:'POST',headers:{Authorization:'Bearer cli-only-secret'},body:'{}'})).status,200);
+ }
+ assert.equal(calls[0].path,'/voice-control');
+});

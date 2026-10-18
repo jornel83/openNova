@@ -10,3 +10,14 @@ button,textarea{font:inherit}button{cursor:pointer;color:inherit}button:disabled
 @media(min-width:700px){.chat-content{padding:28px 36px 14px}.chat-bottom{padding-left:32px;padding-right:32px}.nova-header{padding-left:36px;padding-right:36px}}@media(max-height:700px){.nova-identity{flex-direction:row;justify-content:center;gap:12px;padding:8px 0 12px}.nova-identity h1{margin:0}.nova-identity p{margin:0}.nova-ring{width:54px;height:54px}.ring-light{inset:15px}.chat-bottom{max-height:50%}}@media(pointer:coarse){.send-button,.icon-button{min-width:40px;min-height:40px}.composer textarea{font-size:16px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}.nova-ring[data-reduced-motion] *{animation:none!important;transition:none!important}
 /* Upstream hover actions sit outside a bubble; keep them inside narrow windows. */
 .nova-app .bt-msg-line{width:100%;flex-direction:column;align-items:stretch;gap:2px}.nova-app .bt-msg-line>.bt-tools{position:static;align-self:flex-end;transform:none;max-width:100%}.nova-app .bt-bubble{padding:0;border-radius:0}
+
+/* Native voice state; these animations express activity, not measured sound levels. */
+.nova-ring[data-state=listening] .ring-light{animation:breathe 4s ease-in-out infinite}
+.nova-ring[data-state=recognizing] .ring-orbit{animation:orbit 5s linear infinite}
+.nova-ring[data-state=buffering] .ring-arc{animation:orbit 3s linear infinite;opacity:.5}
+.nova-ring[data-state=playing] .ring-core{animation:voice-pulse 1s ease-in-out infinite}
+.nova-ring[data-state=playing] .ring-light{animation:breathe 1.2s ease-in-out infinite}
+.nova-ring[data-state=paused]{color:#d9bb85}.nova-ring[data-state=error]{color:#e79990}
+@keyframes voice-pulse{50%{stroke-width:2.5;opacity:.45}}
+.speech-draft{border-left:1px solid var(--nv-accent);padding:2px 0 2px 12px;margin:16px 0 12px;color:var(--nv-text)}.speech-draft>span{font-size:10px;color:var(--nv-muted)}.speech-draft p{font-size:13px;line-height:1.7;white-space:pre-wrap;margin:6px 0}
+.voice-symbol{background:transparent}.voice-symbol:disabled{opacity:.5}.voice-symbol:not(:disabled){color:var(--nv-accent)}.voice-actions{display:flex;gap:6px;margin-left:auto}.voice-actions button{padding:4px 6px;color:var(--nv-muted);background:transparent;border:1px solid var(--nv-line);border-radius:6px;font-size:10px;white-space:nowrap}.voice-actions button:hover:not(:disabled){color:var(--nv-text);border-color:#528a9b}

@@ -6,6 +6,7 @@ import {UserMessageCell,USER_MESSAGE_CSS} from '@opennova/ds-bot/user-message.js
 import {SHELL_CSS,CONVERSATION_CSS} from '@opennova/ds-bot/styles.js';
 import {installLocale} from '@opennova/ds-bot/i18n.js';
 import {WebApi,errorText} from './api.mjs';
+import {voicePresentation} from './voice-state.mjs';
 import {NovaRing} from './nova-ring.jsx';
 import {ContextChip} from './context-chip.jsx';
 import {OperationCard} from './operation-card.jsx';
@@ -24,6 +25,7 @@ const storage={get(){try{return JSON.parse(sessionStorage.getItem('opennova.web.
 
 function App(){
   const [snapshot,setSnapshot]=useState(null),[online,setOnline]=useState(false),[draft,setDraft]=useState(savedDraft),[error,setError]=useState(''),[sending,setSending]=useState(false),[limit,setLimit]=useState(50),[outbox,setOutbox]=useState(storage.get);
+  const [voicePending,setVoicePending]=useState(false),[lastControl,setLastControl]=useState(null);
   const inflight=useRef(false),outgoing=useRef(outbox),count=useRef(0),applied=useRef(0),scroll=useRef(),stick=useRef(true),input=useRef();
   const setOutgoing=value=>{outgoing.current=value;storage.set(value);setOutbox(value);};
   async function refresh(){
@@ -48,8 +50,11 @@ function App(){
   const operationsFor=id=>approvals.filter(p=>p.requestId===id).sort((a,b)=>a.createdAt-b.createdAt);
   const unlinked=approvals.filter(p=>!p.requestId);
   const active=messages.find(m=>m.id===snapshot?.activeId);
-  const novaState=!online?'offline':snapshot?.busy?'thinking':'idle';
-  const novaStatus=!online?'正在连接':snapshot?.busy?(active?.phase==='tool'?'正在工作':'正在思考'):'与你继续交流';
+  const voice=snapshot?.desktop?.voice??{};
+  const presentation=voicePresentation(snapshot,online);
+  useEffect(()=>{const result=voice.controls?.find(c=>c.id===lastControl);if(result&&['failed','stale','unavailable'].includes(result.status)){setError(result.status==='failed'?'语音控制未完成，请重连音频或查看终端。':result.status==='stale'?'语音状态已变化，旧操作已忽略。':'语音已断开，请在终端重新启动。');setLastControl(null);}},[voice.controls,lastControl]);
+  const novaState=presentation.state,novaStatus=presentation.label;
+  const speechDraft=voice.connected&&voice.draft&&!messages.some(m=>m.id===voice.draft.requestId)?voice.draft:null;
   const bot={id:snapshot?.health.botId||'opennova',name:'OpenNova',color:'blue',avatar:{shape:'drop'}},sessionId=snapshot?.health.sessionId||bot.id;
   const roster={bots:[bot],byId:{[bot.id]:bot,[sessionId]:bot},roomsById:{}};
   const busy=!!snapshot?.busy;
@@ -73,6 +78,24 @@ function App(){
     setError('');try{await api.call('document-open',{id:crypto.randomUUID(),fileId});await refresh();}catch(e){setError(errorText(e));}
   }
   async function action(name,id){const result=await api.call(name,{id});await refresh();return result;}
+  async function voiceControl(action){
+    setVoicePending(true);setError('');
+    try{
+      const id=crypto.randomUUID();setLastControl(id);
+      await api.call('voice-control',{id,action,voiceInstanceId:voice.voiceInstanceId,generation:voice.generation,requestId:voice.requestId});
+      await refresh();
+    }catch(e){setError(errorText(e));}finally{setVoicePending(false);}
+  }
+  async function stopReply(){
+    setVoicePending(true);setError('');
+    try{
+      const commands=[];
+      if(snapshot.activeId)commands.push(api.call('cancel',{id:snapshot.activeId}));
+      if(voice.connected&&['buffering','playing','paused'].includes(voice.playback)&&voice.requestId!==snapshot.activeId)
+        commands.push(api.call('voice-control',{id:crypto.randomUUID(),action:'stop',voiceInstanceId:voice.voiceInstanceId,generation:voice.generation,requestId:voice.requestId}));
+      await Promise.all(commands);await refresh();
+    }catch(e){setError(errorText(e));}finally{setVoicePending(false);}
+  }
   return <main className="nova-app">
     <header className="nova-header">
       <div className="window-heading"><span>OPENNOVA</span><span className={'connection '+(online?'online':'')}><i/>{online?'已连接':'连接中'}</span></div>
@@ -90,6 +113,7 @@ function App(){
           {message.status==='completed'?<Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/>:<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(message.phase==='tool'?'正在处理工作内容…':'正在思考…'):errorText({message:message.error||message.status,code:message.status})}</p>}
         </div>
       </section>)}
+      {speechDraft&&<div className="speech-draft" role="status" aria-label="实时语音转写"><span>语音 · {voice.recognition==='recognizing'?'识别中':'正在提交'}</span><p>{speechDraft.text||'正在听你说…'}</p></div>}
       {!!unlinked.length&&<details className="other-operations"><summary>其他操作记录 · {unlinked.length}</summary>{unlinked.map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</details>}
     </div></div>
     <div className="chat-bottom">
@@ -98,10 +122,14 @@ function App(){
         {error&&<div className="error" role="alert">{error}</div>}
         {outbox&&!sending&&<p className="subtle">上一条消息的发送状态待确认。重试会发送原消息，新草稿会保留。</p>}
         <div className="composer"><textarea ref={input} aria-label="发送给 OpenNova" placeholder="说说你的想法…" value={draft} maxLength={8000} rows={2} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&e.keyCode!==229){e.preventDefault();void send();}}}/>
-          <div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{snapshot?.activeId?<button type="button" className="stop-button" onClick={()=>{void action('cancel',snapshot.activeId).catch(e=>setError(errorText(e)));}}><Icon name="stop"/> 停止回复</button>:<button type="submit" className="send-button" title={outbox?'重试发送':'发送'} aria-label={sending?'发送中':outbox?'重试发送':'发送'} disabled={!online||busy||sending||(!outbox&&!draft.trim())}><Icon name="send"/></button>}</div>
+          <div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{presentation.canStop?<button type="button" className="stop-button" disabled={voicePending} onClick={()=>void stopReply()}><Icon name="stop"/> 停止回复</button>:<button type="submit" className="send-button" title={outbox?'重试发送':'发送'} aria-label={sending?'发送中':outbox?'重试发送':'发送'} disabled={!online||busy||sending||(!outbox&&!draft.trim())}><Icon name="send"/></button>}</div>
         </div>
       </form>
-      <div className="voice-footer"><span className="voice-symbol"><Icon name="micOff"/></span><div><span>语音未启动</span><small>文字与语音共用这段对话</small></div><span className="voice-idle" aria-hidden="true"><i/><i/><i/><i/><i/></span></div>
+      <div className="voice-footer">
+        <button type="button" className="voice-symbol" aria-label={voice.capture==='listening'?'静音麦克风':voice.capture==='off'?'开始交流':'恢复麦克风'} title={presentation.micLabel} disabled={!presentation.canControl||voicePending||voice.capture==='error'} onClick={()=>void voiceControl(voice.capture==='off'?'start':voice.capture==='listening'?'mute':'unmute')}><Icon name={voice.capture==='listening'&&presentation.canControl?'mic':'micOff'}/></button>
+        <div><span>{presentation.micLabel}</span><small>{presentation.canControl?'文字与语音共用这段对话':'在终端启动语音后自动连接'}</small></div>
+        {presentation.canControl&&<div className="voice-actions"><button type="button" disabled={voicePending} onClick={()=>void voiceControl(voice.capture==='off'?'start':'end')}>{voice.capture==='off'?'开始':'结束'}</button><button type="button" disabled={voicePending} onClick={()=>void voiceControl('retry')} title="重连音频设备">重连</button></div>}
+      </div>
     </div>
   </main>;
 }

@@ -9,6 +9,7 @@ from continuous import Conversation
 from controls import read_controls, HELP
 from stream_agent import StreamingAgent
 from bot_agent import BotAgent
+from ui_bridge import UiBridge, matches_control
 from turns import TurnCapture
 from doubao_asr import recognize, load_pcm, file_chunks, safe_message
 from vad import SileroOnnx
@@ -49,7 +50,8 @@ async def run(args, key):
     owned_audio = {audio}
     owned_agents = {agent}
     tasks = set()
-    controller = capture = None
+    controller = capture = bridge = None
+    commands = asyncio.Queue(maxsize=16)
     report = {'mode':'continuous_file' if args.audio else 'continuous_microphone',
               'model':'gpt-6.1-sol','tts_provider':provider,'voice':voice,'speed':default_speed(provider),'success':False,
               'acoustic_validation':False,'tts_server_cancellation_verified':False,'turns':[]}
@@ -75,14 +77,18 @@ async def run(args, key):
                 capture.feed(epoch,pcm)
     async def audio_failure(message):
         controller.active = False
+        controller.audio_failed = True
         controller.epoch += 1
         capture.reset(controller.epoch)
         controller.inputs.clear()
         with suppress(Exception): await controller.invalidate('audio_failure')
         with suppress(Exception): await controller.audio.capture(False,controller.epoch)
+        controller.draft = None
+        controller.notify()
         log(message)
     async def new_audio():
         new = NativeAudio(device=args.device, output_device=args.output_device)
+        new.enabled = False  # Retry starts suspended; restore_audio applies current mute/end intent.
         owned_audio.add(new)
         new_agent = None
         published = False
@@ -141,7 +147,14 @@ async def run(args, key):
             if not report['success']: raise ValueError('文件链路验证未完整成功，请检查本轮终端状态。')
             log(f'文件验证完成：{len(controller.records)} 轮；未开启麦克风或扬声器。')
             return
+        if getattr(args,'bot',False):
+            bridge = UiBridge(partial(agent._api,timeout=2))
+            await bridge.connect()
+            tasks.add(asyncio.create_task(bridge.run(commands)))
+            controller.on_state = bridge.publish
+            audio.on_state = controller.notify
         info = await audio.start()
+        controller.notify()
         report['audio_ready'] = info
         log(f"音频已就绪：{info['input']} → {info['output']}；Voice Processing 已开启，现场效果待验证。")
         log(HELP)
@@ -149,7 +162,6 @@ async def run(args, key):
         if getattr(args,'bot',False):
             log('Bot：文件和记忆直接执行，无需确认。/operations 查看操作记录 · /tasks 查询任务 · /cancel-task 编号 取消任务 · /memory 查看记忆 · /result 查询上一请求。')
         log('正在聆听。')
-        commands = asyncio.Queue(maxsize=16)
         control_reader = asyncio.create_task(read_controls(commands)); tasks.add(control_reader)
         input_task = asyncio.create_task(pump_input(audio)); tasks.add(input_task)
         event_wait = asyncio.create_task(events.get()); tasks.add(event_wait)
@@ -164,24 +176,38 @@ async def run(args, key):
                 try: await controller.handle({'type':'tick','epoch':controller.epoch,'time':time.monotonic()})
                 except Exception as error: await audio_failure(str(error))
             if command_wait in done:
-                command = command_wait.result()
-                if command == '/retry':
-                    if retry and not retry.done(): log('音频正在重连，请稍候。')
+                incoming = command_wait.result()
+                envelope = incoming if isinstance(incoming,dict) else None
+                command = '/'+envelope['action'] if envelope else incoming
+                status = 'applied'
+                try:
+                    if envelope and not matches_control(envelope,controller,bridge.instance_id):
+                        status = 'stale'
+                    elif command == '/retry':
+                        if retry and not retry.done(): log('音频正在重连，请稍候。')
+                        else:
+                            await audio_failure('正在重建原生音频；本次会话上下文保留。')
+                            input_task.cancel()
+                            await asyncio.gather(input_task,return_exceptions=True)
+                            await controller.audio.close()
+                            owned_audio.discard(controller.audio)
+                            retry = asyncio.create_task(new_audio()); tasks.add(retry)
                     else:
-                        await audio_failure('正在重建原生音频；本次会话上下文保留。')
-                        input_task.cancel()
-                        await asyncio.gather(input_task,return_exceptions=True)
-                        await controller.audio.close()
-                        owned_audio.discard(controller.audio)
-                        retry = asyncio.create_task(new_audio()); tasks.add(retry)
-                else:
-                    try:
                         result = await agent.control(command) if getattr(args,'bot',False) else None
                         if result is not None: log(json.dumps(result,ensure_ascii=False,indent=2))
-                        else: await controller.control(command)
-                    except Exception as error:
-                        if getattr(args,'bot',False): log('操作失败：'+str(error))
-                        else: await audio_failure(str(error))
+                        else:
+                            await controller.control(command)
+                            if command == '/stop' and not envelope and getattr(args,'bot',False):
+                                # Also stop a text-originated foreground task; capture its ID now.
+                                snapshot = await agent.api('/snapshot',{})
+                                if snapshot.get('activeId'):
+                                    await agent.api('/voice/cancel-request',{'id':snapshot['activeId']})
+                except Exception as error:
+                    status = 'failed'
+                    if getattr(args,'bot',False): log('操作失败：'+str(error))
+                    else: await audio_failure(str(error))
+                finally:
+                    if envelope: bridge.ack(envelope,{'status':status})
                 tasks.discard(command_wait)
                 command_wait = asyncio.create_task(commands.get()); tasks.add(command_wait)
             if event_wait in done:
@@ -192,6 +218,7 @@ async def run(args, key):
                         controller.agent = agent = event['agent']
                         log('Agent 连接已重建，这是一个新的模型会话。')
                     controller.audio = audio = event['audio']
+                    audio.on_state = controller.notify
                     if controller.quit: continue
                     await controller.restore_audio()
                     input_task = asyncio.create_task(pump_input(audio)); tasks.add(input_task)
@@ -218,6 +245,7 @@ async def run(args, key):
             with suppress(Exception): await owned.close()
         for owned in owned_agents:
             with suppress(Exception): await owned.close()
+        if bridge: await bridge.close()
         report['finished_at'] = time.monotonic()
         if args.output_dir:
             (args.output_dir/'conversation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))

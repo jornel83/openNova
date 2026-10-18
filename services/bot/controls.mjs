@@ -1,5 +1,5 @@
 /** One command path for voice, terminal and browser clients. */
-import {createHash} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 
 function approvalPreview(record) {
   if(record.kind==='tool'||record.operation!=='file')return record;
@@ -14,14 +14,24 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,memory,health,memoryView,shutdown,context,documents,events,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,memory,health,memoryView,shutdown,context,documents,events,voice,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
+    if(path==='/voice/publish')return voice.publish(body);
+    if(path==='/voice/poll')return voice.poll(body.voiceInstanceId);
+    if(path==='/voice/ack')return voice.ack(body);
+    if(path==='/voice/cancel-request')return requests.cancel(body.id);
+    if(path==='/voice-control'){
+      if(!voice)throw Error('voice_unavailable');
+      const receipt=voice.enqueue(body);
+      if(['stop','end'].includes(body.action)&&receipt.requestId)await requests.cancel(receipt.requestId);
+      return receipt;
+    }
     if(path==='/health')return health();
     if(path==='/snapshot'){
       const limit=Number.isInteger(body.limit)?Math.max(20,Math.min(500,body.limit)):50;
       const readState=()=>{const records=ops.list('request'),approvals=operationRecords(ops);
       const workContext=context?.capture()??{kind:'none'};
-      return {workContext,desktop:{context:workContext,browser:browserState(),voice:voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
+      return {workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
         messages:records.slice(0,limit).reverse(),hasMore:records.length>limit,
         approvals:approvals.filter((r,i)=>i<30||records.slice(0,limit).some(m=>m.id===r.requestId)||['pending','applying','running'].includes(r.status)).map(approvalPreview)};};
       if(!events)return readState();
@@ -35,7 +45,11 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,c
     }
     if(path==='/ask')return requests.submit(body.id,body.text,body.source||'text');
     if(path==='/result')return ops.request(body.id);
-    if(path==='/cancel')return requests.cancel(body.id);
+    if(path==='/cancel'){
+      const state=voice?.snapshot();
+      if(state?.connected&&state.requestId===body.id)voice.enqueue({id:body.controlId||randomUUID(),action:'stop',voiceInstanceId:state.voiceInstanceId,generation:state.generation,requestId:body.id});
+      return requests.cancel(body.id);
+    }
     if(path==='/approvals')return ops.list('approval');
     if(path==='/operations')return operationRecords(ops);
     if(path==='/approve')return requests.exclusive(()=>ops.get(body.id).operation==='file'?ops.approveFile(body.id):memory.approve(body.id));

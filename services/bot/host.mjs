@@ -1,3 +1,4 @@
+import {createVoiceChannel} from './desktop/voice.mjs';
 import {createEvents} from './desktop/events.mjs';
 /** Real DeepSeek-Bot runtime, with a small loopback adapter for OpenNova clients. */
 import {readFileSync,writeFileSync} from 'node:fs';
@@ -41,6 +42,8 @@ export async function apply(ctx,config) {
   await bindProject(ctx,rt,bot,config.workspace);resources.assertOpen();
   const events=createEvents();
   resources.add(()=>events.close());
+  const voice=createVoiceChannel({events});
+  resources.add(()=>voice.close());
   let requests;
   const ops=new Operations({...config,events,getRequestId:()=>requests?.active?.id});
   recoverToolRuns(ops);
@@ -138,7 +141,7 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,context,documents,events,browserState:()=>desktop?.status()??{connected:false},
+  const handle=createControls({ops,requests,memory,context,documents,events,voice,browserState:()=>desktop?.status()??{connected:false},
     health:()=>({ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},

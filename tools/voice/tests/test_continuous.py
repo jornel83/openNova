@@ -46,6 +46,40 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         await self.event('final',ident,text=text)
     async def settle(self):
         await self.controller.wait_idle()
+    async def test_ui_draft_revisions_final_once_and_native_playback_state(self):
+        observed=[];self.controller.on_state=observed.append
+        await self.event('start')
+        await self.event('partial',text='你')
+        await self.event('partial',text='你好')
+        self.assertEqual(observed[-1]['draft']['text'],'你好')
+        self.assertEqual(observed[-1]['recognition'],'recognizing')
+        await self.event('final',text='你好')
+        await self.event('final',text='你好')
+        await self.settle()
+        self.assertEqual(self.agent.prompts,['你好'])
+        self.assertEqual(observed[-1]['playback'],'idle')
+        await self.controller.control('/mute')
+        self.assertEqual(observed[-1]['capture'],'muted')
+        await self.controller.restore_audio()
+        self.assertEqual(observed[-1]['capture'],'muted')
+        await self.controller.control('/end')
+        await self.controller.restore_audio()
+        self.assertEqual(observed[-1]['capture'],'off')
+
+    async def test_bot_complete_still_buffering_then_stop_clears_without_waiting_tts(self):
+        gate=asyncio.Event()
+        async def slow(*args,**kwargs):
+            gate.set();await asyncio.sleep(30);yield b'00'
+        self.controller.synthesize=slow
+        await self.submit();await gate.wait()
+        self.assertEqual(self.controller.voice_state()['playback'],'buffering')
+        self.audio.playback='playing'
+        self.assertEqual(self.controller.voice_state()['playback'],'playing')
+        self.audio.playback='paused'
+        self.assertEqual(self.controller.voice_state()['playback'],'paused')
+        await asyncio.wait_for(self.controller.control('/stop'),.2)
+        self.assertEqual(self.controller.voice_state()['playback'],'idle')
+
     async def test_false_candidate_resumes_same_generation(self):
         self.agent.hold=True
         await self.submit()

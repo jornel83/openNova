@@ -17,7 +17,7 @@ class BotAgent:
         self.closed = False
         self.last_request = None
 
-    async def _api(self, path, body):
+    async def _api(self, path, body, *, timeout=20):
         def send():
             home = Path(os.environ.get('OPENNOVA_BOT_HOME', str(Path.home()/'.local/share/opennova/bot-spike'))).expanduser()
             token = (home/'client.token').read_text().strip()
@@ -26,7 +26,7 @@ class BotAgent:
                 data=json.dumps(body).encode(), headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             try:
-                with opener.open(req,timeout=20) as response: return json.load(response)
+                with opener.open(req,timeout=timeout) as response: return json.load(response)
             except urllib.error.HTTPError as error:
                 try: message=json.load(error).get('error','bot_request_failed')
                 except Exception: message='bot_request_failed'
@@ -44,6 +44,7 @@ class BotAgent:
         ident=str(uuid.uuid4());self.current=self.last_request=ident
         terminal=False
         try:
+            yield {'type':'request','id':ident}
             await self.api('/ask',{'id':ident,'text':text,'source':'voice'})
             tool=None
             for _ in range(2100):
@@ -68,7 +69,7 @@ class BotAgent:
                 if self.current==ident:self.current=None
 
     async def cancel(self):
-        if self.current: await self.api('/cancel',{'id':self.current})
+        if self.current: await self.api('/voice/cancel-request',{'id':self.current})
 
     async def control(self,command):
         parts=command.split(maxsplit=1);name=parts[0];ident=parts[1].strip() if len(parts)>1 else None
