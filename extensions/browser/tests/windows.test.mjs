@@ -27,6 +27,6 @@ test('only a matching clicked link can adopt its new tab; unrelated popups canno
  m.expectPopup({id:'click',page:{bindingId:b.bindingId,tabId:b.workTabId,documentId:'doc'},href:'https://example.com/article'});
  assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:99,url:'https://example.com/advert'}),false);
  chrome.tabsMap.set(100,{id:100,windowId:b.workWindowId,url:'https://example.com/article',openerTabId:b.workTabId});
- assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:100,url:'https://example.com/article'}),true);assert.equal((await m.binding()).workTabId,100);
+ assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:100,url:'https://example.com/article'}),true);assert.equal((await m.binding()).workTabId,100);assert.equal(m.isCommandDestination('click',await m.binding()),true);assert.equal(m.isCommandDestination('other',await m.binding()),false);m.clearPopup('click');assert.equal(m.isCommandDestination('click',await m.binding()),false);
  assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:99,url:'https://example.com/article'}),false);
 });

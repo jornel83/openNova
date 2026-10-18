@@ -8,6 +8,7 @@ export function layout(area){
 }
 export function createWindowManager(chrome){
  let queue=Promise.resolve(),popup=null;
+ const destinations=new Map();
  const get=async()=>(await chrome.storage.session.get('binding')).binding||{};
  const save=async value=>{await chrome.storage.session.set({binding:value});return value;};
  async function isWorkValid(b){try{const t=await chrome.tabs.get(b.workTabId);return t.windowId===b.workWindowId&&!isChatPage(t.url,b.chatUrl);}catch{return false;}}
@@ -23,12 +24,13 @@ export function createWindowManager(chrome){
  async function bind(tab){const b=await get();if(tab.windowId===b.chatWindowId||isChatPage(tab.url,b.chatUrl))throw Error('chat_page_cannot_be_work_page');if(!/^https?:\/\//.test(tab.url||''))throw Error('unsupported_page');return save({...b,bindingId:crypto.randomUUID(),workWindowId:tab.windowId,workTabId:tab.id});}
  return {binding:get,bind,
   expectPopup({id,page,href}){popup=href?{id,page,href,expiresAt:Date.now()+2500}:null;},
-  clearPopup(id){if(popup?.id===id)popup=null;},
+  clearPopup(id){if(popup?.id===id)popup=null;destinations.delete(id);},
+  isCommandDestination(id,page){const d=destinations.get(id);return !!d&&d.bindingId===page?.bindingId&&d.tabId===(page?.tabId??page?.workTabId);},
   async createdTarget(details){
    const p=popup,b=await get();
    if(!p||Date.now()>p.expiresAt||details.sourceTabId!==p.page.tabId||details.sourceFrameId!==0||details.url!==p.href||b.bindingId!==p.page.bindingId||b.workTabId!==p.page.tabId)return false;
    popup=null;
-   const tab=await chrome.tabs.get(details.tabId);await bind({...tab,url:tab.url||details.url});return true;
+   const tab=await chrome.tabs.get(details.tabId);const adopted=await bind({...tab,url:tab.url||details.url});destinations.set(p.id,{bindingId:adopted.bindingId,tabId:adopted.workTabId});return true;
   },
   ensureWindows(options){const p=queue.then(()=>ensure(options));queue=p.catch(()=>{});return p;},
   async activated({tabId,windowId}){const b=await get();if(windowId!==b.workWindowId||windowId===b.chatWindowId)return false;if(tabId===b.workTabId)return true;const t=await chrome.tabs.get(tabId);if(t.openerTabId!=null)return false;await bind(t);return true;},

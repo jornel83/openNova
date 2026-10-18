@@ -2,7 +2,8 @@ import {readDOM} from './dom.mjs';
 import {isChatPage} from './windows.mjs';
 const same=(a,b)=>a&&b&&a.bindingId===b.bindingId&&a.tabId===b.tabId&&a.documentId===b.documentId&&a.revision===b.revision;
 export function createPageAdapter({chrome,windows,publish}){
- let queue=Promise.resolve(),navigation=null,navEpoch=0;
+ let queue=Promise.resolve(),navigation=null;
+ const navigationEpochs=new Map(),epochOf=tabId=>navigationEpochs.get(tabId)||0;
  const load=async()=>(await chrome.storage.session.get('pageContext')).pageContext||{page:null,selection:null};
  const save=async(context,activate=false)=>{await chrome.storage.session.set({pageContext:context});publish(context,activate);return context;};
  const serial=fn=>{const p=queue.then(fn);queue=p.catch(()=>{});return p;};
@@ -36,7 +37,7 @@ export function createPageAdapter({chrome,windows,publish}){
  return {
   refresh:args=>serial(()=>refresh(args)),
   navigation(details){
-   navEpoch++;
+   if(details.frameId===0)navigationEpochs.set(details.tabId,epochOf(details.tabId)+1);
    return serial(async()=>{
     const b=await windows.binding();
     if(details.tabId!==b.workTabId||details.frameId!==0)return;
@@ -51,8 +52,9 @@ export function createPageAdapter({chrome,windows,publish}){
    const check=()=>{if(isCancelled()||command.deadlineAt&&command.deadlineAt<Date.now())throw Error('command_cancelled');};
    check();
    if(['click','fill','scroll'].includes(command.method)){
+    try{
     const receipt=await serial(async()=>{
-    check();const epoch=navEpoch,{page}=await refresh();
+    check();const epoch=epochOf(command.page?.tabId),{page}=await refresh();
     if(!same(command.page,page))throw Error('context_changed');
     if(!page.readable)throw Error(page.reason);
     const target={tabId:page.tabId,documentIds:[page.documentId]};
@@ -60,10 +62,10 @@ export function createPageAdapter({chrome,windows,publish}){
     if(command.method==='click'){
      inspected=(await chrome.scripting.executeScript({target,func:readDOM,args:[{mode:'inspect',ref:command.args.ref,expectedURL:page.url}]}))[0]?.result;
      if(inspected?.error)throw Error(inspected.error);
-     windows.expectPopup?.({id:command.id,page,href:inspected?.href});
     }
     const binding=await windows.binding(),frame=await chrome.webNavigation.getFrame({tabId:page.tabId,frameId:0});
-    check();if(epoch!==navEpoch||binding.bindingId!==page.bindingId||frame?.documentId!==page.documentId)throw Error('context_changed');
+    check();if(epoch!==epochOf(page.tabId)||binding.bindingId!==page.bindingId||frame?.documentId!==page.documentId)throw Error('context_changed');
+    if(command.method==='click')windows.expectPopup?.({id:command.id,page,href:inspected?.href});
     const result=(await chrome.scripting.executeScript({target,func:readDOM,args:[{...command.args,mode:command.method,expectedURL:page.url,...(inspected?.href?{expectedHref:inspected.href}:{})}]}))[0]?.result;
     if(!result)throw Error('action_receipt_missing');if(result.error)throw Error(result.error);
     return {...result,page};
@@ -74,11 +76,17 @@ export function createPageAdapter({chrome,windows,publish}){
     await new Promise(r=>setTimeout(r,300));
     do{
      const latest=await this.refresh();
-     if(latest.page)return {...receipt,page:latest.page};
+     if(latest.page){
+      const original=receipt.page;
+      const sameBinding=latest.page.bindingId===original.bindingId&&latest.page.tabId===original.tabId;
+      if(!sameBinding&&!windows.isCommandDestination?.(command.id,latest.page))return {status:'failed',error:'context_changed',action:'click',dispatched:true};
+      return {...receipt,page:latest.page};
+     }
      if(isCancelled())break;
      await new Promise(r=>setTimeout(r,100));
     }while(Date.now()<end);
     return {...receipt,page:undefined,pagePending:true};
+    }finally{if(command.method==='click')windows.clearPopup?.(command.id);}
    }
    if(command.method==='windows.ensure'){const result=await windows.ensureWindows({chatUrl:base+'/',...command.args});navigation=null;await this.refresh({activate:true});return {status:'completed',windows:result};}
    if(command.method==='read')return serial(()=>{check();return read(command.page);});

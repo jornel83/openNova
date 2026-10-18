@@ -2,8 +2,9 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {createPageAdapter} from '../pages.mjs';
 function fixture(){let store={},url='https://example.com/one',doc='d1',tabId=1,bindingId='b';const published=[];
  const chrome={storage:{session:{get:async()=>structuredClone(store),set:async v=>Object.assign(store,structuredClone(v))}},tabs:{get:async()=>({id:tabId,url,title:'Page',status:'complete'})},webNavigation:{getFrame:async()=>({documentId:doc})},scripting:{executeScript:async p=>p.files?[]:[{result:{text:'hello',truncated:false,targets:[],contentType:'text/html'}}]}};
- const pages=createPageAdapter({chrome,windows:{binding:async()=>({bindingId,workTabId:tabId,chatUrl:'http://127.0.0.1:18562/'})},publish:(c,a)=>published.push({c,a})});
- return {pages,published,chrome,setURL:v=>url=v,setDoc:v=>doc=v,setTab:(id)=>{tabId=id;bindingId='b'+id;}};}
+ const windows={binding:async()=>({bindingId,workTabId:tabId,chatUrl:'http://127.0.0.1:18562/'})};
+ const pages=createPageAdapter({chrome,windows,publish:(c,a)=>published.push({c,a})});
+ return {pages,published,chrome,windows,setURL:v=>url=v,setDoc:v=>doc=v,setTab:(id)=>{tabId=id;bindingId='b'+id;}};}
 test('real navigation and SPA routes invalidate old references and selections',async()=>{
  const f=fixture();await f.pages.refresh({activate:true});const old=f.published.at(-1).c.page;
  await f.pages.selection({text:'quote'}, {tab:{id:1},documentId:'d1',frameId:0});assert.equal(f.published.at(-1).c.selection.text,'quote');
@@ -67,4 +68,31 @@ test('click receipt includes the actual destination reference for the next model
  };
  const result=await f.pages.execute({id:'go',method:'click',page,args:{ref:'target-1'}});
  assert.equal(result.page.url,'https://example.com/article');assert.equal(result.page.documentId,'article-doc');
+});
+test('manual rebind while a click settles is never returned as the click destination',async()=>{
+ const f=fixture();await f.pages.refresh();const page=f.published.at(-1).c.page;
+ f.chrome.scripting.executeScript=async p=>p.files?[]:[{result:p.args[0].mode==='inspect'?{href:null}:{status:'completed',action:'click'}}];
+ const pending=f.pages.execute({id:'manual-race',method:'click',page,args:{ref:'target-1'}});setTimeout(()=>{f.setTab(2);f.setDoc('d2');},20);
+ const r=await pending;assert.equal(r.error,'context_changed');assert.equal(r.status,'failed');assert.equal(r.dispatched,true);assert.equal(r.page,undefined);
+});
+test('navigation in unrelated tabs and subframes does not cancel an otherwise valid action',async()=>{
+ const f=fixture();await f.pages.refresh();const page=f.published.at(-1).c.page;let noisy=true,actions=0;
+ f.chrome.scripting.executeScript=async p=>{
+  if(p.files){if(noisy){noisy=false;void f.pages.navigation({tabId:99,frameId:0,loading:true});void f.pages.navigation({tabId:1,frameId:5,loading:true});}return [];}
+  actions++;return [{result:{status:'completed',action:'fill'}}];
+ };
+ assert.equal((await f.pages.execute({id:'noise',method:'fill',page,args:{ref:'target-1',text:'search'}})).status,'completed');assert.equal(actions,1);
+});
+test('cancelled or rejected clicks cannot leave a popup expectation armed',async()=>{
+ for(const fail of ['cancel','stale']){
+  const f=fixture();await f.pages.refresh();const page=f.published.at(-1).c.page;let cancelled=false,armed=false,actions=0;
+  f.windows.expectPopup=()=>{armed=true;};f.windows.clearPopup=()=>{armed=false;};
+  f.chrome.scripting.executeScript=async p=>{
+   if(p.files)return [];
+   if(p.args[0].mode==='inspect'){cancelled=fail==='cancel';return [{result:{href:'https://example.com/popup'}}];}
+   actions++;return [{result:{error:'stale_target'}}];
+  };
+  await assert.rejects(f.pages.execute({id:'rejected',method:'click',page,args:{ref:'target-1'}},'',()=>cancelled),fail==='cancel'?/command_cancelled/:/stale_target/);
+  assert.equal(armed,false);assert.equal(actions,fail==='cancel'?0:1);
+ }
 });

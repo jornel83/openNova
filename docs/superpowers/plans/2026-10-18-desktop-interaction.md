@@ -10,7 +10,7 @@
 
 **Spec:** [双窗口交互技术方案](../specs/2026-10-18-desktop-interaction-design.md)
 
-状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现，完成审查后收尾；M2–M4 尚未实施。测试范围、限制和启动步骤见 [M0 验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
+状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现并完成审查与实测；M2–M4 尚未实施。测试范围、限制和启动步骤见 [M0 验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
 
 ## Global Constraints
 
@@ -139,12 +139,12 @@
 - Produces: `createBrowserTools({bridge,context,ops})`，返回宿主 `defineTool` 可注册的五个工具定义；工具名、输入输出见 spec 5.4。
 - Produces: 请求记录 `context: WorkContext`；浏览器工具记录 `{kind:'tool',operation:'browser',requestId,commandId,status,...}`。
 
-- [ ] 写失败测试：同一 `/ask` id 重试仍使用第一次引用；语音与网页接入同一会话；切页期间的旧点击返回 `context_changed`；取消后未发送命令不执行。
-- [ ] 写额外失败测试：点击产生的有效新标签页可跟踪，无关弹窗不绑定；网页正文中要求调用 Shell 的文本仅作为引用；断线未知结果不自动重试。
-- [ ] 运行 `node --test services/bot/tests/desktop-tools.test.mjs services/bot/tests/requests.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增断言失败。
-- [ ] 实现工具定义、实际回执、请求引用及五项 DOM 操作。工具列入 `ALLOWED_TOOLS` 并进入现有 provider 配置；用户输入与引用分字段渲染，禁止把引用拼接成高优先级系统指令。
-- [ ] 运行上述测试；用文字实测“打开雪球上的华工科技 → 看最新公告 → 解释选区”。核对真实页面标题和链接；登录 / 验证码由用户在原页面完成，工具如实返回未完成原因。
-- [ ] 检查并提交本任务，建议 `feat: add shared-session browser tools`。
+- [x] 写失败测试：同一 `/ask` id 重试仍使用第一次引用；语音与网页接入同一会话；切页期间的旧点击返回 `context_changed`；取消后未发送命令不执行。
+- [x] 写额外失败测试：点击产生的有效新标签页可跟踪，无关弹窗不绑定；网页正文中要求调用 Shell 的文本仅作为引用；断线未知结果不自动重试。
+- [x] 运行 `node --test services/bot/tests/desktop-tools.test.mjs services/bot/tests/requests.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增断言失败。
+- [x] 实现工具定义、实际回执、请求引用及五项 DOM 操作。工具列入 `ALLOWED_TOOLS` 并进入现有 provider 配置；用户输入与引用分字段渲染，禁止把引用拼接成高优先级系统指令。
+- [x] 运行上述测试；用文字实测“打开雪球上的华工科技 → 看最新公告 → 解释选区”。核对真实页面标题和链接；登录 / 验证码由用户在原页面完成，工具如实返回未完成原因。
+- [x] 检查并提交本任务，建议 `feat: add shared-session browser tools`。
 
 ## Task 3A：定位本地文件并交给应用打开（M1）
 
@@ -158,13 +158,13 @@
 - Produces: `createDocumentTool({opener,getRequest})` 返回 `document_open({path,applicationId?})` 定义，宿主提供 `getRequest() -> {id,signal}`；执行器产生 command id，当前 requestId 由宿主取得。
 - Produces: 文件打开操作记录 `{kind:'tool',operation:'document_open',commandId,requestId,status,file?,error?}`；新增 `/web/api/document-open` 接收 `{id,fileId}`，复用服务端已登记文件重新打开，不接收任意网页提供的路径或 Shell 文本。
 
-- [ ] 写失败测试：中文 / 空格 / 引号 / Shell 特殊字符路径原样作为参数；不存在文件、非本机文件、指定应用缺失有明确错误；脚本执行、安装包、自定义 URL scheme 不走文件打开器。
-- [ ] 写幂等与引用测试：同 id 重试只打开一次，id 对应不同文件报冲突；取消前不启动，发送后取消不关闭应用；超时为 `unknown` 不重放；成功发送才选中文件引用，失败保留旧引用；网页后台更新不覆盖文件，显式返回网页清除文件引用。
-- [ ] 运行 `node --test services/bot/tests/desktop-documents.test.mjs services/bot/tests/desktop-context.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增能力失败。
-- [ ] 实现路径规范化、存在性 / 文件类型检查与应用路由。首版类型覆盖 PDF、PNG/JPEG/WebP、DOC/DOCX、XLS/XLSX、PPT/PPTX、Markdown / TXT 与常见源代码文本；源代码默认加 `-t`，显式应用仅接受编辑器，避免误用脚本执行器。调用 `/usr/bin/open` 使用绝对路径和参数数组，`shell:false`，不使用强制新实例或等待应用退出参数；为子进程提供必要环境，不传递模型密钥。
-- [ ] 实现 10 秒调用超时、明确失败及 `dispatched` 回执；发起调用前保存带 commandId 的运行记录，启动恢复时将未收尾记录标为 `unknown`，不重放。工具注册到允许列表，按现有授权直接执行。同名候选由 Agent 结合当前项目定位；仍有歧义时询问文件选择，不增加批准步骤。文本读取核对磁盘保存版本；PDF / Office 显示“正文未接入”，不生成臆测摘要。
-- [ ] 运行同一测试至通过；使用临时 TXT、PDF 和已安装办公软件支持的文档实测默认应用与指定应用。扩展未连接时仍可打开本地文件；记录人工看到的结果与系统回执的差别。
-- [ ] 检查 diff 并提交本任务，建议 `feat: open local documents in native applications`。
+- [x] 写失败测试：中文 / 空格 / 引号 / Shell 特殊字符路径原样作为参数；不存在文件、非本机文件、指定应用缺失有明确错误；脚本执行、安装包、自定义 URL scheme 不走文件打开器。
+- [x] 写幂等与引用测试：同 id 重试只打开一次，id 对应不同文件报冲突；取消前不启动，发送后取消不关闭应用；超时为 `unknown` 不重放；成功发送才选中文件引用，失败保留旧引用；网页后台更新不覆盖文件，显式返回网页清除文件引用。
+- [x] 运行 `node --test services/bot/tests/desktop-documents.test.mjs services/bot/tests/desktop-context.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增能力失败。
+- [x] 实现路径规范化、存在性 / 文件类型检查与应用路由。首版类型覆盖 PDF、PNG/JPEG/WebP、DOC/DOCX、XLS/XLSX、PPT/PPTX、Markdown / TXT 与常见源代码文本；源代码默认加 `-t`，显式应用仅接受编辑器，避免误用脚本执行器。调用 `/usr/bin/open` 使用绝对路径和参数数组，`shell:false`，不使用强制新实例或等待应用退出参数；为子进程提供必要环境，不传递模型密钥。
+- [x] 实现 10 秒调用超时、明确失败及 `dispatched` 回执；发起调用前保存带 commandId 的运行记录，启动恢复时将未收尾记录标为 `unknown`，不重放。工具注册到允许列表，按现有授权直接执行。同名候选由 Agent 结合当前项目定位；仍有歧义时询问文件选择，不增加批准步骤。文本读取核对磁盘保存版本；PDF / Office 显示“正文未接入”，不生成臆测摘要。
+- [x] 运行同一测试至通过；使用临时 TXT、PDF 和已安装办公软件支持的文档实测默认应用与指定应用。扩展未连接时仍可打开本地文件；记录人工看到的结果与系统回执的差别。
+- [x] 检查 diff 并提交本任务，建议 `feat: open local documents in native applications`。
 
 ## Task 4：增加实时事件与可恢复快照（M2）
 
