@@ -46,7 +46,7 @@ export function projectToolRequest(options, allowedTools=DEFAULT_TOOLS) {
     } else throw Error('unsupported_role');
   }
   return {model:options.model,input,...(options.system?{instructions:options.system}:{}),
-    ...(tools.length?{tools:[{type:'namespace',name:'opennova',description:'OpenNova read-only tools',tools}]}:{})};
+    ...(tools.length?{tools:[{type:'namespace',name:'opennova',description:'OpenNova tools',tools}]}:{})};
 }
 export async function* responseToolChunks(client, options, allowedTools=DEFAULT_TOOLS) {
   const request=projectToolRequest(options,allowedTools);
