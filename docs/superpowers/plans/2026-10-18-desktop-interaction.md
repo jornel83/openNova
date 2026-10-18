@@ -209,13 +209,15 @@
 - Produces: Python `UiBridge(api, instance_id)`，提供 `publish(state_or_transcript)`、`run(commands)`、`ack(command_id,result)`、`close()`。
 - Consumes: `Conversation.control(command)`、现有 retry 流程、原生 generation / played / 清空回执；所有控制回到同一个 asyncio 命令队列。
 
-- [ ] 写失败测试：ASR partial 多次更新只出现一条草稿，final 仅一次 ask；无语音进程返回 `voice_unavailable`；重复 control id 幂等；旧 voiceInstanceId / generation 回执丢弃。
-- [ ] 写取消竞态测试：文本任务执行时网页“停止回复”也能取消当前 Bot；Bot 已完成但 TTS 缓冲 / 播放中仍显示停止按钮，点击后清空队列；旧请求的停止不能取消新请求；静音不意外恢复收音；`/retry` 与 `/end` 交错不自动开始监听。
-- [ ] 运行 `node --test services/bot/tests/desktop-voice.test.mjs` 及 `python3.11 -m unittest discover -s tools/voice/tests -p 'test_ui_bridge.py' -v`，确认新增能力失败。
-- [ ] 实现语音发布与控制桥。后台发布失败不能堵塞音频；状态过期显示离线；播放回执来自原生队列，区分 buffering / playing / paused。增加观察事件，不改变降噪、VAD 或插话阈值。
-- [ ] 让现有 `/cancel` 与新增语音 `stop` 共用协调逻辑，按 requestId 取消对应 Bot 请求并清理该请求的语音输出；纯文字运行也可停止。不得等待整个 TTS 完成后才响应；临时转写只走事件通道；网页收到已完成消息不合成第二份音频。
-- [ ] 运行 Bot 语音测试与 `python3.11 -m unittest discover -s tools/voice/tests -v`。实机完成语音打开页面、打开本地 PRD、文字追问已保存文本、停止、静音、恢复和重连；停止不得关闭已打开的本地应用。无实机听感验证不能声称播报已验证。
-- [ ] 检查并提交，建议 `feat: synchronize native voice with Nova UI`。
+- [x] 写失败测试：ASR partial 多次更新只出现一条草稿，final 仅一次 ask；无语音进程返回 `voice_unavailable`；重复 control id 幂等；旧 voiceInstanceId / generation 回执丢弃。
+- [x] 写取消竞态测试：文本任务执行时网页“停止回复”也能取消当前 Bot；Bot 已完成但 TTS 缓冲 / 播放中仍显示停止按钮，点击后清空队列；旧请求的停止不能取消新请求；静音不意外恢复收音；`/retry` 与 `/end` 交错不自动开始监听。
+- [x] 运行 `node --test services/bot/tests/desktop-voice.test.mjs` 及 `python3.11 -m unittest discover -s tools/voice/tests -p 'test_ui_bridge.py' -v`，确认新增能力失败。
+- [x] 实现语音发布与控制桥。后台发布失败不能堵塞音频；状态过期显示离线；播放回执来自原生队列，区分 buffering / playing / paused。增加观察事件，不改变降噪、VAD 或插话阈值。
+- [x] 让现有 `/cancel` 与新增语音 `stop` 共用协调逻辑，按 requestId 取消对应 Bot 请求并清理该请求的语音输出；纯文字运行也可停止。不得等待整个 TTS 完成后才响应；临时转写只走事件通道；网页收到已完成消息不合成第二份音频。
+- [x] 运行 Bot 语音测试与 `python3.11 -m unittest discover -s tools/voice/tests -v`。实机完成语音打开页面、打开本地 PRD、文字追问已保存文本、停止、静音、恢复和重连；停止不得关闭已打开的本地应用。无实机听感验证不能声称播报已验证。
+- [x] 检查并提交，建议 `feat: synchronize native voice with Nova UI`。
+
+实现记录（2026-10-18）：开发、自动回归及原生控制 / 播放回执验证已完成；真实 ASR 文件输入打开 PRD、网页追问也通过。执行环境实际麦克风返回全零信号，真人语音打开页面、插话听感仍待用户现场验收，未计为通过。详见桌面交互测试文档 M3 章节。
 
 ## Task 7：一键启动、降级与完整验收（M4）
 

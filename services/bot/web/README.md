@@ -10,4 +10,7 @@
 
 构建产物及上游许可证副本位于 Git 忽略的 `output/bot/web/`。修改前端后重新构建并刷新页面；修改宿主后重启 Bot。现有部署与验证方法见 [接入实验说明](../../../docs/research/opennova-bot-spike.md)。
 
-浏览器仅访问 `/web/session` 和受限 `/web/api/*`，通过 HttpOnly Cookie 和 CSRF 校验。CLI/语音继续使用既有 bearer API。所有入口调用同一个 `controls.mjs`，复用持久请求编号、单前台准入和操作记录；页面每秒同步快照，隐藏时降为每 5 秒。
+浏览器仅访问 `/web/session` 和受限 `/web/api/*`，通过 HttpOnly Cookie 和 CSRF 校验。CLI/语音继续使用既有 bearer API。所有入口调用同一个 `controls.mjs`，复用持久请求编号、单前台准入和操作记录；页面通过可恢复事件流同步，5 秒快照轮询兜底，隐藏时降为每 15 秒。
+
+
+M3 接入现有 `--continuous --bot` 原生语音进程：环形 Nova 与收音、识别、TTS 缓冲和播放状态联动，支持停止、静音、开始 / 结束及音频重连。网页不启动另一套麦克风、ASR 或 TTS。临时转写仅存于语音桥内存，最终请求仍由 Python 提交；历史共用原 Bot 会话。开发分支启动、控制语义与现场验收见 [M3 验收说明](../../../docs/research/opennova-desktop-interaction-test-cases.md#m3语音与环形-nova-联动)。
