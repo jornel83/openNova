@@ -18,7 +18,7 @@ from settings import load_settings
 
 REVISION = '52f4770fd9726457eae3d3b6aa92047a25a10776'
 BASE_REVISION = 'a6eb4f68e4b056f1215157bb696209bc82a6db48'
-STUDIO_DATA = load_settings()['data_dir']
+STUDIO_DATA = load_settings(validate_provider=False)['data_dir']
 VIVIAN_INSTRUCT = '用温柔、自然、放松的日常聊天语气说话，语速适中，停顿自然，像在和身边熟悉的人交流。'
 
 
@@ -35,7 +35,7 @@ def vivian_payload(text):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--url', default=load_settings()['url'])
+    parser.add_argument('--url', default=load_settings(validate_provider=False)['url'])
     parser.add_argument('--text', default='你好，OpenNova 的本地语音合成已经启动。接下来，我们一起完成语音助手。')
     parser.add_argument('--voice-profile', choices=['vivian', 'base'], default='vivian',
                         help='Default: Vivian preset; base: retained reference-audio clone test')
