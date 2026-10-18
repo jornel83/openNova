@@ -1,8 +1,8 @@
 const same=(a,b)=>a&&b&&a.bindingId===b.bindingId&&a.tabId===b.tabId&&a.documentId===b.documentId&&a.revision===b.revision;
 function freeze(value){if(value&&typeof value==='object'){Object.freeze(value);for(const v of Object.values(value))freeze(v);}return value;}
-export function createWorkContext(){
+export function createWorkContext({inspectFile=file=>file}={}){
  let current={kind:'none'},browser=null;
- const copy=()=>structuredClone(current);
+ const copy=()=>structuredClone(current.kind==='file'?{...current,file:inspectFile(current.file)}:current);
  return {
   updateBrowser(value,{activate=false}={}){
    if(!value?.page){browser=null;if(current.kind==='browser')current={kind:'none'};return;}
@@ -15,7 +15,7 @@ export function createWorkContext(){
    browser={kind:'browser',page,selection:selection?structuredClone(selection):null};
    if(activate||current.kind!=='file')current=browser;
   },
-  selectFile(file){current={kind:'file',file:structuredClone(file)};},
+  selectFile(file){if(browser)browser={...browser,selection:null};current={kind:'file',file:structuredClone(file)};},
   snapshot:copy,capture:()=>freeze(copy()),
   clearSelection(){if(browser)browser={...browser,selection:null};if(current.kind==='browser')current=browser;},
   invalidate(){browser=null;if(current.kind==='browser')current={kind:'none'};},

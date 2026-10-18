@@ -20,3 +20,13 @@ test('lost windows are recreated; persisted IDs are checked before reuse',async(
 test('narrow display falls back to stacked windows within work area',()=>{
  const b=layout({left:0,top:20,width:800,height:800});assert.ok(b.chat.top>b.work.top);assert.equal(b.chat.width,800);assert.ok(b.chat.top+b.chat.height<=820);
 });
+test('only a matching clicked link can adopt its new tab; unrelated popups cannot take focus context',async()=>{
+ const chrome=fake(),m=createWindowManager(chrome);await m.ensureWindows({chatUrl:'http://127.0.0.1:18562/'});const b=await m.binding();
+ chrome.tabsMap.set(99,{id:99,windowId:b.workWindowId,url:'https://example.com/advert',openerTabId:b.workTabId});
+ assert.equal(await m.activated({tabId:99,windowId:b.workWindowId}),false);assert.equal((await m.binding()).workTabId,b.workTabId);
+ m.expectPopup({id:'click',page:{bindingId:b.bindingId,tabId:b.workTabId,documentId:'doc'},href:'https://example.com/article'});
+ assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:99,url:'https://example.com/advert'}),false);
+ chrome.tabsMap.set(100,{id:100,windowId:b.workWindowId,url:'https://example.com/article',openerTabId:b.workTabId});
+ assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:100,url:'https://example.com/article'}),true);assert.equal((await m.binding()).workTabId,100);
+ assert.equal(await m.createdTarget({sourceTabId:b.workTabId,sourceFrameId:0,tabId:99,url:'https://example.com/article'}),false);
+});

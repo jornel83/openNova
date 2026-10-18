@@ -76,3 +76,10 @@ test('Chinese input remains intact when UTF-8 characters cross HTTP chunks in ei
     assert.equal(status,200);assert.equal(calls.at(-1).body.text,'你好');
   }
 });
+test('document-open route retains same origin Cookie and CSRF requirements',async t=>{
+ const {post,calls}=await fixture(t);const login=await post('/web/session'),{csrf}=await login.json();const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ assert.equal((await post('/web/api/document-open',{id:'one',fileId:'file-1'})).status,401);
+ assert.equal((await post('/web/api/document-open',{id:'one',fileId:'file-1'},{Cookie:headers.Cookie})).status,403);
+ assert.equal((await post('/web/api/document-open',{id:'one',fileId:'file-1'},headers)).status,200);
+ assert.deepEqual(calls[0],{path:'/document-open',body:{id:'one',fileId:'file-1'}});
+});

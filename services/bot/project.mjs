@@ -105,5 +105,5 @@ export async function auditTool(ops,exec,next,{cwd,requestId}={}){
 }
 
 export function recoverToolRuns(ops){
-  for(const r of ops.list('tool'))if(r.status==='running')ops.put({...r,status:'interrupted',completedAt:Date.now(),error:'宿主中断，操作结果待核对；未自动重跑。'});
+  for(const r of ops.list('tool'))if(r.status==='running')ops.put({...r,status:['browser','document_open'].includes(r.operation)?'unknown':'interrupted',completedAt:Date.now(),error:'宿主中断，操作结果待核对；未自动重跑。'});
 }

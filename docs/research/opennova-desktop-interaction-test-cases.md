@@ -1,6 +1,6 @@
-# OpenNova M0 浏览器接入验证
+# OpenNova M0 / M1 桌面协作验证
 
-2026-10-18。范围为开发计划任务 1、2：Chrome 扩展、本机连接、双窗口绑定、页面与选区读取。M1 的 Agent 浏览器工具、本地文件打开，以及后续 Nova UI / 语音接线尚未实现。
+2026-10-18。M0 验证记录保留如下；M1 已接入 Agent 浏览器工具、本地文件打开与共享工作引用。新版 Nova UI、语音界面接线和一键桌面启动仍属于 M2–M4。M1 启动和验收见文末。
 
 ## 实现和部署
 
@@ -60,7 +60,7 @@ node tools/desktop/client.mjs --probe read
 
 ### 接入既有 Bot 宿主
 
-先完成上述依赖安装，再从同一工作区运行 `node services/bot/launch.mjs --desktop`。setup / client 命令去掉 `--probe`，使用原 Bot 的 `127.0.0.1:18560`。已有未带 `--desktop` 启动的宿主需先正常停止再启动；M0 不自动中断正在运行的对话。当前只提供 CLI / 扩展验证操作，还不能在 Bot 对话中说“打开网页”来调用该桥接。
+先完成上述依赖安装，再从同一工作区运行 `node services/bot/launch.mjs --desktop`。setup / client 命令去掉 `--probe`，使用原 Bot 的 `127.0.0.1:18560`。已有未带 `--desktop` 启动的宿主需先正常停止再启动；M0 不自动中断正在运行的对话。M1 已支持在 Bot 文本对话中调用该桥接；下文 M0 记录描述当时的验证范围。
 
 ## 验证记录
 
@@ -103,7 +103,7 @@ node --test services/bot/tests/*.test.mjs extensions/browser/tests/*.test.mjs
 - 页面还在加载时，快照的 `loading` 标识表示内容可能继续变化。
 - 已发送命令遇到断线、超时或取消返回 `unknown`；服务和 worker 不会自动重放。结果不能据此宣称“网页操作没有发生”。
 - M0 命令去重记录最多 2048 个，达到上限明确报 `command_journal_full`；M1 再接入现有持久操作记录。快照正文不写入命令日志。
-- 新 UI、LLM 工具、点击 / 填写 / 滚动执行、语音协作、一键打开原生文件均留在对应后续里程碑。
+- M1 已加入 LLM 工具、点击 / 填写 / 滚动和原生文件打开；新版 UI、语音界面控制和一键桌面启动仍留待后续里程碑。
 
 参考：[Playwright 扩展测试说明](https://playwright.dev/docs/chrome-extensions)、[Chrome 权限说明](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions)。
 
@@ -111,6 +111,59 @@ node --test services/bot/tests/*.test.mjs extensions/browser/tests/*.test.mjs
 
 独立代码审查提出的四项重要问题已修复，并先复现失败、再通过回归。最终 77 项测试通过；fixture、同 URL SPA、聊天页排除和超长链接包另经过 Chrome 实测。实际窗口 top / height 对齐，右侧宽 400、间隔 12；小屏上下排列规则有自动测试，尚未做实际小屏验收。
 
-两项非阻塞整理留待后续：展开较紧凑的状态处理代码；增加跨版本协议协商。目前宿主和扩展应来自同一份 M0 代码。
+两项非阻塞整理留待后续：展开较紧凑的状态处理代码；增加跨版本协议协商。目前宿主和扩展应来自同一份代码；更新宿主时同时重新加载扩展。
 
 本次实现保留在隔离分支 `codex/desktop-browser-m0`，既有 Bot 代码先以单独基线提交保存，M0 单独提交；未合并或推送。测试宿主与真实 Bot 共用桥接实现，但不建立第二个业务会话。命令记录上限、CFT 测试环境和未实现的后续能力均按上述边界处理。
+
+
+## M1：文字驱动网页与原生文件协作
+
+本次沿用隔离分支 `codex/desktop-browser-m0`；没有更改主工作区中的运行版本。
+
+### 开发验证启动
+
+两个终端均先执行以下环境设置，避免与现有 Demo 的 18560 端口和会话混用：
+
+```bash
+cd /Users/chenzhuoping/.codex/worktrees/desktop-browser-m0/openNova
+export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
+export OPENNOVA_HARNESS_ROOT=/Users/chenzhuoping/Documents/work/project/deepseek-harness
+export OPENNOVA_BOT_HOME="$PWD/output/bot/m1-home"
+export OPENNOVA_BOT_PORT=18564
+export OPENNOVA_BOT_WEB_PORT=18565
+```
+
+第一个终端运行 `node services/bot/launch.mjs --desktop`，保持运行。已有宿主若来自更新前的代码，先 Ctrl+C 正常停止后重启。
+
+第二个终端运行 `node tools/desktop/setup.mjs`，在同一工作区的扩展设置中填写 `http://127.0.0.1:18564` 和一次性配对码。更新代码后在 `chrome://extensions` 重新加载扩展，授权 HTTP(S) 站点读取，再执行：
+
+```bash
+node tools/desktop/client.mjs windows
+```
+
+右侧打开真实 Bot 网页，可直接输入文字。网页与语音/终端仍走同一个 Bot 会话和前台请求队列；本阶段没有新增网页麦克风或语音状态控制。没有扩展连接时，本地文件工具仍可用。
+
+### 简单验收案例
+
+| 输入 / 操作 | 预期 |
+| --- | --- |
+| “帮我打开雪球上的华工科技” | 从雪球首页站内搜索、核对实际证券链接后打开，返回真实标题和网址 |
+| “看看最新公告” | 点击公告栏目后读取当前列表；区分列表时间和公告正文日期 |
+| 在左页选一段文字，回到右侧输入“解释选中的这段话” | 输入区上方保留选区；本轮使用发送时的引用 |
+| “打开 docs/research/opennova-desktop-interaction-test-cases.md” | 使用本机默认应用，显示文件卡片与“打开请求已发送”；不再要求批准 |
+| “用预览打开 output/desktop-m1/M1 PDF test.pdf” | 测试文件存在时以 Preview 打开；只报告打开请求，说明 PDF 正文未接入 |
+| 点文件卡片“再次打开” | 通过已登记 fileId 打开同一文件，网页不能传任意路径或 Shell |
+| 回复期间停止，或人为切换工作页 | 未执行命令被取消；旧目标失败；已发送但不确定的操作不会自动重放 |
+
+`output/desktop-m1` 是本次实测生成、Git 忽略的测试文件目录，不是交付依赖。其他机器可使用自行创建的 TXT、PDF、DOCX 文件代替。
+
+### M1 实测记录
+
+- Chrome for Testing 156：真实填写搜索框、点击表单、滚动 600 px、点击链接产生的新标签页跟踪均通过。普通输入框只提供角色与名称，输入值不进入页面正文；密码字段未接入。
+- 实际 GPT-6.1 Sol / DeepSeek-Bot：从雪球首页搜索华工科技，核对并读取 `https://www.xueqiu.com/S/SZ000988`，返回真实证券页面标题；继续点击“公告”并读到列表标题与显示时间。没有进行登录、关注或交易。
+- 原生文件：TXT 在 TextEdit 显示；PDF 在默认 WPS 和指定 Preview 打开，Preview 可见测试正文；DOCX 指定 WPS 后可见测试窗口。Pages 返回 dispatched 但首次使用停在许可欢迎页，未代用户接受许可；这也验证了 dispatched 不等于已呈现。
+- 本地打开采用 `/usr/bin/open` 参数数组和最小环境；源代码使用 `-t`，指定应用仅允许已列明的编辑器。10 秒超时、宿主中断和发送后取消标记 unknown，历史命令不自动重放。
+- 文件引用记录磁盘版本；修改后显示已更新、删除后标记失效。PDF / Office / 图片只接入打开能力，不解析正文或原生应用选区。
+- 自动回归：Bot / 扩展 99 项、Agent 62 项、ASR 26 项、语音 63 项、TTS 10 项、setup 3 项通过；网页资源构建成功。Node SQLite 的实验性提示是运行时提示。
+
+仍需知道的边界：仅普通顶层 DOM；对 JS 自行弹出的无关联窗口不自动绑定，可手工点击扩展图标选择。跨版本协议协商、命令去重日志超过 2048 条的轮换、新版界面和语音状态同步未在 M1 扩展。实测原始回执保存在本工作区 `output/playwright`、`output/desktop-m1`，不提交网页正文与账号信息。

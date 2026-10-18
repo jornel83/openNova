@@ -10,7 +10,7 @@
 
 **Spec:** [双窗口交互技术方案](../specs/2026-10-18-desktop-interaction-design.md)
 
-状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1–M4 尚未实施。测试范围、限制和启动步骤见 [M0 验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
+状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现，完成审查后收尾；M2–M4 尚未实施。测试范围、限制和启动步骤见 [M0 验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
 
 ## Global Constraints
 

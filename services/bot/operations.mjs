@@ -88,11 +88,11 @@ export class Operations {
   }
   task(id,now=Date.now()){const r=this.get(id);if(r.kind!=='task')throw Error('unknown_task');return r.status==='running'&&now>=r.dueAt?this.put({...r,status:'completed',completedAt:r.dueAt,result:'受控计时任务已完成；未执行外部作业。'}):r;}
   cancelTask(id,now=Date.now()){const r=this.task(id,now);return r.status==='running'?this.put({...r,status:'cancelled',cancelledAt:now}):r;}
-  submit(id,text,source='text') {
+  submit(id,text,source='text',context={kind:'none'}) {
     if(typeof id!=='string'||!/^[\w-]{1,100}$/.test(id)||typeof text!=='string'||!text.trim()||text.length>8000)throw Error('invalid_request');
     let old;try{old=this.get(id);}catch(e){if(e.message!=='unknown_id')throw e;}
     if(old){if(old.kind!=='request'||old.input!==text||old.source!==source)throw Error('request_conflict');return {...old,duplicate:true};}
-    return this.put({id,kind:'request',input:text,source,status:'queued',createdAt:Date.now()});
+    return this.put({id,kind:'request',input:text,source,context,status:'queued',createdAt:Date.now()});
   }
   request(id){const r=this.get(id);if(r.kind!=='request')throw Error('unknown_request');return r;}
   finish(id,result){return this.put({...this.request(id),...result,updatedAt:Date.now()});}

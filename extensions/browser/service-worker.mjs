@@ -6,7 +6,7 @@ const storage={get:async()=>(await chrome.storage.session.get('commands')).comma
 const windows=createWindowManager(chrome);
 const pages=createPageAdapter({chrome,windows,publish:(context,activate)=>send({type:'context',context,activate})});
 const cancelled=new Set();
-async function execute(command){if(cancelled.delete(command.id))return {status:'cancelled'};return pages.execute(command,base);}
+async function execute(command){if(cancelled.delete(command.id))return {status:'cancelled'};try{return await pages.execute(command,base,()=>cancelled.has(command.id));}finally{cancelled.delete(command.id);}}
 const run=createCommandRunner({storage,execute});
 const send=m=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(m));};
 async function connect(){
@@ -20,7 +20,7 @@ async function connect(){
    if(new TextEncoder().encode(event.data).length>131072)throw Error('packet_too_large');const m=JSON.parse(event.data);
    if(m.type==='ready'){state='已连接';attempt=0;await pages.refresh();return;}
    if(m.type==='ping'){send({type:'pong'});return;}
-   if(m.type==='cancel'){cancelled.add(m.id);return;}
+   if(m.type==='cancel'){cancelled.add(m.id);setTimeout(()=>cancelled.delete(m.id),30000);return;}
    if(m.type==='command'){const result=boundedResult(await run(m.command));if(socket===ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'result',result}));}
   }catch{ws.close(1008,'invalid_message');}};
   ws.onerror=()=>{state='连接失败，等待重连';};
@@ -48,6 +48,8 @@ chrome.runtime.onInstalled.addListener(async()=>{await chrome.alarms.create('rec
 chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==='reconnect')void connect();});
 chrome.action.onClicked.addListener(async tab=>{try{await windows.bind(tab);await pages.refresh({activate:true});await chrome.action.setBadgeText({text:'ON',tabId:tab.id});}catch{await chrome.runtime.openOptionsPage();}});
 chrome.tabs.onActivated.addListener(info=>{void windows.activated(info).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
+chrome.webNavigation.onCreatedNavigationTarget.addListener(details=>{void windows.createdTarget(details).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
+chrome.windows.onFocusChanged.addListener(id=>{void windows.binding().then(b=>id===b.workWindowId&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.tabs.onRemoved.addListener(tabId=>{void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='complete'||change.title)void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
 chrome.webNavigation.onBeforeNavigate.addListener(d=>{void pages.navigation({...d,loading:true}).catch(()=>{});});

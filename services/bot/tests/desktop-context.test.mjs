@@ -20,3 +20,7 @@ test('unrelated binding updates and stale revisions cannot replace current conte
  c.updateBrowser({page:{...page,bindingId:'other'},selection:null});assert.equal(c.snapshot().page.bindingId,'b');
  c.updateBrowser({page:{...page,revision:2},selection:null});c.updateBrowser(selected);assert.equal(c.snapshot().page.revision,2);
 });
+test('opening a file clears the cached browser selection before returning to that page',()=>{
+ const c=createWorkContext();c.updateBrowser(selected,{activate:true});c.selectFile({id:'f',path:'/tmp/f.txt'});
+ c.updateBrowser({page,selection:null},{activate:true});assert.equal(c.snapshot().selection,null);
+});

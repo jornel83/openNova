@@ -44,3 +44,27 @@ test('failed navigation clears loading and exposes a specific failure until next
  await assert.rejects(f.pages.execute({method:'read'}),/navigation_failed/);
  await f.pages.navigation({tabId:1,frameId:0,loading:false});assert.equal((await f.pages.execute({method:'read'})).status,'completed');
 });
+test('old page actions fail before injection and queued cancellation prevents side effects',async()=>{
+ const f=fixture();await f.pages.refresh();const page=f.published.at(-1).c.page;let actions=0;
+ f.chrome.scripting.executeScript=async p=>{if(p.func)actions++;return p.files?[]:[{result:{status:'completed',action:'click'}}];};
+ f.setURL('https://example.com/two');
+ await assert.rejects(f.pages.execute({id:'old',method:'click',page,args:{ref:'target-1'}}),/context_changed/);assert.equal(actions,0);
+ const latest=f.published.at(-1).c.page;
+ await assert.rejects(f.pages.execute({id:'cancelled',method:'fill',page:latest,args:{ref:'target-1',text:'hello'}},'',()=>true),/command_cancelled/);assert.equal(actions,0);
+});
+test('ordinary actions return actual receipt while replaced refs return stale_target',async()=>{
+ const f=fixture();await f.pages.refresh();const page=f.published.at(-1).c.page;
+ f.chrome.scripting.executeScript=async p=>p.files?[]:[{result:p.args[0].ref==='gone'?{error:'stale_target'}:{status:'completed',action:p.args[0].mode}}];
+ const r=await f.pages.execute({method:'fill',page,args:{ref:'target-1',text:'华工科技'}});assert.equal(r.status,'completed');assert.equal(r.action,'fill');
+ await assert.rejects(f.pages.execute({method:'click',page,args:{ref:'gone'}}),/stale_target/);
+});
+test('click receipt includes the actual destination reference for the next model tool call',async()=>{
+ const f=fixture();await f.pages.refresh();const page=f.published.at(-1).c.page;
+ f.chrome.scripting.executeScript=async p=>{
+  if(p.files)return [];
+  if(p.args[0].mode==='inspect')return [{result:{href:null}}];
+  f.setURL('https://example.com/article');f.setDoc('article-doc');return [{result:{status:'completed',action:'click'}}];
+ };
+ const result=await f.pages.execute({id:'go',method:'click',page,args:{ref:'target-1'}});
+ assert.equal(result.page.url,'https://example.com/article');assert.equal(result.page.documentId,'article-doc');
+});

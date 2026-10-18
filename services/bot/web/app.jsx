@@ -16,7 +16,7 @@ installLocale({getLocale:()=>({active:'zh'}),register:(_ns,_lang,values)=>{dicti
 const nativeStyle=document.createElement('style');nativeStyle.textContent=SHELL_CSS+CONVERSATION_CSS+USER_MESSAGE_CSS;document.head.prepend(nativeStyle);
 document.body.dataset.btMotion='quiet';
 const api=new WebApi();
-const statusLabels={cancelled:'已取消',pending:'旧方案未执行',applying:'正在保存',applied:'已保存',rejected:'已拒绝',conflict:'需要重新核对',failed:'执行失败',completed:'已完成',running:'执行中',timed_out:'已超时',interrupted:'已中断'};
+const statusLabels={cancelled:'已取消',pending:'旧方案未执行',applying:'正在保存',applied:'已保存',rejected:'已拒绝',conflict:'需要重新核对',failed:'执行失败',completed:'已完成',dispatched:'打开请求已发送',unknown:'结果待核对',running:'执行中',timed_out:'已超时',interrupted:'已中断'};
 const diffLabels={copy:'复制差异',copied:'已复制',codeLabel:'文件修改',wrapLabel:'自动换行',unwrapLabel:'取消换行',collapseAria:'收起差异',expandAria:n=>`展开剩余 ${n} 行`,collapse:'收起',expand:n=>`展开剩余 ${n} 行`};
 const storage={get(){try{return JSON.parse(sessionStorage.getItem('opennova.web.outbox')||'null');}catch{return null;}},set(value){try{value?sessionStorage.setItem('opennova.web.outbox',JSON.stringify(value)):sessionStorage.removeItem('opennova.web.outbox');}catch{}}};
 
@@ -26,10 +26,11 @@ function Operation({item,disabled,onAction}) {
   async function retry(){setWorking(true);setError('');try{await onAction('approve',item.id);}catch(e){setError(errorText(e));}finally{setWorking(false);}}
   if(item.kind==='tool'&&item.operation!=='file')return <article className="approval-card" aria-label={'操作记录 '+item.tool}>
     <div className="approval-title"><strong>{item.description||item.tool}</strong><span className={'status '+item.status}>{statusLabels[item.status]||item.status}</span></div>
+    {item.file&&<p className="subtle operation-path">{item.file.path} · {item.file.contentAccess==='not_connected'?'正文未接入':'文本可另行读取'}</p>}
     {item.command&&<pre className="tool-output">{item.command}</pre>}
     <p className="subtle operation-path">{item.cwd}</p>
     {item.operation==='shell'&&<p className="subtle">退出码：{item.exitCode??'—'}{item.timeoutMs?' · 时限 '+Math.round(item.timeoutMs/1000)+' 秒':''}</p>}
-    <details open={item.operation==='shell'}><summary>执行输出</summary><pre className="tool-output">{item.operation==='shell'?[item.stdout,item.stderr].filter(Boolean).join('\n')||item.output||'等待命令结束…':item.output||'执行中…'}</pre></details>
+    <details open={item.operation==='shell'}><summary>执行输出</summary><pre className="tool-output">{['browser','document_open'].includes(item.operation)?item.output||'等待回执…':item.operation==='shell'?[item.stdout,item.stderr].filter(Boolean).join('\n')||item.output||'等待命令结束…':item.output||'执行中…'}</pre></details>
     {(item.stdoutPath||item.stderrPath)&&<p className="subtle operation-path">完整日志：{item.stdoutPath||item.stderrPath}</p>}
     {item.error&&<p className="error">{item.error}</p>}
   </article>;
@@ -74,6 +75,9 @@ function App(){
     catch(e){setError(errorText(e));if(e.code&&e.code!=='network')setOutgoing(null);}
     finally{inflight.current=false;setSending(false);input.current?.focus();}
   }
+  async function reopen(fileId){
+    setError('');try{await api.call('document-open',{id:crypto.randomUUID(),fileId});await refresh();}catch(e){setError(errorText(e));}
+  }
   async function action(name,id){const result=await api.call(name,{id});await refresh();return result;}
   return <div className={'nova-app '+(panel?'with-panel':'')}>
     <aside className="nova-sidebar"><div className="brand">OpenNova<span>AI 助手</span></div><button className="bot-tile" onClick={()=>input.current?.focus()}><BotMark bot={bot} size={42} state={busy?'think':'idle'}/><span><strong>OpenNova</strong><small>工作协同与日常陪伴</small></span></button><p className="shared-note">网页与语音共用这段对话。<br/>切换入口，继续聊就好。</p><button className="review-link" onClick={()=>setPanel(!panel)}>操作记录 <span>{issues.length}</span></button><div className="sidebar-footer"><span className={'connection-dot '+(online?'on':'')}/>{online?'已连接':'正在连接'}<small>基于 DeepSeek-Bot</small></div></aside>
@@ -85,6 +89,8 @@ function App(){
         {messages.map(message=><section className="exchange" key={message.id} data-request-id={message.id}><div className="message-meta">{message.source==='voice'?'语音':message.source==='web'?'网页':'终端'} · {new Date(message.createdAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div><UserMessageCell node={{data:{content:[{type:'text',text:message.input}],time:message.createdAt}}} sessionId={sessionId} useRoster={select=>select(roster)} actions={actions}/>
           {message.status==='completed'?<div className="assistant-message"><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/></div>:<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(message.tool?'正在处理：'+message.tool:'正在思考…'):errorText({message:message.error||message.status,code:message.status})}</p>}</section>)}
       </div></div>
+      {snapshot?.workContext?.kind==='browser'&&<div className="work-context" aria-label="当前工作网页"><strong>{snapshot.workContext.page.title||'工作网页'}</strong><small>{snapshot.workContext.page.url}</small>{snapshot.workContext.selection&&<blockquote>{snapshot.workContext.selection.text}{snapshot.workContext.selection.truncated?'（选区已截断）':''}</blockquote>}<span>{snapshot.workContext.page.readable?'页面已接入 · 发送消息时关联':'页面未接入 · '+(snapshot.workContext.page.reason||'请检查扩展')}</span></div>}
+      {snapshot?.workContext?.kind==='file'&&<div className="work-context" aria-label="当前关联文件"><strong>{snapshot.workContext.file.name}</strong><small>{snapshot.workContext.file.path}</small><span>打开请求已发送 · {snapshot.workContext.file.contentAccess==='text_file'?'文本可另行读取磁盘保存版本':'正文未接入'}{snapshot.workContext.file.diskStatus==='changed'?' · 磁盘文件已更新':''}{snapshot.workContext.file.invalid?' · 文件已失效':''}</span><Button className="nova-secondary" disabled={busy||!online||snapshot.workContext.file.invalid} onClick={()=>void reopen(snapshot.workContext.file.id)}>再次打开</Button></div>}
       <form className="composer-area" onSubmit={send}>{error&&<div className="error" role="alert">{error}</div>}{outbox&&!sending&&<div className="subtle">上一条消息的发送状态待确认。重试会发送原消息，编辑中的新草稿会保留。</div>}<div className="composer"><textarea ref={input} aria-label="发送给 OpenNova" placeholder="输入消息，继续这段对话…" value={draft} maxLength={8000} rows={3} onChange={e=>{setDraft(e.target.value);}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&e.keyCode!==229){e.preventDefault();void send();}}}/><div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{snapshot?.activeId?<Button className="nova-secondary" onClick={()=>{void action('cancel',snapshot.activeId).catch(e=>setError(errorText(e)));}}>停止回复</Button>:<Button type="submit" className="nova-primary" disabled={!online||busy||sending||(!outbox&&!draft.trim())}>{sending?'发送中…':outbox?'重试发送':'发送'}</Button>}</div></div><p className="composer-hint">可直接修改工程、运行测试；执行结果见操作记录。</p></form>
     </main>
     {panel&&<aside className="approval-panel" aria-label="操作记录"><header><div><strong>操作记录</strong><p>查看执行结果和内容差异</p></div><Button className="nova-secondary" aria-label="关闭操作记录" onClick={()=>setPanel(false)}>×</Button></header>{!approvals.length&&<div className="empty-approvals">暂无操作记录</div>}{approvals.map(p=><Operation key={p.id} item={p} disabled={busy||!online} onAction={action}/>)}</aside>}

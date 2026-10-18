@@ -1,6 +1,7 @@
 /** Serial foreground admission; client lifetimes do not own the running work. */
 export class Requests {
-  constructor(ops,run) {
+  constructor(ops,run,{context}={}) {
+    this.context=context;
     this.ops=ops;this.run=run;
     for(const r of ops.list('request'))if(['queued','running'].includes(r.status))ops.finish(r.id,{status:'interrupted',error:'host_restarted_check_state_before_retry'});
   }
@@ -8,9 +9,10 @@ export class Requests {
     let prior;try{prior=this.ops.request(id);}catch(e){if(e.message!=='unknown_id')throw e;}
     if(this.closed)throw Error('host_stopping');
     if((this.active||this.mutation)&&!prior)throw Error('bot_busy');
-    const r=this.ops.submit(id,text,source);
+    const r=this.ops.submit(id,text,source,prior?.context??this.context?.capture());
     if(r.duplicate)return r;
-    const current={id:r.id,events:[],cancelled:false};this.active=current;
+    const controller=new AbortController();
+    const current={id:r.id,events:[],cancelled:false,controller,signal:controller.signal};this.active=current;
     current.work=Promise.resolve().then(async()=>{
       if(current.cancelled)return;
       this.ops.finish(id,{status:'running',startedAt:Date.now()});
@@ -34,7 +36,7 @@ export class Requests {
   async cancel(id) {
     const current=this.active;
     if(current?.id===id){
-      current.cancelled=true;
+      current.cancelled=true;current.controller.abort();
       current.cancelling??=Promise.resolve().then(()=>current.cancel?.()).then(()=>{delete current.cancelError;},error=>{
         current.cancelError=true;this.ops.finish(id,{error:'cancel_cleanup_failed'});throw error;
       });

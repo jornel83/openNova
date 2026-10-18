@@ -2,6 +2,9 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {createDocumentOpener,createDocumentTool,inspectFileReference} from './desktop/documents.mjs';
+import {createWorkContext} from './desktop/context.mjs';
+import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
 import {Requests} from './requests.mjs';
 import {MemoryApprovals} from './memory.mjs';
@@ -41,7 +44,10 @@ export async function apply(ctx,config) {
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
   const allowed=new Set(ALLOWED_TOOLS),approved=new WeakSet();
-  const requests=new Requests(ops,run);
+  const context=createWorkContext({inspectFile:inspectFileReference});
+  const documents=createDocumentOpener({workspace:config.workspace,ops,context});
+  let desktop;
+  const requests=new Requests(ops,run,{context});
   resources.add(()=>requests.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
@@ -64,11 +70,13 @@ export async function apply(ctx,config) {
     },
   });
   const moduleTools=[
+    createDocumentTool({opener:documents,getRequest:()=>requests.active}),
+    ...createBrowserTools({context,ops,getRequest:()=>requests.active,bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}}),
     ['start_test_task','启动用于验证重连的独立计时任务，持续 1 到 120 秒；不是实际计算作业。',{label:{type:'string',required:true},seconds:{type:'number',required:true}},a=>ops.startTask(a.label,Math.round(a.seconds*1000))],
     ['task_status','查询计时任务的真实状态',{id:{type:'string',required:true}},a=>ops.task(a.id)],
     ['cancel_test_task','用户明确要求取消时，取消指定计时任务',{id:{type:'string',required:true}},a=>ops.cancelTask(a.id)],
   ];
-  for(const [name,description,parameters,execute] of moduleTools)ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},async execute(a){return JSON.stringify(execute(a));}})));
+  for(const [name,description,parameters,execute] of moduleTools)ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},async execute(a){return JSON.stringify(await execute(a));}})));
   ctx.tools.guard(exec=>allowed.has(exec.name)?undefined:'Tool is outside the OpenNova experiment scope.');
   ctx.on('agent/pre-step',(payload,next)=>staleRequest(payload.messages,requests.active)?{kind:'reject'}:next(),{prepend:true});
   ctx.on('system-prompt/assemble',async(assembly,context,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
@@ -92,7 +100,7 @@ export async function apply(ctx,config) {
     if(active.started)active.events.push(event);
   });
   async function run(record,active) {
-    const controller=new AbortController();
+    const controller=active.controller;
     const cancel=async()=>{
       controller.abort();
       await cancelBot(rt,bot);
@@ -104,7 +112,7 @@ export async function apply(ctx,config) {
       if(active.cancelled)return;
       const sessionId=rt.chatOf(bot.id);
       active.sessionId=sessionId;
-      const agent=await admitText({active,resolve:()=>rt.resolveAgent(sessionId),message:createUserMessage({content:[{type:'text',text:record.input}],source:{kind:'user',rpcId:record.id,clientTimeZone:'Asia/Shanghai'}})});
+      const agent=await admitText({active,resolve:()=>rt.resolveAgent(sessionId),message:createUserMessage({content:requestContent(record),source:{kind:'user',rpcId:record.id,clientTimeZone:'Asia/Shanghai'}})});
       active.cancel=cancel;
       if(!agent)return;
       ops.finish(record.id,{status:'running',sessionId,startedAt:Date.now()});
@@ -125,18 +133,17 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,
+  const handle=createControls({ops,requests,memory,context,documents,
     health:()=>({ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
-  let desktop;
   const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),
     handle:(path,body)=>path.startsWith('/desktop/')&&desktop?desktop.handle(path,body):handle(path,body),
     extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets}:undefined});
   if(config.desktop){
     const {createDesktop}=await import('./desktop/controller.mjs');
-    desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/'});
+    desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/',context});
   }
   resources.add(async()=>{requests.closed=true;await desktop?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,'127.0.0.1',resolve);});

@@ -10,7 +10,7 @@ export function createCommandRunner({storage,execute}){
    queue=queue.then(async()=>{const journal=await storage.get();previous=journal[command.id];if(!previous){if(Object.keys(journal).length>=2048)throw Error('command_journal_full');journal[command.id]={fingerprint};await storage.set(journal);reserved=true;}});
    await queue;
    if(!reserved)return {id:command.id,status:previous.fingerprint===fingerprint?'unknown':'failed',error:previous.fingerprint===fingerprint?'worker_restarted':'command_id_conflict'};
-   if(!['open','read','windows.ensure','cancel'].includes(command.method))return {id:command.id,status:'failed',error:'unsupported_method'};
+   if(!['open','read','click','fill','scroll','windows.ensure','cancel'].includes(command.method))return {id:command.id,status:'failed',error:'unsupported_method'};
    if(!Number.isFinite(command.deadlineAt)||command.deadlineAt<Date.now())return {id:command.id,status:'cancelled',error:'deadline_exceeded'};
    try{return {...await execute(command),id:command.id};}catch(e){return {id:command.id,status:'failed',error:String(e.message).slice(0,200)};}
   })();running.set(command.id,{fingerprint,promise});return promise;

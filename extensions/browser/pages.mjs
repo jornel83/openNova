@@ -2,7 +2,7 @@ import {readDOM} from './dom.mjs';
 import {isChatPage} from './windows.mjs';
 const same=(a,b)=>a&&b&&a.bindingId===b.bindingId&&a.tabId===b.tabId&&a.documentId===b.documentId&&a.revision===b.revision;
 export function createPageAdapter({chrome,windows,publish}){
- let queue=Promise.resolve(),navigation=null;
+ let queue=Promise.resolve(),navigation=null,navEpoch=0;
  const load=async()=>(await chrome.storage.session.get('pageContext')).pageContext||{page:null,selection:null};
  const save=async(context,activate=false)=>{await chrome.storage.session.set({pageContext:context});publish(context,activate);return context;};
  const serial=fn=>{const p=queue.then(fn);queue=p.catch(()=>{});return p;};
@@ -36,6 +36,7 @@ export function createPageAdapter({chrome,windows,publish}){
  return {
   refresh:args=>serial(()=>refresh(args)),
   navigation(details){
+   navEpoch++;
    return serial(async()=>{
     const b=await windows.binding();
     if(details.tabId!==b.workTabId||details.frameId!==0)return;
@@ -46,16 +47,53 @@ export function createPageAdapter({chrome,windows,publish}){
   },
   async selection(message,sender){const b=await windows.binding();if(sender.tab?.id!==b.workTabId||sender.frameId!==0||typeof message.text!=='string'||message.text.length>4000)return;
    return serial(async()=>{const c=await refresh();if(!c.page?.readable||c.page.documentId!==sender.documentId||!message.text.trim())return;return save({...c,selection:{text:message.text,documentId:c.page.documentId,revision:c.page.revision,truncated:!!message.truncated}});});},
-  async execute(command,base){
+  async execute(command,base,isCancelled=()=>false){
+   const check=()=>{if(isCancelled()||command.deadlineAt&&command.deadlineAt<Date.now())throw Error('command_cancelled');};
+   check();
+   if(['click','fill','scroll'].includes(command.method)){
+    const receipt=await serial(async()=>{
+    check();const epoch=navEpoch,{page}=await refresh();
+    if(!same(command.page,page))throw Error('context_changed');
+    if(!page.readable)throw Error(page.reason);
+    const target={tabId:page.tabId,documentIds:[page.documentId]};
+    let inspected;
+    if(command.method==='click'){
+     inspected=(await chrome.scripting.executeScript({target,func:readDOM,args:[{mode:'inspect',ref:command.args.ref,expectedURL:page.url}]}))[0]?.result;
+     if(inspected?.error)throw Error(inspected.error);
+     windows.expectPopup?.({id:command.id,page,href:inspected?.href});
+    }
+    const binding=await windows.binding(),frame=await chrome.webNavigation.getFrame({tabId:page.tabId,frameId:0});
+    check();if(epoch!==navEpoch||binding.bindingId!==page.bindingId||frame?.documentId!==page.documentId)throw Error('context_changed');
+    const result=(await chrome.scripting.executeScript({target,func:readDOM,args:[{...command.args,mode:command.method,expectedURL:page.url,...(inspected?.href?{expectedHref:inspected.href}:{})}]}))[0]?.result;
+    if(!result)throw Error('action_receipt_missing');if(result.error)throw Error(result.error);
+    return {...result,page};
+    });
+    if(command.method!=='click')return receipt;
+    // Let navigation events drain before returning the reference for the next tool call.
+    const end=Math.min(command.deadlineAt||Date.now()+4000,Date.now()+4000);
+    await new Promise(r=>setTimeout(r,300));
+    do{
+     const latest=await this.refresh();
+     if(latest.page)return {...receipt,page:latest.page};
+     if(isCancelled())break;
+     await new Promise(r=>setTimeout(r,100));
+    }while(Date.now()<end);
+    return {...receipt,page:undefined,pagePending:true};
+   }
    if(command.method==='windows.ensure'){const result=await windows.ensureWindows({chatUrl:base+'/',...command.args});navigation=null;await this.refresh({activate:true});return {status:'completed',windows:result};}
-   if(command.method==='read')return serial(()=>read(command.page));
+   if(command.method==='read')return serial(()=>{check();return read(command.page);});
    if(command.method==='open'){
     const url=new URL(command.args.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('invalid_url');
     const b=await windows.binding();if(isChatPage(url.href,b.chatUrl||base+'/'))throw Error('chat_page_cannot_be_work_page');if(!b.workTabId)await windows.ensureWindows({chatUrl:base+'/'});
     const bound=await windows.binding();if(command.page){const current=(await load()).page;if(!same(command.page,current))throw Error('stale_page');}
-    navigation={bindingId:bound.bindingId,tabId:bound.workTabId,loading:true,error:false};await serial(()=>save({page:null,selection:null},true));await chrome.tabs.update(bound.workTabId,{url:url.href,active:true});
+    navigation={bindingId:bound.bindingId,tabId:bound.workTabId,loading:true,error:false};await serial(()=>save({page:null,selection:null},true));check();await chrome.tabs.update(bound.workTabId,{url:url.href,active:true});
     // Navigation accepted is not the same as DOM read. Completion is reported separately by context events.
-    return {status:'completed',navigation:'dispatched'};
+    const end=Math.min(command.deadlineAt||Date.now()+8000,Date.now()+8000);
+    while(Date.now()<end&&!isCancelled()){
+     await new Promise(r=>setTimeout(r,100));const latest=await this.refresh({activate:true});
+     if(latest.page&&latest.page.tabId===bound.workTabId&&latest.page.url!=='about:blank')return {status:'completed',navigation:'dispatched',page:latest.page};
+    }
+    return {status:'completed',navigation:'dispatched',pagePending:true};
    }
    throw Error('unsupported_method');
   },

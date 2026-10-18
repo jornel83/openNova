@@ -26,3 +26,13 @@ test('actual Cordis fiber disposal closes the acquired resource',async()=>{
  await fiber;await fiber.dispose();await new Promise(r=>setImmediate(r));
  assert.equal(released,1);
 });
+test('browser tool definitions compile and return canonical awaited JSON through actual Harness',async()=>{
+ const {createBrowserTools}=await import('../desktop/tools.mjs');
+ const ctx=new Context(),system=ctx.plugin(SystemPrompt);await system;const tools=ctx.plugin(Tools);await tools;
+ try{
+  const rows=[],definitions=createBrowserTools({ops:{put:r=>rows.push(r)},context:{},getRequest:()=>({id:'real-request'}),bridge:{execute:async()=>({status:'failed',error:'browser_disconnected'})}});
+  for(const [name,description,parameters,execute] of definitions)ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute:async args=>JSON.stringify(await execute(args))}));
+  const out=await ctx.tools.execute({signal:new AbortController().signal,callId:'browser-call',name:'browser_open',arguments:{url:'https://example.com/'}});
+  assert.equal(out.isError,false);assert.equal(JSON.parse(out.value).error,'browser_disconnected');assert.equal(rows.at(-1).requestId,'real-request');
+ }finally{await tools.dispose();await system.dispose();}
+});
