@@ -49,8 +49,10 @@ chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==='reconnect')void conne
 chrome.action.onClicked.addListener(async tab=>{try{await windows.bind(tab);await pages.refresh({activate:true});await chrome.action.setBadgeText({text:'ON',tabId:tab.id});}catch{await chrome.runtime.openOptionsPage();}});
 chrome.tabs.onActivated.addListener(info=>{void windows.activated(info).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.tabs.onRemoved.addListener(tabId=>{void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
-chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='complete'||change.title)void windows.binding().then(b=>b.workTabId===tabId&&pages.navigation({tabId,frameId:0,loading:false})).catch(()=>{});});
+chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='complete'||change.title)void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
 chrome.webNavigation.onBeforeNavigate.addListener(d=>{void pages.navigation({...d,loading:true}).catch(()=>{});});
-for(const event of [chrome.webNavigation.onCommitted,chrome.webNavigation.onDOMContentLoaded,chrome.webNavigation.onCompleted,chrome.webNavigation.onHistoryStateUpdated,chrome.webNavigation.onReferenceFragmentUpdated])event.addListener(d=>{void pages.navigation({...d,loading:false}).catch(()=>{});});
+for(const event of [chrome.webNavigation.onCommitted,chrome.webNavigation.onDOMContentLoaded,chrome.webNavigation.onCompleted])event.addListener(d=>{void pages.navigation({...d,loading:false}).catch(()=>{});});
+for(const event of [chrome.webNavigation.onHistoryStateUpdated,chrome.webNavigation.onReferenceFragmentUpdated])event.addListener(d=>{void pages.navigation({...d,loading:false,sameDocument:true}).catch(()=>{});});
+chrome.webNavigation.onErrorOccurred.addListener(d=>{void pages.navigation({...d,loading:false,error:true}).catch(()=>{});});
 // Extension service workers must register listeners synchronously; no top-level await.
 void chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}).then(()=>chrome.alarms.create('reconnect',{periodInMinutes:0.5})).then(connect);

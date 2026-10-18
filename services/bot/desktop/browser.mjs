@@ -28,6 +28,8 @@ export function createBrowserBridge({server,home,onContext=()=>{},now=Date.now,a
        if(m.type!=='auth'||typeof m.token!=='string'||m.token.length>200||!credential||req.headers.origin!==credential.origin||!equal(hash(m.token),credential.hash))return ws.close(1008,'unauthorized');
        clearTimeout(timeout);authenticated=true;if(active){const old=active;lost(old);old.close(1000,'replaced');}active=ws;ws.send(JSON.stringify({type:'ready',version:VERSION}));return;
      }
+     // A replaced socket may still deliver frames while its close handshake is pending.
+     if(active!==ws)return;
      if(m.type==='pong')return;
      if(m.type==='result'){const r=result(m.result);settle(r.id,r);return;}
      if(m.type==='context'){onContext(pageContext(m.context),{activate:m.activate===true});return;}

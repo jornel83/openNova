@@ -8,10 +8,10 @@ import {WebSocket} from '../desktop/node_modules/ws/wrapper.mjs';
 import {createBridge} from '../http.mjs';
 import {createBrowserBridge} from '../desktop/browser.mjs';
 const origin='chrome-extension://'+'a'.repeat(32);
-async function fixture(t){
+async function fixture(t,options={}){
  const home=mkdtempSync(join(tmpdir(),'nova-browser-'));let bridge,time=100;
  const server=createBridge({token:'cli-only',handle:async()=>({ok:true}),extension:(q,s)=>bridge.handleHttp(q,s)});
- bridge=createBrowserBridge({server,home,now:()=>time,authTimeoutMs:60});
+ bridge=createBrowserBridge({server,home,now:()=>time,authTimeoutMs:60,...options});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const url=`http://127.0.0.1:${server.address().port}`;
  t.after(async()=>{await bridge.close();server.closeAllConnections();await new Promise(r=>server.close(r));rmSync(home,{recursive:true,force:true});});
@@ -49,4 +49,12 @@ test('same command executes once; connection loss is unknown and never replayed'
 test('malformed or oversized extension frames disconnect; pending actions settle',async t=>{
  const f=await fixture(t),{token}=await (await f.pair(f.bridge.pairing().code)).json(),ws=await f.connect(token);
  const closed=once(ws,'close');ws.send('x'.repeat(131073));await closed;assert.equal(f.bridge.status().connected,false);
+});
+test('obsolete authenticated sockets cannot publish context after replacement',async t=>{
+ const contexts=[],f=await fixture(t,{onContext:c=>contexts.push(c)}),{token}=await (await f.pair(f.bridge.pairing().code)).json();
+ const old=await f.connect(token);old._socket.pause();await f.connect(token);
+ const page={bindingId:'obsolete',tabId:1,documentId:'d',revision:0,url:'https://example.com',title:'Old page',readable:true};
+ old.send(JSON.stringify({type:'context',activate:true,context:{page,selection:null}}));
+ const closed=once(old,'close');old._socket.resume();await closed;
+ assert.equal(contexts.some(c=>c.page?.bindingId==='obsolete'),false);
 });
