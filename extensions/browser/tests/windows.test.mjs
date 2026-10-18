@@ -52,3 +52,24 @@ test('programmatic window creation cannot impersonate user focus or steal a file
  assert.equal(await m.focused(b.workWindowId),true);
  assert.equal(await m.focused(b.chatWindowId),false);
 });
+test('real work-tab activation during repeated ensure is applied after window reconciliation',async()=>{
+ const chrome=fake(),m=createWindowManager(chrome),args={chatUrl:'http://127.0.0.1:18562/'};
+ const b=await m.ensureWindows(args);chrome.tabsMap.set(99,{id:99,windowId:b.workWindowId,url:'https://example.com/visible'});
+ const get=chrome.windows.get;let release,entered;
+ const entering=new Promise(r=>entered=r),gate=new Promise(r=>release=r);
+ chrome.windows.get=async(...a)=>{entered();await gate;return get(...a);};
+ const ensuring=m.ensureWindows(args);await entering;
+ const activated=m.activated({tabId:99,windowId:b.workWindowId});
+ release();await ensuring;
+ assert.equal(await activated,true);assert.equal((await m.binding()).workTabId,99);
+});
+test('explicit toolbar bind during ensure survives its stale initial binding snapshot',async()=>{
+ const chrome=fake(),m=createWindowManager(chrome),args={chatUrl:'http://127.0.0.1:18562/'};
+ await m.ensureWindows(args);const get=chrome.windows.get;let release,entered;
+ const entering=new Promise(r=>entered=r),gate=new Promise(r=>release=r);
+ chrome.windows.get=async(...a)=>{entered();await gate;return get(...a);};
+ const ensuring=m.ensureWindows(args);await entering;
+ const binding=m.bind({id:88,windowId:89,url:'https://example.com/new-work'});
+ release();await ensuring;await binding;
+ assert.equal((await m.binding()).workTabId,88);
+});
