@@ -10,7 +10,7 @@
 
 **Spec:** [双窗口交互技术方案](../specs/2026-10-18-desktop-interaction-design.md)
 
-状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现并完成审查与实测；M2–M4 尚未实施。测试范围、限制和启动步骤见 [M0 验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
+状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现并完成审查与实测；M2（任务 4、5）已实现并完成真实 Bot 与窄窗口验收；M3–M4 尚未实施。测试范围、限制和启动步骤见 [验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
 
 ## Global Constraints
 
@@ -177,11 +177,11 @@
 - Produces: `/snapshot` 的既有字段保留，新增 `desktop:{context:WorkContext,browser,voice}`、`cursor`；`POST /web/events` 接受 `{cursor}`，统一引用事件为 `work.context`。
 - Produces: `WebApi.events(cursor,onEvent,{signal})`，失败或游标失效回退到现有 snapshot。
 
-- [ ] 写失败测试：先快照后订阅的时间窗内完成的请求仍能收到；过期 cursor / 新 epoch 触发重新快照；慢客户端断开恢复；外站及无 CSRF 请求无法订阅；恢复历史文件引用不会再次打开文件或宣称原生窗口仍在前台。
-- [ ] 运行 `node --test services/bot/tests/desktop-events.test.mjs services/bot/tests/web.test.mjs`，确认失败位置对应新增能力。
-- [ ] 实现有限事件缓冲、统一发布点、SSE 与客户端恢复。持久请求和操作继续使用现有 SQLite；实时音频状态与转写不另建数据库。断开的 SSE 客户端必须释放监听器。
-- [ ] 同一测试通过；人工刷新网页并中断网络，确认不重复发起任务、无消息倒退，使用轮询仍能看到最终结果。
-- [ ] 检查并提交，建议 `feat: stream recoverable interaction events`。
+- [x] 写失败测试：先快照后订阅的时间窗内完成的请求仍能收到；过期 cursor / 新 epoch 触发重新快照；慢客户端断开恢复；外站及无 CSRF 请求无法订阅；恢复历史文件引用不会再次打开文件或宣称原生窗口仍在前台。
+- [x] 运行 `node --test services/bot/tests/desktop-events.test.mjs services/bot/tests/web.test.mjs`，确认失败位置对应新增能力。
+- [x] 实现有限事件缓冲、统一发布点、SSE 与客户端恢复。持久请求和操作继续使用现有 SQLite；实时音频状态与转写不另建数据库。断开的 SSE 客户端必须释放监听器。
+- [x] 同一测试通过；人工刷新网页并中断网络，确认不重复发起任务、无消息倒退，使用轮询仍能看到最终结果。
+- [x] 检查并提交，建议 `feat: stream recoverable interaction events`。
 
 ## Task 5：实现 Nova 对话界面（M2）
 
@@ -191,11 +191,11 @@
 - Consumes: 扩展后的 snapshot、事件流、现有 `ask/cancel`；语音未接入时显示不可用，不生成模拟倾听状态。
 - Produces: `NovaRing({state,reducedMotion})`、`ContextChip({context,onClear,onOpenFile})`、`OperationCard({record})`；新增 `POST /web/api/context-clear` 仅清除浏览器选区；文件卡片重新打开调用任务 3A 的接口。
 
-- [ ] 以归档原型右侧为参考实现深空样式、环形 Nova、消息区、引用和输入。移除当前左右常驻栏；保留中文输入法、消息发送去重、断网草稿、Markdown、代码与差异展示。
-- [ ] 接入真实请求与工作引用，按 requestId 将操作挂到对话；文件卡片显示名称、所属目录、打开方式 / 回执和“重新打开”，不显示未接入的原生选区。区分 `dispatched` 与内容已读取；详情按需展开，取消仍通过服务端。无语音进程时不显示“正在聆听”。
-- [ ] 运行 `/opt/homebrew/opt/node@24/bin/node services/bot/web/build.mjs`，确认构建成功；运行 `node --test services/bot/tests/web.test.mjs services/bot/tests/web-controls.test.mjs` 验证现有交互接口。
-- [ ] 浏览器人工核对 400 px 宽、中文输入法回车、长代码、旧消息加载、键盘焦点、reduced-motion、离线草稿和消息内操作详情；保存实际截图及结论。纯样式不新增镜像实现的单元测试。
-- [ ] 检查并提交，建议 `feat: add minimal Nova conversation interface`。
+- [x] 以归档原型右侧为参考实现深空样式、环形 Nova、消息区、引用和输入。移除当前左右常驻栏；保留中文输入法、消息发送去重、断网草稿、Markdown、代码与差异展示。
+- [x] 接入真实请求与工作引用，按 requestId 将操作挂到对话；文件卡片显示名称、所属目录、打开方式 / 回执和“重新打开”，不显示未接入的原生选区。区分 `dispatched` 与内容已读取；详情按需展开，取消仍通过服务端。无语音进程时不显示“正在聆听”。
+- [x] 运行 `/opt/homebrew/opt/node@24/bin/node services/bot/web/build.mjs`，确认构建成功；运行 `node --test services/bot/tests/web.test.mjs services/bot/tests/web-controls.test.mjs` 验证现有交互接口。
+- [x] 浏览器人工核对 400 px 宽、中文输入法回车、长代码、旧消息加载、键盘焦点、reduced-motion、离线草稿和消息内操作详情；保存实际截图及结论。纯样式不新增镜像实现的单元测试。
+- [x] 检查并提交，建议 `feat: add minimal Nova conversation interface`。
 
 ## Task 6：连接语音状态与网页控制（M3）
 

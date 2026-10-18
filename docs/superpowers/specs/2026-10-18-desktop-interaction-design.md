@@ -1,7 +1,7 @@
 # OpenNova 双窗口交互技术方案
 
 日期：2026-10-18  
-状态：技术方案草案，尚未实施；产品交互依据已确认的 [PRD 6.6](../../product/opennova-mvp-prd.md#66-用户端界面)。  
+状态：M0–M2 已实现并验收，M3 语音状态桥接与 M4 统一启动仍为计划；产品交互依据已确认的 [PRD 6.6](../../product/opennova-mvp-prd.md#66-用户端界面)。  
 配套：[开发计划](../plans/2026-10-18-desktop-interaction.md)
 
 ## 1. 要实现的体验
