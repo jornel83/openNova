@@ -95,8 +95,13 @@ class UiBridge:
 
     async def run(self, commands):
         jobs=[asyncio.create_task(self._publish(commands)),asyncio.create_task(self._poll(commands))]
-        try: await asyncio.gather(*jobs)
+        try:
+            # wait() lets cancellation reach this owner before waiting for children;
+            # an already-settling HTTP future must not keep a publisher loop alive.
+            done,_ = await asyncio.wait(jobs,return_when=asyncio.FIRST_EXCEPTION)
+            for job in done: job.result()
         finally:
+            self.closed=True;self.changed.set()
             for job in jobs: job.cancel()
             await asyncio.gather(*jobs,return_exceptions=True)
 

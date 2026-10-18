@@ -77,3 +77,18 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         controller=Controller()
         await stop_foreground(controller,Agent())
         self.assertTrue(controller.stopped);self.assertEqual(cancelled,['old'])
+    async def test_cancellation_stops_publication_even_if_an_inflight_call_settles(self):
+        entered=asyncio.Event()
+        async def api(path,body):
+            if path=='/voice/publish':
+                entered.set()
+                try:await asyncio.sleep(30)
+                except asyncio.CancelledError:return {}  # already-completing transport
+            else:await asyncio.sleep(.01);return {'commands':[]}
+        b=UiBridge(api,'v',interval=.01);task=asyncio.create_task(b.run(asyncio.Queue()))
+        await entered.wait();task.cancel()
+        try:
+            with self.assertRaises(asyncio.CancelledError):await asyncio.wait_for(task,.2)
+            self.assertTrue(b.closed)
+        finally:
+            b.closed=True;b.changed.set();task.cancel();await asyncio.gather(task,return_exceptions=True)
