@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "OpenNova Browser Bridge (M0)",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "description": "将指定工作窗口的页面和选区连接到本机 OpenNova。",
+  "permissions": ["storage", "alarms", "scripting", "webNavigation", "system.display", "activeTab", "tabs"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {"service_worker": "service-worker.mjs", "type": "module"},
+  "options_page": "options.html",
+  "action": {"default_title": "OpenNova：绑定当前工作页"}
+}

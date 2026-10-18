@@ -14,7 +14,7 @@ import {PROJECT_PLUGINS} from './project.mjs';
 process.umask(0o077);
 const b=botSettings(),s=loadSettings();
 const options=process.argv.slice(2);
-if(options.some(x=>!['--check','--stop'].includes(x)))throw Error('usage: run.command [--check | --stop]');
+if(options.some(x=>!['--check','--stop','--desktop'].includes(x)))throw Error('usage: run.command [--check | --stop | --desktop]');
 if(options.includes('--check')){
   try{console.log(JSON.stringify(await api('/health'),null,2));}catch{console.error('Bot 宿主尚未启动。');process.exitCode=1;}
   process.exit(process.exitCode||0);
@@ -25,6 +25,7 @@ if(options.includes('--stop')){
 }
 try{const health=await api('/health');if(health.ready){console.log(`Bot 已在运行：${b.url}；请直接启动客户端。`);process.exit(0);}}catch{}
 
+if(options.includes('--desktop')){try{await import('./desktop/browser.mjs');}catch{throw Error('请先运行 npm ci --prefix services/bot/desktop 安装浏览器桥接依赖');}}
 setup();mkdirSync(b.home,{recursive:true,mode:0o700});mkdirSync(b.workspace,{recursive:true,mode:0o700});
 const webAssets=join(ROOT,'output/bot/web');
 await buildWeb({plugin:b.plugin,harnessRoot:s.harnessRoot,outdir:webAssets});
@@ -41,7 +42,7 @@ const patch=[
   {id:'preset-standard',config:{id:'standard',order:1,plugins:PROJECT_PLUGINS}},
   {insert:[
     {id:'opennova-chatgpt',name:join(ROOT,'services/agent/provider.mjs'),config:{harnessRoot:s.harnessRoot,enableTools:true,allowedTools:ALLOWED_TOOLS,modelBudget:MODEL_BUDGET,requestFilter:join(ROOT,'services/bot/model-policy.mjs'),retiredMemoryPath:join(b.home,'retired.json')}},
-    {id:'opennova-bot',name:join(wrapper,'index.js'),config:{...b,harnessRoot:s.harnessRoot,webAssets}},
+    {id:'opennova-bot',name:join(wrapper,'index.js'),config:{...b,harnessRoot:s.harnessRoot,webAssets,desktop:options.includes('--desktop')}},
   ]},
 ];
 // JSON is valid YAML; no shell interpolation or generated executable expressions.

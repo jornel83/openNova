@@ -130,8 +130,15 @@ export async function apply(ctx,config) {
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
-  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),handle,web:config.webAssets?{assets:config.webAssets}:undefined});
-  resources.add(async()=>{requests.closed=true;server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
+  let desktop;
+  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),
+    handle:(path,body)=>path.startsWith('/desktop/')&&desktop?desktop.handle(path,body):handle(path,body),
+    extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets}:undefined});
+  if(config.desktop){
+    const {createDesktop}=await import('./desktop/controller.mjs');
+    desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/'});
+  }
+  resources.add(async()=>{requests.closed=true;await desktop?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,'127.0.0.1',resolve);});
   resources.assertOpen();
   console.log(`OpenNova Bot bridge ready on 127.0.0.1:${config.port}; bot ${bot.id}`);

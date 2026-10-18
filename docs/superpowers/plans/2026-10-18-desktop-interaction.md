@@ -10,7 +10,7 @@
 
 **Spec:** [双窗口交互技术方案](../specs/2026-10-18-desktop-interaction-design.md)
 
-状态：2026-10-18 开发计划草案，所有任务未实施。此文中的新增接口、文件和命令参数均为计划，不是当前可用功能。实施采用当前会话内逐项执行；本计划不要求自动分派子代理。
+状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1–M4 尚未实施。测试范围、限制和启动步骤见 [M0 验证记录](../../research/opennova-desktop-interaction-test-cases.md)。后续章节中的接口和命令参数仍为计划。
 
 ## Global Constraints
 
@@ -103,11 +103,11 @@
 - Produces: `POST /browser/pair` 与 WebSocket `/browser/bridge`；配对码一次有效、60 秒过期，配对后绑定扩展 Origin；认证首包时限 5 秒。
 - Consumes: 现有 HTTP server 和生命周期清理；`BrowserCommand/BrowserResult`。
 
-- [ ] 写失败测试：非法 Origin、过期配对码、未认证连接不得收到命令；重复命令 ID 不重复执行；已发送动作失联返回 `unknown`。
-- [ ] 运行 `node --test services/bot/tests/desktop-bridge.test.mjs extensions/browser/tests/connection.test.mjs`，确认因新增能力缺失失败。
-- [ ] 实现本机桥接与扩展设置。令牌仅存本机受限文件 / 扩展存储；连接包限制 128 KiB；允许列表内方法校验后分发；服务停止关闭连接。增加心跳、退避、启动事件、alarm 恢复与已配对扩展状态显示。
-- [ ] 运行同一命令至通过；实机手动停止并唤醒 worker，确认恢复后不重放动作。首次安装与站点授权写入设置说明。
-- [ ] 检查 diff，仅提交本任务相关文件，建议提交信息 `feat: connect desktop browser extension`。
+- [x] 写失败测试：非法 Origin、过期配对码、未认证连接不得收到命令；重复命令 ID 不重复执行；已发送动作失联返回 `unknown`。
+- [x] 运行 `node --test services/bot/tests/desktop-bridge.test.mjs extensions/browser/tests/connection.test.mjs`，确认因新增能力缺失失败。
+- [x] 实现本机桥接与扩展设置。令牌仅存本机受限文件 / 扩展存储；连接包限制 128 KiB；允许列表内方法校验后分发；服务停止关闭连接。增加心跳、退避、启动事件、alarm 恢复与已配对扩展状态显示。
+- [x] 运行同一命令至通过；实机手动停止并唤醒 worker，确认恢复后不重放动作。首次安装与站点授权写入设置说明。
+- [x] 检查 diff，仅提交本任务相关文件，建议提交信息 `feat: connect desktop browser extension`。
 
 ## Task 2：绑定工作窗口，取得页面与选区（M0）
 
@@ -120,11 +120,11 @@
 - Produces: `createWorkContext() -> {updateBrowser(pageContext,{activate}), selectFile(fileRef), snapshot(), capture(), clearSelection(), invalidate(reason)}`；`snapshot/capture` 返回 `WorkContext`，`capture()` 为不可变副本。当前为网页引用时同步对应绑定的页面变化；当前为文件引用时，被动浏览器更新只改缓存，主动返回绑定网页才使用 `activate:true` 切换。
 - Produces: `ensureWindows({chatUrl,bounds?}) -> {workWindowId,workTabId,chatWindowId}`；DOM 适配器处理 `read` 并返回 `PageSnapshot`。
 
-- [ ] 写失败测试：右侧聚焦不改变 workTabId；绑定页导航后旧选区清空；重复 ensure 复用窗口；浏览器重启后失效 ID 不误绑；超长正文 / 选区截断可见。
-- [ ] 运行 `node --test services/bot/tests/desktop-context.test.mjs extensions/browser/tests/windows.test.mjs`，确认预期失败。
-- [ ] 实现明确窗口绑定、首次布局、轻量上下文更新和按需 DOM 快照。忽略无关页事件；普通文本框以外的敏感字段不读取；DOM 变化让被替换的目标引用失效，避免页面动画导致所有引用持续失效。
-- [ ] 同一测试通过后，在真实 Chrome 测试 fixture、雪球及一个普通文章页；验证选中文字后点击 Nova 窗口仍保留引用，SPA 跳转可更新，跨域 iframe / 不支持内容有明确状态。记录实际站点结果，不写模拟成功。
-- [ ] 检查 diff 并形成 M0 提交，建议 `feat: bind work pages and capture context`。
+- [x] 写失败测试：右侧聚焦不改变 workTabId；绑定页导航后旧选区清空；重复 ensure 复用窗口；浏览器重启后失效 ID 不误绑；超长正文 / 选区截断可见。
+- [x] 运行 `node --test services/bot/tests/desktop-context.test.mjs extensions/browser/tests/windows.test.mjs`，确认预期失败。
+- [x] 实现明确窗口绑定、首次布局、轻量上下文更新和按需 DOM 快照。忽略无关页事件；普通文本框以外的敏感字段不读取；DOM 变化让被替换的目标引用失效，避免页面动画导致所有引用持续失效。
+- [x] 同一测试通过后，在真实 Chrome 测试 fixture、雪球及一个普通文章页；验证选中文字后点击 Nova 窗口仍保留引用，SPA 跳转可更新，跨域 iframe / 不支持内容有明确状态。记录实际站点结果，不写模拟成功。
+- [x] 检查 diff 并形成 M0 提交，建议 `feat: bind work pages and capture context`。
 
 **M0 关口：** 实际验证打开、读取、选区和重连成立后进入 M1。雪球登录或访问受限单独记录，不能把通用 fixture 通过当作雪球案例通过。
 

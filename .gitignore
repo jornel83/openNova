@@ -21,3 +21,6 @@ output/
 .pytest_cache/
 .ruff_cache/
 .cache/
+
+# Browser test snapshots and traces
+.playwright-cli/
