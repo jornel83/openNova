@@ -47,8 +47,12 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,c
     if(path==='/result')return ops.request(body.id);
     if(path==='/cancel'){
       const state=voice?.snapshot();
-      if(state?.connected&&state.requestId===body.id)voice.enqueue({id:body.controlId||randomUUID(),action:'stop',voiceInstanceId:state.voiceInstanceId,generation:state.generation,requestId:body.id});
-      return requests.cancel(body.id);
+      let deliveryError;
+      try{if(state?.connected&&state.requestId===body.id)voice.enqueue({id:body.controlId||randomUUID(),action:'stop',voiceInstanceId:state.voiceInstanceId,generation:state.generation,requestId:body.id});}
+      catch(error){deliveryError=error;}
+      const result=await requests.cancel(body.id);
+      if(deliveryError)throw deliveryError;
+      return result;
     }
     if(path==='/approvals')return ops.list('approval');
     if(path==='/operations')return operationRecords(ops);

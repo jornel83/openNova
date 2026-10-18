@@ -39,3 +39,41 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(matches_control({**base,'generation':3,'requestId':'new'},c,'v'))
         self.assertTrue(matches_control({**base,'action':'end'},c,'v'))
         self.assertFalse(matches_control({**base,'action':'mute','voiceInstanceId':'other'},c,'v'))
+    async def test_retired_owner_signals_shutdown_instead_of_silently_retrying(self):
+        calls=[]
+        async def api(path,body):
+            calls.append(path)
+            if path=='/voice/publish':raise ValueError('stale_voice_instance')
+            return {'commands':[]}
+        b=UiBridge(api,'old',interval=.01);q=asyncio.Queue();task=asyncio.create_task(b.run(q))
+        try:
+            self.assertEqual(await asyncio.wait_for(q.get(),.2),'/voice-owner-lost')
+            await asyncio.wait_for(task,.2)
+            self.assertEqual(calls.count('/voice/publish'),1)
+        finally:
+            task.cancel();await asyncio.gather(task,return_exceptions=True)
+    async def test_one_inflight_control_leaves_later_stop_at_server_for_priority(self):
+        c=lambda n,a:{'id':n,'action':a,'generation':0,'voiceInstanceId':'v','requestId':None}
+        async def api(path,body):
+            if path=='/voice/poll':await asyncio.sleep(.005);return {'commands':[c('first','mute'),c('second','start')]}
+            return {}
+        b=UiBridge(api,'v',interval=.01);q=asyncio.Queue();task=asyncio.create_task(b.run(q))
+        try:
+            self.assertEqual((await asyncio.wait_for(q.get(),.3))['id'],'first')
+            await asyncio.sleep(.04);self.assertTrue(q.empty())
+        finally:await b.close();await task
+    async def test_terminal_stop_captures_old_request_before_native_clear(self):
+        from continuous_run import stop_foreground
+        current='old';cancelled=[]
+        class Agent:
+            async def api(self,path,body):
+                if path=='/snapshot':return {'activeId':current}
+                cancelled.append(body['id'])
+        class Controller:
+            response_record=None
+            async def control(self,command):
+                nonlocal current
+                self.stopped=True;current='new'
+        controller=Controller()
+        await stop_foreground(controller,Agent())
+        self.assertTrue(controller.stopped);self.assertEqual(cancelled,['old'])

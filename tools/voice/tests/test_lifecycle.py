@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from continuous_run import run
+from continuous import Conversation
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def scenario(self, action, *, quit_during_ready=False):
@@ -25,10 +26,12 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                     second_started.set(); await release_second.wait()
                 return {'input':'Air','output':'Air','voice_processing':True}
             async def clear(self,generation):
+                if self.closed: raise ConnectionError('Connection lost')
                 if state['quitting'] and quit_during_ready:
                     release_second.set()
                     await asyncio.sleep(.03)  # let the already-pending queue.get own audio_ready
             async def capture(self,enabled,epoch):
+                if self.closed: raise ConnectionError('Connection lost')
                 self.capture_history.append(enabled)
                 if self is instances[0]: command_applied.set()
             async def pause(self): pass
@@ -56,14 +59,20 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(.04)
                 await queue.put('/quit')
             await asyncio.sleep(10)
+        original_control=Conversation.control
+        async def applied(controller,command):
+            try: return await original_control(controller,command)
+            finally:
+                if command == action: command_applied.set()
         args=SimpleNamespace(audio=None,no_play=False,output_dir=None,check=False,device='SRS-XB100',output_device='SRS-XB100',
                              tts_url='http://unused',silence_ms=800,extended_silence_ms=1600)
         async def check(**devices): return {'input':'SRS-XB100','output':'SRS-XB100'}
         with patch('continuous_run.NativeAudio',Audio),patch('continuous_run.StreamingAgent',Agent),\
              patch('continuous_run.TurnCapture',Capture),patch('continuous_run.SileroOnnx',lambda:None),\
              patch('continuous_run.read_controls',commands),patch('continuous_run.check_native',check),\
-             patch('conversation.preflight',lambda _:None),patch('builtins.print'):
+             patch('conversation.preflight',lambda _:None),patch('continuous_run.Conversation.control',applied),patch('builtins.print') as output:
             await asyncio.wait_for(run(args,''),3)
+            self.assertFalse(any('Connection lost' in str(call) for call in output.call_args_list))
         return instances
 
     async def test_retry_retains_device_selection(self):
@@ -158,3 +167,33 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         agents,messages=await self.recovery(agent_failed=True)
         self.assertEqual(len(agents),2)
         self.assertTrue(any('新的模型会话' in message for message in messages))
+
+    async def test_lost_voice_owner_stops_capture_and_closes_process(self):
+        audios=[]
+        class Audio:
+            def __init__(self,**kwargs):self.input=asyncio.Queue();self.closed=False;self.captures=[];audios.append(self)
+            async def start(self):return {'input':'Air','output':'Air'}
+            async def capture(self,enabled,epoch):self.captures.append(enabled)
+            async def clear(self,generation):pass
+            async def close(self):self.closed=True
+        class Agent:
+            def __init__(self):self.error=None;self.process=None
+            async def start(self):return {'sessionId':'shared'}
+            async def _api(self,*a,**k):return {}
+            async def close(self):pass
+        class Bridge:
+            def __init__(self,*a,**k):pass
+            async def connect(self):pass
+            async def run(self,commands):await commands.put('/voice-owner-lost');await asyncio.Future()
+            def publish(self,state):pass
+            async def close(self):pass
+        class Capture:
+            def __init__(self,*a,**k):pass
+            def reset(self,epoch):pass
+            async def close(self):pass
+        async def terminal(queue):await asyncio.Future()
+        async def check(**kw):return {'input':'Air','output':'Air'}
+        args=SimpleNamespace(bot=True,audio=None,no_play=False,output_dir=None,check=False,device=None,output_device=None,tts_url='http://unused',silence_ms=800,extended_silence_ms=1600)
+        with patch('continuous_run.NativeAudio',Audio),patch('continuous_run.BotAgent',Agent),patch('continuous_run.UiBridge',Bridge),patch('continuous_run.TurnCapture',Capture),patch('continuous_run.SileroOnnx',lambda:None),patch('continuous_run.check_native',check),patch('conversation.preflight',lambda _:None),patch('continuous_run.read_controls',terminal),patch('builtins.print'):
+            await asyncio.wait_for(run(args,''),1)
+        self.assertEqual(audios[0].captures,[False]);self.assertTrue(audios[0].closed)

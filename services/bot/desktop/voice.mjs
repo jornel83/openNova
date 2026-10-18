@@ -42,13 +42,18 @@ export function createVoiceChannel({events,now=Date.now,ttl=6000,pollMs=1000}={}
   if(prior){if(['action','voiceInstanceId','generation','requestId'].some(k=>prior[k]!==input[k]))throw Error('control_id_conflict');return structuredClone(prior);}
   const c={id:input.id,action:input.action,voiceInstanceId:input.voiceInstanceId,generation:input.generation,requestId:input.requestId,status:'queued'};
   if(!matches(c))throw Error('stale_voice_control');
-  if([...controls.values()].filter(x=>x.status==='queued').length>=16)throw Error('voice_control_busy');
+  const pending=[...controls.values()].filter(x=>x.status==='queued');
+  if(pending.length>=16){
+   if(c.action!=='stop')throw Error('voice_control_busy');
+   // Reserve effective Stop delivery even while ordinary controls are backed up.
+   pending[0].status='stale';
+  }
   controls.set(c.id,c);while(controls.size>256){const first=[...controls.values()].find(x=>x.status!=='queued');if(!first)break;controls.delete(first.id);}
   emit();return structuredClone(c);
  }
  async function poll(instanceId,signal){
   expire();if(!state?.connected||state.voiceInstanceId!==instanceId||closed)throw Error('voice_unavailable');
-  const read=()=>[...controls.values()].filter(c=>c.status==='queued'&&matches(c));
+  const read=()=>[...controls.values()].filter(c=>c.status==='queued'&&matches(c)).sort((a,b)=>Number(b.action==='stop')-Number(a.action==='stop'));
   if(!read().length)await new Promise(resolve=>{
    const done=()=>{clearTimeout(timeout);waiters.delete(done);signal?.removeEventListener('abort',done);resolve();};
    const timeout=setTimeout(done,pollMs);waiters.add(done);signal?.addEventListener('abort',done,{once:true});if(signal?.aborted)done();

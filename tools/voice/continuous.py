@@ -68,8 +68,9 @@ class Conversation:
                 record['segments_with_played_chunks'] = sorted(getattr(self.audio, 'played_segments', set()))
             if not response.cancelling(): response.cancel()
         # Stop locally before waiting for model/HTTP cleanup, which runs in the cancelled task.
-        await self.audio.clear(self.generation)
-        if record: record['local_clear_ack_at'] = time.monotonic()
+        if not getattr(self.audio,'closed',False):
+            await self.audio.clear(self.generation)
+            if record: record['local_clear_ack_at'] = time.monotonic()
         self.notify()
 
     def trace_candidate(self, turn, action):
@@ -368,8 +369,9 @@ class Conversation:
                 self.unsubmitted = ''
             elif command == '/start': self.intent_active, self.active, self.muted = True, True, False
             else: self.muted = command == '/mute'
-            await self.audio.capture(self.active and not self.muted,self.epoch)
-            if self.response and not self.response.done(): await self.audio.resume()
+            if not getattr(self.audio,'closed',False):
+                await self.audio.capture(self.active and not self.muted,self.epoch)
+                if self.response and not self.response.done(): await self.audio.resume()
             self.log('正在聆听。' if self.active and not self.muted else '已静音。' if self.active else '交流已结束；输入 /start 重新开始。')
         elif command == '/quit':
             self.quit = True

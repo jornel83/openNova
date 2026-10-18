@@ -32,3 +32,14 @@ test('cancel works for text and clears voice even after Bot completion; stale st
  // Internal cancellation never loops a second stop back into the native process.
  await handle('/voice/cancel-request',{id:'next'});assert.equal((await v.poll('v1')).commands.length,0);
 });
+test('saturated controls prioritize stop and still cancel the exact Bot request',async t=>{
+ const {v}=fixture(t);v.publish(state(1,{requestId:'r',playback:'playing'}));
+ for(let i=0;i<16;i++)v.enqueue({id:'mute-'+i,action:'mute',voiceInstanceId:'v1',generation:2,requestId:'r'});
+ const cancelled=[];const handle=createControls({voice:v,requests:{cancel:async id=>{cancelled.push(id);return {id,status:'cancelled'};}}});
+ await handle('/cancel',{id:'r'});assert.deepEqual(cancelled,['r']);
+ const commands=(await v.poll('v1')).commands;assert.equal(commands[0].action,'stop');assert.equal(commands.length,16);
+});
+test('native delivery failure cannot prevent exact Agent cancellation',async()=>{
+ const cancelled=[];const handle=createControls({voice:{snapshot:()=>({connected:true,requestId:'r'}),enqueue:()=>{throw Error('voice_unavailable');}},requests:{cancel:async id=>{cancelled.push(id);return {id,status:'cancelled'};}}});
+ await assert.rejects(handle('/cancel',{id:'r'}),/voice_unavailable/);assert.deepEqual(cancelled,['r']);
+});

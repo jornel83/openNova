@@ -19,6 +19,7 @@ class UiBridge:
         self.state = dict(generation=0,captureEpoch=0,capture='off',recognition='idle',playback='idle',requestId=None,draft=None)
         self.seq = 0
         self.closed = False
+        self.retired = False
         self.changed = asyncio.Event()
         self.seen, self.acks, self.held = {}, {}, set()
         self.last_sent = None
@@ -39,7 +40,7 @@ class UiBridge:
     async def call(self, path, body):
         return await asyncio.wait_for(self.api(path,body),self.timeout)
 
-    async def _publish(self):
+    async def _publish(self, commands):
         while not self.closed:
             self.changed.clear()
             try:
@@ -53,8 +54,12 @@ class UiBridge:
                 self.seq += 1
                 await self.call('/voice/publish',{**data,'voiceInstanceId':self.instance_id,'seq':self.seq})
                 self.last_sent = data.copy();self.registered = True
-            except Exception:
+            except Exception as error:
                 self.registered = False
+                if str(error) in ('stale_voice_instance','voice_in_use'):
+                    self.retired = self.closed = True
+                    await commands.put('/voice-owner-lost')
+                    return
             with suppress(asyncio.TimeoutError): await asyncio.wait_for(self.changed.wait(),self.interval)
             # Bound HTTP traffic even during dense PCM/ASR events.
             await asyncio.sleep(.04)
@@ -64,6 +69,8 @@ class UiBridge:
             try:
                 if not self.registered:
                     await asyncio.sleep(self.interval);continue
+                if self.held:
+                    await asyncio.sleep(.04);continue
                 result = await self.call('/voice/poll',{'voiceInstanceId':self.instance_id})
                 for c in result.get('commands',[]):
                     if c.get('voiceInstanceId') != self.instance_id: continue
@@ -76,6 +83,7 @@ class UiBridge:
                     if len(self.seen)>256:
                         for ident,old in tuple(self.seen.items()):
                             if old.get('result') and ident not in self.acks: self.seen.pop(ident);break
+                    break  # One in-flight command; later Stop can take priority on the host.
             except Exception: await asyncio.sleep(self.interval)
 
     async def connect(self):
@@ -86,7 +94,7 @@ class UiBridge:
         self.registered = True
 
     async def run(self, commands):
-        jobs=[asyncio.create_task(self._publish()),asyncio.create_task(self._poll(commands))]
+        jobs=[asyncio.create_task(self._publish(commands)),asyncio.create_task(self._poll(commands))]
         try: await asyncio.gather(*jobs)
         finally:
             for job in jobs: job.cancel()
@@ -94,5 +102,6 @@ class UiBridge:
 
     async def close(self):
         self.closed=True;self.changed.set();self.seq+=1
+        if self.retired: return
         with suppress(Exception):
             await self.call('/voice/publish',{**self.state,'connected':False,'capture':'off','recognition':'idle','playback':'idle','draft':None,'voiceInstanceId':self.instance_id,'seq':self.seq})

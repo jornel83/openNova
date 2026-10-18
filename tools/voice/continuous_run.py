@@ -33,6 +33,18 @@ class FileAudio:
     async def close(self): pass
 
 
+async def stop_foreground(controller, agent):
+    """Capture the target before native clear can allow another request to start."""
+    request_id = (controller.response_record or {}).get('requestId')
+    try:
+        # Loopback only; an unavailable host must not hold up the local stop.
+        snapshot = await asyncio.wait_for(agent.api('/snapshot',{}),.25)
+        request_id = snapshot.get('activeId') or request_id
+    except Exception: pass
+    await controller.control('/stop')
+    if request_id: await agent.api('/voice/cancel-request',{'id':request_id})
+
+
 async def run(args, key):
     from conversation import preflight, check_cloud_tts, tts_options, default_speed
     provider, voice = tts_options(args)
@@ -183,6 +195,10 @@ async def run(args, key):
                 try:
                     if envelope and not matches_control(envelope,controller,bridge.instance_id):
                         status = 'stale'
+                    elif command == '/voice-owner-lost':
+                        log('语音连接已被另一个进程接管，本进程停止收音和播报。')
+                        try: await controller.control('/end')
+                        finally: await controller.control('/quit')
                     elif command == '/retry':
                         if retry and not retry.done(): log('音频正在重连，请稍候。')
                         else:
@@ -196,12 +212,9 @@ async def run(args, key):
                         result = await agent.control(command) if getattr(args,'bot',False) else None
                         if result is not None: log(json.dumps(result,ensure_ascii=False,indent=2))
                         else:
-                            await controller.control(command)
                             if command == '/stop' and not envelope and getattr(args,'bot',False):
-                                # Also stop a text-originated foreground task; capture its ID now.
-                                snapshot = await agent.api('/snapshot',{})
-                                if snapshot.get('activeId'):
-                                    await agent.api('/voice/cancel-request',{'id':snapshot['activeId']})
+                                await stop_foreground(controller,agent)
+                            else: await controller.control(command)
                 except Exception as error:
                     status = 'failed'
                     if getattr(args,'bot',False): log('操作失败：'+str(error))
