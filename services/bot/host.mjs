@@ -18,7 +18,6 @@ import {createBridge} from './http.mjs';
 import {createControls} from './controls.mjs';
 import {ALLOWED_TOOLS,INSTRUCTIONS} from './policy.mjs';
 import {completedReply} from '../agent/result.mjs';
-import {toSpeechText} from '../agent/speech-text.mjs';
 import {bindProject,settleBot,cancelBot,staleRequest,auditTool,recoverToolRuns,PROJECT_TOOLS,TURN_TIMEOUT_MS} from './project.mjs';
 
 export const name='opennova-bot-spike';
@@ -60,7 +59,7 @@ export async function apply(ctx,config) {
   let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
-  const research=installResearch(ctx,{ops,requests,config:config.research});
+  const research=installResearch(ctx,{ops,requests,config:{...config.research,botId:bot.id,workspace:config.workspace}});
   resources.add(()=>research.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
@@ -83,6 +82,7 @@ export async function apply(ctx,config) {
     },
   });
   const moduleTools=[
+    research.sourceTool,
     createDocumentTool({opener:documents,getRequest:()=>requests.active}),
     ...createBrowserTools({context,ops,getRequest:()=>requests.active,bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}}),
     ['start_test_task','启动用于验证重连的独立计时任务，持续 1 到 120 秒；不是实际计算作业。',{label:{type:'string',required:true},seconds:{type:'number',required:true}},a=>ops.startTask(a.label,Math.round(a.seconds*1000))],
@@ -135,8 +135,7 @@ export async function apply(ctx,config) {
       if(active.cancelled)return;
       const final=events.findLast(e=>e.type==='assistant/message')?.data?.message?.content?.filter(b=>b.type==='text').map(b=>b.text).join('');
       const text=completedReply({events,finalResponse:final});
-      const speech=toSpeechText(text.replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')),speechText=speech.length>600?speech.slice(0,560)+'。完整结果已保留在文字界面。':speech;
-      return {text,speechText,sessionId:rt.chatOf(bot.id),elapsed_ms:Date.now()-record.createdAt};
+      return {...research.reply(text,record.id),sessionId:rt.chatOf(bot.id),elapsed_ms:Date.now()-record.createdAt};
     }catch(error){
       const end=active?.events.findLast(e=>e.type==='turn/end');
       console.error('Bot turn failure',JSON.stringify({code:error.message,reason:end?.data?.reason?.kind,failureCode:end?.data?.reason?.error?.code}));

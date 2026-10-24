@@ -31,4 +31,4 @@ export function loadResearchConfig({env=process.env,configFile=env.OPENNOVA_CONF
 export function publicResearchConfig({version=RESEARCH_VERSION,enabled=false,available=false,provider='deepseek',reason,limits=DEFAULT_LIMITS}={}){
  return {version,enabled,available,provider,...reason?{reason}:{},limits};
 }
-export function researchTools(base,config){return [...new Set([...base,...config?.available?RESEARCH_TOOLS:[]])];}
+export function researchTools(base,config){return [...new Set([...base,'research_sources',...config?.available?RESEARCH_TOOLS:[]])];}
