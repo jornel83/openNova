@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {publicResearchConfig,RESEARCH_TOOLS} from './config.mjs';
+import {researchInstructions} from './instructions.mjs';
 export function researchFailure(error,result) {
  const message=String(error?.message||result?.error?.message||'');
  const code=result?.meta?.statusCode;
@@ -13,9 +14,15 @@ export function researchFailure(error,result) {
  return 'unavailable';
 }
 export function researchError(code){return {isError:true,error:{message:code,info:{code}},content:[{type:'text',text:`Research unavailable: ${code}. Use existing evidence, explain missing information; do not retry the same request or open a browser automatically.`}]};}
+export function resultFailure(name,result){
+ if(result.isError||result.meta?.statusCode>=300)return researchFailure(undefined,result);
+ if(name==='web_search'&&!(result.meta?.sources??result.value?.sources)?.length)return 'empty';
+ if(name==='web_fetch'&&result.value?.body?.kind==='text'&&!result.value.body.content?.trim())return 'empty';
+}
 export function installResearch(ctx,{ops,requests,config={}}) {
  const active=new Map();
  const valid=r=>requests.active===r&&!r.cancelled&&!r.signal.aborted;
+ ctx.systemPrompt.context({name:'opennova-research',order:9910,required:true,interpolate:false,text:()=>researchInstructions({enabled:config.available})});
  ctx.on('tools/execute',async(exec,next)=>{
   if(!RESEARCH_TOOLS.includes(exec.name))return next();
   const r=requests.active;
@@ -25,7 +32,7 @@ export function installResearch(ctx,{ops,requests,config={}}) {
   ops.put(record);ops.finish(r.id,{research:{phase:exec.name==='web_search'?'searching':'reading',callId:exec.callId}});
   try{
    const result=await next();
-   const code=!valid(r)?'cancelled':result.isError||result.meta?.statusCode>=400?researchFailure(undefined,result):undefined;
+   const code=!valid(r)?'cancelled':resultFailure(exec.name,result);
    ops.put({...record,status:code==='cancelled'?'cancelled':code?'failed':'completed',completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,...code?{error:code}:{},output:code?`检索未完成：${code}`:'检索完成'});
    if(valid(r))ops.finish(r.id,{research:{phase:'summarizing',outcome:code?'partial':'complete',callId:exec.callId}});
    return code?researchError(code):result;
