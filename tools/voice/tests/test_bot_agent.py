@@ -6,6 +6,19 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from bot_agent import BotAgent
 
 class BotAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_two_search_calls_produce_distinct_progress_and_sources_reach_reply(self):
+        polls=iter([
+            {'status':'running','tool':'web_search','research':{'phase':'searching','callId':'c1'}},
+            {'status':'running','tool':'web_search','research':{'phase':'searching','callId':'c2'}},
+            {'status':'running','tool':'web_fetch','research':{'phase':'reading','callId':'c3'}},
+            {'status':'completed','text':'北京20℃','speechText':'北京20℃','sources':[{'id':'s1','url':'https://example.com'}]},
+        ])
+        async def api(path,body):
+            return next(polls) if path=='/result' else {}
+        events=[e async for e in BotAgent(api=api).stream('北京天气')]
+        self.assertEqual([e['phase'] for e in events if e['type']=='status'],['searching','searching','reading'])
+        self.assertEqual(events[-1]['sources'][0]['id'],'s1')
+
     async def test_reply_and_close_do_not_stop_the_host(self):
         calls=[]
         async def api(path,body):

@@ -15,3 +15,8 @@ test('no simulated listening offline; text busy stays usable without a voice pro
  assert.equal(voicePresentation(snapshot({}),false).canControl,false);
  assert.equal(voicePresentation(snapshot({}),false).state,'offline');
 });
+test('research phase is visible in Nova ring without requiring microphone connection',()=>{
+ const data=snapshot({connected:false},{busy:true,activeId:'r',messages:[{id:'r',research:{phase:'searching'}}]});
+ assert.equal(voicePresentation(data,true).label,'正在联网搜索');
+ data.desktop.voice={connected:true,playback:'playing'};assert.equal(voicePresentation(data,true).label,'正在播报');
+});

@@ -10,7 +10,7 @@
 
 **Spec:** 本轮用户要求及下文“范围与交互约定”。[旧搜索设计](../specs/2026-10-13-agent-web-search-design.md)和[旧开发计划](2026-10-13-agent-web-search.md)仅提供实现背景；其中 Exa 优先、仅 `--web` 模式、禁止工程工具及整轮 90 秒的约束不适用于本计划。
 
-**状态：** 2026-10-24 开发任务拆分；尚未实施。以下数值和模块边界是建议的实施起点，不代表已完成或已实测的性能。
+**状态：** 2026-10-24，R1–R5 已实施并完成自动化回归与隔离真实 API 联测；最终代码审查进行中。实际证据与真人语音验收边界见 [联网研究验收](../../research/opennova-bot-research-test-cases.md)。下文保留已执行的任务与接口约定。
 
 ## 范围与交互约定
 
@@ -75,11 +75,11 @@ R1/R2 的中间版本只用于受控测试；R4 完成后再作为日常 Demo �
 - `installResearch(ctx, {ops, requests, config}) -> {begin(active), finish(requestId), health(), close()}`：拥有当前请求的检索生命周期，`begin/finish` 在 `host.run()` 的 try/finally 中调用。
 - 搜索工具保持原生 `web_search({queries: [query]})` 协议；每次一个查询、最多 5 条结果；原生元数据中的真实 URL 和摘要回传给模型。
 
-- [ ] **Step 1 — 编写失败测试。** `enabled_bot_registers_search_without_losing_project_tools` 验证搜索和原有 `read/write/bash/browser_open` 同时存在；`missing_key_only_disables_research` 验证无密钥时不注册搜索且其他工具可用；`child_env_exposes_only_selected_credential` 验证配置输出、健康接口和日志没有密钥。
-- [ ] **Step 2 — 运行测试确认未接入。** `node --test services/bot/tests/research-config.test.mjs services/bot/tests/research-runtime.test.mjs`；预期因新接口缺失或工具未注册失败。
-- [ ] **Step 3 — 实现插件和请求接线。** 对照实际安装的插件配置 schema 注册搜索，将 `web_search` 加入有效工具集合和模型投影；沿用受控环境变量传入密钥。将调用、结果、失败、耗时记入 `kind: tool, operation: research` 的操作记录。`/health` 返回 `{research:{enabled,available,provider,reason?}}`，健康检查不发计费搜索。
-- [ ] **Step 4 — 验证。** 上述测试加 `harness.test.mjs` 通过；隔离 Bot 的文字入口实际查一次当前北京天气，记录 DeepSeek provider、真实调用和来源 URL。即使浏览器未连接也能执行，不调用 `browser_open`。真实 API 验证不纳入普通单元测试。
-- [ ] **Step 5 — 完成独立提交。** 仅提交本任务文件，记录固定 Harness 版本和辅助搜索模型；不得混入已有桌面功能改动。
+- [x] **Step 1 — 编写失败测试。** `enabled_bot_registers_search_without_losing_project_tools` 验证搜索和原有 `read/write/bash/browser_open` 同时存在；`missing_key_only_disables_research` 验证无密钥时不注册搜索且其他工具可用；`child_env_exposes_only_selected_credential` 验证配置输出、健康接口和日志没有密钥。
+- [x] **Step 2 — 运行测试确认未接入。** `node --test services/bot/tests/research-config.test.mjs services/bot/tests/research-runtime.test.mjs`；预期因新接口缺失或工具未注册失败。
+- [x] **Step 3 — 实现插件和请求接线。** 对照实际安装的插件配置 schema 注册搜索，将 `web_search` 加入有效工具集合和模型投影；沿用受控环境变量传入密钥。将调用、结果、失败、耗时记入 `kind: tool, operation: research` 的操作记录。`/health` 返回 `{research:{enabled,available,provider,reason?}}`，健康检查不发计费搜索。
+- [x] **Step 4 — 验证。** 上述测试加 `harness.test.mjs` 通过；隔离 Bot 的文字入口实际查一次当前北京天气，记录 DeepSeek provider、真实调用和来源 URL。即使浏览器未连接也能执行，不调用 `browser_open`。真实 API 验证不纳入普通单元测试。
+- [x] **Step 5 — 完成独立提交。** 仅提交本任务文件，记录固定 Harness 版本和辅助搜索模型；不得混入已有桌面功能改动。
 
 ## R2：后台正文读取与工具路径选择
 
@@ -94,11 +94,11 @@ R1/R2 的中间版本只用于受控测试；R4 完成后再作为日常 Demo �
 - `researchInstructions({now, timeZone, enabled, state}) -> string`：提供动态日期、查询/页面操作的路径说明、摘要与正文使用规则及检索收尾状态；不覆盖原有工程权限和桌面操作说明。
 - 失败分类统一为 `unavailable/auth/rate_limited/timeout/blocked/empty/unsupported/cancelled`；重定向前后 URL 单独保留。
 
-- [ ] **Step 1 — 编写失败测试。** `fetch_preserves_tables_and_final_url` 检查天气表格和重定向元数据；`empty_or_blocked_body_is_not_success` 检查 HTTP 200 空页、403 和只含导航页；`query_does_not_require_desktop`、`explicit_open_keeps_browser_tools`、`relative_dates_follow_injected_clock` 固定两类路径及跨年日期上下文；网页中的 Shell 指令仅作为资料返回。
-- [ ] **Step 2 — 运行。** `node --test services/bot/tests/research-fetch.test.mjs services/bot/tests/research-routing.test.mjs`，确认失败来自待实现的接线。
-- [ ] **Step 3 — 实现。** 加载正文 provider 和 `web_fetch`；工具描述明确后台读取与当前页面读取的区别。精准查询优先 1 次搜索，必要时读 1 个来源；正文被拦截可使用其他来源或标明摘要证据，不反复询问已确定的城市、日期、年份。
-- [ ] **Step 4 — 验证。** 测试通过后，用真实模型分别执行“查天气”“总结公开链接”“打开天气网站”“读取当前页面”。确认前两者不导航工作窗口，后两者保留现有桌面行为。提示词单测不能替代真实模型路由验收。
-- [ ] **Step 5 — 独立提交。** 记录正文可读、被拦截、摘要足够三类结果，不将所有链接均可读写成能力承诺。
+- [x] **Step 1 — 编写失败测试。** `fetch_preserves_tables_and_final_url` 检查天气表格和重定向元数据；`empty_or_blocked_body_is_not_success` 检查 HTTP 200 空页、403 和只含导航页；`query_does_not_require_desktop`、`explicit_open_keeps_browser_tools`、`relative_dates_follow_injected_clock` 固定两类路径及跨年日期上下文；网页中的 Shell 指令仅作为资料返回。
+- [x] **Step 2 — 运行。** `node --test services/bot/tests/research-fetch.test.mjs services/bot/tests/research-routing.test.mjs`，确认失败来自待实现的接线。
+- [x] **Step 3 — 实现。** 加载正文 provider 和 `web_fetch`；工具描述明确后台读取与当前页面读取的区别。精准查询优先 1 次搜索，必要时读 1 个来源；正文被拦截可使用其他来源或标明摘要证据，不反复询问已确定的城市、日期、年份。
+- [x] **Step 4 — 验证。** 测试通过后，用真实模型分别执行“查天气”“总结公开链接”“打开天气网站”“读取当前页面”。确认前两者不导航工作窗口，后两者保留现有桌面行为。提示词单测不能替代真实模型路由验收。
+- [x] **Step 5 — 独立提交。** 记录正文可读、被拦截、摘要足够三类结果，不将所有链接均可读写成能力承诺。
 
 ## R3：来源管理与跨轮引用
 
@@ -116,11 +116,11 @@ R1/R2 的中间版本只用于受控测试；R4 完成后再作为日常 Demo �
 - `projectResearchReply({text, requestId, sources}) -> {text, speechText, sources, research}`；最终来源引用绑定到具体 observation，`research` 包含检索状态和预算统计。
 - 新增只读工具 `research_sources({requestId?, sourceIds?})`，二选一；都省略时读取同 Bot、同工程最近一个已完成的检索请求。返回最多 10 项来源及对应 observation 的证据片段；不发网络请求、不消耗检索预算。异 Bot/工程或未知 ID 明确返回未找到。通过该工具让跨轮追问可以取回真实持久证据，不依赖模型记住全部历史。
 
-- [ ] **Step 1 — 编写失败测试。** `same_url_keeps_old_and_new_observations`、`restart_retains_source_ids`、`cancelled_result_cannot_create_observation`、`failed_fetch_does_not_upgrade_summary`、`unknown_citation_not_promoted_to_source`、`project_and_browser_links_survive_projection`、`source_lookup_reads_only_requested_scope_without_network`。对同 URL 跨日查询验证旧结果不被静默改写。
-- [ ] **Step 2 — 运行。** `node --test services/bot/tests/research-sources.test.mjs services/bot/tests/research-reply.test.mjs`，确认缺失来源存储和投影行为。
-- [ ] **Step 3 — 实现。** 使用新记录种类 `research_source` / `research_observation` 存入现有 SQLite；每份 observation 的证据片段最多 12,000 字符，保留截断信息，不保存整份 HTML。注册并放行 `research_sources`，其结果带原获取时间；仅将实际引用的来源放入答复，不把搜索到的全部 URL 都当作引用。来源记录保存供追溯，不作为天气等实时查询的自动缓存。
-- [ ] **Step 4 — 验证。** 测试通过；语音查询后在网页追问来源，再重启宿主读取已保存结果，来源可恢复。来源元数据只证明取得过资料；用固定事实夹具和人工抽查检查回答是否受证据支持。不要直接套旧 `projectWebReply` 的全局链接删除逻辑，以免删掉工程文件或浏览器的合法链接。
-- [ ] **Step 5 — 独立提交。** 补充记录结构和恢复说明；原始密钥、完整响应头和无限量正文不进入记录。
+- [x] **Step 1 — 编写失败测试。** `same_url_keeps_old_and_new_observations`、`restart_retains_source_ids`、`cancelled_result_cannot_create_observation`、`failed_fetch_does_not_upgrade_summary`、`unknown_citation_not_promoted_to_source`、`project_and_browser_links_survive_projection`、`source_lookup_reads_only_requested_scope_without_network`。对同 URL 跨日查询验证旧结果不被静默改写。
+- [x] **Step 2 — 运行。** `node --test services/bot/tests/research-sources.test.mjs services/bot/tests/research-reply.test.mjs`，确认缺失来源存储和投影行为。
+- [x] **Step 3 — 实现。** 使用新记录种类 `research_source` / `research_observation` 存入现有 SQLite；每份 observation 的证据片段最多 12,000 字符，保留截断信息，不保存整份 HTML。注册并放行 `research_sources`，其结果带原获取时间；仅将实际引用的来源放入答复，不把搜索到的全部 URL 都当作引用。来源记录保存供追溯，不作为天气等实时查询的自动缓存。
+- [x] **Step 4 — 验证。** 测试通过；语音查询后在网页追问来源，再重启宿主读取已保存结果，来源可恢复。来源元数据只证明取得过资料；用固定事实夹具和人工抽查检查回答是否受证据支持。不要直接套旧 `projectWebReply` 的全局链接删除逻辑，以免删掉工程文件或浏览器的合法链接。
+- [x] **Step 5 — 独立提交。** 补充记录结构和恢复说明；原始密钥、完整响应头和无限量正文不进入记录。
 
 ## R4：检索预算、收尾与取消
 
@@ -147,11 +147,11 @@ R1/R2 的中间版本只用于受控测试；R4 完成后再作为日常 Demo �
 
 预算数值不是端到端回复时延承诺：模型总结和 TTS 的时间独立统计。首版不承诺长期、无限轮次的研究。
 
-- [ ] **Step 1 — 编写失败测试。** 假时钟验证第 3 次搜索/第 4 次抓取被拒绝、并发领取无超额、30 秒不再发新请求、45 秒取消在途 Web 请求；`research_exhaustion_keeps_write_and_bash_available` 验证工程工具未被清空；`cancel_drops_late_results_and_next_request_resets` 验证新轮次预算和来源独立；取消期间的模型/工具收尾沿用现有串行准入。
-- [ ] **Step 2 — 运行。** `node --test services/bot/tests/research-budget.test.mjs services/bot/tests/research-lifecycle.test.mjs services/bot/tests/requests.test.mjs`。
-- [ ] **Step 3 — 实现。** 父级用户取消传播到检索子信号；检索超时只中止子信号，不调用 `requests.cancel` 终止整个混合任务。向模型回传“检索已结束、已有证据、缺失项”，在纯查询中转为回答，在混合任务中继续用户要求的工程操作。搜索失败不能自动以浏览器或 Shell 绕过预算。
-- [ ] **Step 4 — 验证。** 各取消阶段、超时、空结果、限流、断网测试通过；“查询后写 Markdown 报告”即使来源部分失败也能保存有出处和限制说明的结果。`/stop`、有效语音插话后，旧结果不写入新轮次也不播报。
-- [ ] **Step 5 — 独立提交。** 记录实际用量字段：搜索/抓取次数、各工具耗时、模型等待、Agent 总耗时和结束原因。没有供应商计费回执时不显示推测费用。
+- [x] **Step 1 — 编写失败测试。** 假时钟验证第 3 次搜索/第 4 次抓取被拒绝、并发领取无超额、30 秒不再发新请求、45 秒取消在途 Web 请求；`research_exhaustion_keeps_write_and_bash_available` 验证工程工具未被清空；`cancel_drops_late_results_and_next_request_resets` 验证新轮次预算和来源独立；取消期间的模型/工具收尾沿用现有串行准入。
+- [x] **Step 2 — 运行。** `node --test services/bot/tests/research-budget.test.mjs services/bot/tests/research-lifecycle.test.mjs services/bot/tests/requests.test.mjs`。
+- [x] **Step 3 — 实现。** 父级用户取消传播到检索子信号；检索超时只中止子信号，不调用 `requests.cancel` 终止整个混合任务。向模型回传“检索已结束、已有证据、缺失项”，在纯查询中转为回答，在混合任务中继续用户要求的工程操作。搜索失败不能自动以浏览器或 Shell 绕过预算。
+- [x] **Step 4 — 验证。** 各取消阶段、超时、空结果、限流、断网测试通过；“查询后写 Markdown 报告”即使来源部分失败也能保存有出处和限制说明的结果。`/stop`、有效语音插话后，旧结果不写入新轮次也不播报。
+- [x] **Step 5 — 独立提交。** 记录实际用量字段：搜索/抓取次数、各工具耗时、模型等待、Agent 总耗时和结束原因。没有供应商计费回执时不显示推测费用。
 
 ## R5：网页、语音与启动流程统一验收
 
@@ -167,11 +167,11 @@ R1/R2 的中间版本只用于受控测试；R4 完成后再作为日常 Demo �
 - 沿用 `request.updated` / `operation.updated` 和 `/snapshot`、`/result`，不另建第二套连接。完成请求返回 `text/speechText/sources/research`。
 - Python 客户端将实际检索阶段映射到现有 `status` 事件的 `searching/reading/answering`；同一工具再次调用以 `callId` 或操作 ID 区分，不只比较工具名称。
 
-- [ ] **Step 1 — 编写失败测试。** `source_cards_restore_from_snapshot`、`speech_omits_urls_and_citation_marks`、`two_search_calls_produce_distinct_progress`、`disabled_research_keeps_normal_startup`、`ring_label_matches_request_phase`；旧请求没有 `sources/research` 时仍正常显示。
-- [ ] **Step 2 — 运行。** `node --test services/bot/tests/research-view.test.mjs services/bot/tests/voice-view.test.mjs services/bot/tests/web-controls.test.mjs tools/voice/tests/launcher.test.mjs`；`python3.11 -m unittest discover -s tools/voice/tests -p test_bot_agent.py`。
-- [ ] **Step 3 — 实现。** 复用深空对话界面，在回复下显示来源、在原操作卡展示检索记录；环形 Nova 沿用思考态，仅状态文案显示“正在联网搜索/正在读取资料/正在整理回答”。TTS 只播报简短结论。启动检查显示检索是否可用，复用旧 Bot 时核对运行能力，避免声称已接入而实际仍在旧进程。
-- [ ] **Step 4 — 综合验证。** 运行 `node --test services/bot/tests/*.test.mjs services/agent/tests/*.test.mjs tools/voice/tests/*.test.mjs` 与 `python3.11 -m unittest discover -s tools/voice/tests -q`。以隔离测试状态执行下表真实流程，保留脱敏操作记录和阶段耗时，确认家中 TTS/云端 TTS 的来源和播报行为一致。
-- [ ] **Step 5 — 独立提交和文档更新。** 更新架构、部署和验收说明；以真实测试结果记录可用性及限制。合并前检查已有浏览器/工程能力回归，提交范围不包含用户其他未提交内容。
+- [x] **Step 1 — 编写失败测试。** `source_cards_restore_from_snapshot`、`speech_omits_urls_and_citation_marks`、`two_search_calls_produce_distinct_progress`、`disabled_research_keeps_normal_startup`、`ring_label_matches_request_phase`；旧请求没有 `sources/research` 时仍正常显示。
+- [x] **Step 2 — 运行。** `node --test services/bot/tests/research-view.test.mjs services/bot/tests/voice-view.test.mjs services/bot/tests/web-controls.test.mjs tools/voice/tests/launcher.test.mjs`；`python3.11 -m unittest discover -s tools/voice/tests -p test_bot_agent.py`。
+- [x] **Step 3 — 实现。** 复用深空对话界面，在回复下显示来源、在原操作卡展示检索记录；环形 Nova 沿用思考态，仅状态文案显示“正在联网搜索/正在读取资料/正在整理回答”。TTS 只播报简短结论。启动检查显示检索是否可用，复用旧 Bot 时核对运行能力，避免声称已接入而实际仍在旧进程。
+- [x] **Step 4 — 综合验证。** 运行 `node --test services/bot/tests/*.test.mjs services/agent/tests/*.test.mjs tools/voice/tests/*.test.mjs` 与 `python3.11 -m unittest discover -s tools/voice/tests -q`。以隔离测试状态执行下表真实流程，保留脱敏操作记录和阶段耗时，确认家中 TTS/云端 TTS 的来源和播报行为一致。
+- [x] **Step 5 — 独立提交和文档更新。** 更新架构、部署和验收说明；以真实测试结果记录可用性及限制。合并前检查已有浏览器/工程能力回归，提交范围不包含用户其他未提交内容。
 
 ## 用户验收场景
 

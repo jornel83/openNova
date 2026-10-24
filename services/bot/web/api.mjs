@@ -3,6 +3,7 @@ export const labels={browser_disconnected:'浏览器扩展未连接。请打开�
   approval_not_pending:'这项修改已经处理，请查看最新状态。',unknown_id:'没有找到这条记录。',host_stopping:'服务正在停止，请重新启动 Bot。',
   memory_match_changed:'原记忆已经变化，请重新提出修改。',invalid_request:'消息不能为空，且不能超过 8000 个字符。',
   cancelled:'回复已停止。',interrupted:'服务曾重启，这条回复未完成。',agent_timeout:'本轮回复超时，请重试。'};
+Object.assign(labels,{timeout:'本次检索超时，已保留取得的资料。',budget_exhausted:'本轮检索预算已用尽，正在整理已有资料。',empty:'未取得可用的搜索结果或正文。',blocked:'网站暂时无法读取。',rate_limited:'搜索服务暂时限流。',auth:'搜索账号权限或额度不可用。',read_failures:'连续读取失败，已停止继续读取。',duplicate_research_call:'本轮已查询过该内容。'});
 export const errorText=error=>labels[error?.code||error?.message]||'操作未完成：'+(error?.message||'请检查 Bot 服务后重试。');
 
 export class WebApi {

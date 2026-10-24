@@ -7,6 +7,16 @@ import {join, resolve} from 'node:path';
 import {homedir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {botSettings, ROOT} from '../../services/bot/settings.mjs';
+import {loadResearchConfig,RESEARCH_VERSION} from '../../services/bot/research/config.mjs';
+
+export function researchStartupNotice(health,desired={}){
+ const r=health?.research;
+ if(!r||r.version!==RESEARCH_VERSION||desired.enabled&&!r.enabled)return '后台检索尚未加载；请在结束当前语音后停止并重启 Bot。普通对话与工程功能仍可用。';
+ if(r.available)return '后台检索：DeepSeek 已接入；实际查询时验证网络与账号权限。';
+ if(!r.enabled)return '后台检索未开启；可在 web.enabled 配置中启用，普通功能可用。';
+ const reason={deepseek_api_key_missing:'缺少 DeepSeek 搜索密钥',research_provider_unsupported:'当前 Bot 的搜索后端需要设为 deepseek',invalid_research_configuration:'检索配置无效'}[r.reason]||'当前不可用';
+ return `后台检索：${reason}；普通对话与工程功能仍可用。`;
+}
 
 const HELP=`OpenNova 一键语音启动（自动使用共享 Bot）
 用法：./start.command [选项]
@@ -207,6 +217,7 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
       await waitReady(botHealth,bot,timing,'Bot 启动失败或超时，请查看 output/voice/launcher/bot.log。');
       botReady=true;bot.unref();log(`Bot 已就绪：${b.url}/`);
     }
+    log(researchStartupNotice(health,loadResearchConfig({env:runEnv,configFile:runEnv.OPENNOVA_CONFIG||join(root,'config/voice.local.json'),secretsFile:runEnv.OPENNOVA_SECRETS_FILE||join(root,'config/secrets.local.json')})));
     if(options.ui&&!options.check)await prepareDesktop({config:b,root,health,signal,log,openBrowser,waitMs:uiWaitMs});
     if(!options.check){
       const snapshot=await jsonRequest(b.url+'/snapshot',{token:readFileSync(b.tokenPath,'utf8').trim(),signal});

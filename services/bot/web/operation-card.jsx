@@ -3,6 +3,8 @@ import {Button,DiffBlock} from '@deepseek-ai/dsh-client-ui-primitives';
 import {errorText} from './api.mjs';
 import {Icon} from './icons.jsx';
 const toolLabels={read:'读取文件',glob:'查找文件',grep:'搜索工程',edit:'修改文件',write:'写入文件',bash:'执行命令',shell:'执行命令',browser_open:'打开网页',browser_read:'读取网页',browser_click:'操作网页',browser_fill:'填写网页',browser_scroll:'浏览网页',document_open:'打开文件',remember:'保存记忆',forget:'更新记忆',web_search:'联网搜索',web_fetch:'读取网页'};
+toolLabels.research_sources='回查来源';
+toolLabels.web_fetch='后台读取资料';
 export const operationLabel=record=>toolLabels[record.tool]||({file:'修改文件',memory:'更新记忆',browser:'操作网页',shell:'执行命令',document_open:'打开文件'})[record.operation]||'处理任务';
 export function OperationCard({record,disabled,onAction}){
  return <details className="operation-card" data-operation-id={record.id}>

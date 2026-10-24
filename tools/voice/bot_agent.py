@@ -57,8 +57,13 @@ class BotAgent:
                 if status not in ('queued','running'):
                     terminal=True
                     raise ValueError(result.get('error') or status)
-                if result.get('tool') and result['tool']!=tool:
-                    tool=result['tool'];yield {'type':'status','id':ident,'phase':'working','tool':tool}
+                research=result.get('research') or {}
+                key=(result.get('tool'),research.get('phase'),research.get('callId'))
+                if result.get('tool') and key!=tool:
+                    tool=key
+                    phase={'searching':'searching','reading':'reading','summarizing':'answering'}.get(research.get('phase'),'working')
+                    if result.get('tool') not in ('web_search','web_fetch','research_sources'): phase='working'
+                    yield {'type':'status','id':ident,'phase':phase,'tool':result['tool'],'callId':research.get('callId')}
                 await asyncio.sleep(.3)
             raise ValueError('Bot 等待超时；可用 /result 查询已提交请求。')
         finally:

@@ -10,3 +10,8 @@ test('long report retains text and gives bounded speech without citations',()=>{
  const text='完整报告。'.repeat(200)+' [1]';const r=projectResearchReply({text,requestId:'r1',sources:{forReply:()=>[]}});
  assert.equal(r.text,text);assert.ok(r.speechText.length<=600);assert.doesNotMatch(r.speechText,/\[1\]/);
 });
+test('public source cards bound snippets while persistent evidence remains intact',()=>{
+ const evidence={...s,excerpt:'x'.repeat(12000)};
+ const r=projectResearchReply({text:'天气',requestId:'r',sources:{forReply:()=>[evidence]}});
+ assert.equal(r.sources[0].excerpt.length,800);assert.equal(evidence.excerpt.length,12000);
+});
