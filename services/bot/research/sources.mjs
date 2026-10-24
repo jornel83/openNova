@@ -15,15 +15,14 @@ export function createSources({ops,botId,workspace}){
  const view=o=>({id:o.sourceId,sourceId:o.sourceId,observationId:o.id,url:o.finalUrl,title:o.title,requestId:o.requestId,callId:o.callId,
   provider:o.provider,evidenceType:o.evidenceType,retrieval:o.evidenceType==='page_body'?'fetch':'search',excerpt:o.excerpt,truncated:o.truncated,
   retrievedAt:o.retrievedAt,...o.publishedAt?{publishedAt:o.publishedAt}:{},...o.publishedAtRaw?{publishedAtRaw:o.publishedAtRaw}:{},...o.eventDate?{eventDate:o.eventDate}:{}});
- const dedupe=rows=>[...new Map(rows.map(o=>[o.sourceId,view(o)])).values()];
  function forRequest(id){
   const usage=new Set(list('research_usage').filter(r=>r.requestId===id).map(r=>r.observationId));
-  return dedupe(observations().filter(o=>o.requestId===id||usage.has(o.id)));
+  return observations().filter(o=>o.requestId===id||usage.has(o.id)).map(view);
  }
  const resolve=ids=>{
   if(!Array.isArray(ids)||ids.length>10||ids.some(id=>typeof id!=='string'))throw Error('invalid_source_lookup');
-  const rows=dedupe(observations().filter(o=>ids.includes(o.sourceId)));
-  if(ids.some(id=>!rows.some(r=>r.id===id)))throw Error('source_not_found');return rows;
+  const rows=observations().filter(o=>ids.includes(o.sourceId)).map(view);
+  if(ids.some(id=>!rows.some(r=>r.id===id)))throw Error('source_not_found');return rows.slice(-10);
  };
  function lookup({requestId,sourceIds}={}){
   if(requestId!==undefined&&sourceIds!==undefined||requestId!==undefined&&typeof requestId!=='string')throw Error('invalid_source_lookup');
@@ -50,11 +49,13 @@ export function createSources({ops,botId,workspace}){
    ops.put(record);return {...view(record),sourceId};
   },
   forRequest,resolve,lookup,
-  resolveUrls(urls){const wanted=new Set(urls.map(canonicalUrl).filter(Boolean));return dedupe(observations().filter(o=>wanted.has(o.finalUrl)));},
+  resolveUrls(urls){const wanted=new Set(urls.map(canonicalUrl).filter(Boolean));return observations().filter(o=>wanted.has(o.finalUrl)).map(view);},
   use(requestId,rows){for(const row of rows){const found=observations().find(o=>o.id===row.observationId);if(!found)throw Error('source_not_found');ops.put({id:`use-${requestId}-${found.id}`,kind:'research_usage',botId,workspace,requestId,observationId:found.id});}},
   forReply(requestId,text){
-   const known=new Map(forRequest(requestId).map(s=>[s.url,s])),selected=new Map();
-   const accept=url=>{const s=known.get(canonicalUrl(url));if(s)selected.set(s.observationId,s);return url;};
+   // A URL identifies a source, not which observation supports a statement.
+   // Keep its actual observations instead of promoting a summary to a newer body.
+   const known=forRequest(requestId),selected=new Map();
+   const accept=url=>{for(const s of known)if(s.url===canonicalUrl(url))selected.set(s.observationId,s);return url;};
    mapWebLinks(text,{bare:accept,markdown:(label,url)=>{accept(url);return label;}});
    return [...selected.values()];
   },

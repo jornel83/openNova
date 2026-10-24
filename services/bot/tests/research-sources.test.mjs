@@ -26,3 +26,21 @@ test('source URLs preserve semantic query and cap evidence',t=>{
  assert.equal(b.forRequest('r1').length,2);assert.equal(b.forRequest('r1')[0].excerpt.length,12000);assert.equal(b.forRequest('r1')[0].truncated,true);
  assert.equal(b.record(observation({url:'javascript:alert(1)'})),null);
 });
+
+test('conflicting summary and body from one URL retain their own evidence in lookup and reply',t=>{
+ const f=fixture(t),b=f.make();
+ const summary=b.record(observation({excerpt:'北京20℃'}));
+ const body=b.record(observation({callId:'c2',evidenceType:'page_body',excerpt:'本页没有温度数据',retrievedAt:'2026-10-24T00:10:00Z'}));
+ const expected=[summary.observationId,body.observationId];
+ assert.deepEqual(b.lookup({requestId:'r1'}).map(s=>s.observationId),expected);
+ assert.deepEqual(b.lookup({sourceIds:[summary.sourceId]}).map(s=>s.observationId),expected);
+ const text='依据搜索摘要，北京20℃，[天气来源](https://example.com/weather)。';
+ assert.deepEqual(b.forReply('r1',text).map(s=>[s.observationId,s.evidenceType]),[[summary.observationId,'search_summary'],[body.observationId,'page_body']]);
+ b.use('r2',b.lookup({requestId:'r1'}));
+ assert.deepEqual(f.restart().forReply('r2',text).map(s=>s.observationId),expected);
+});
+test('source ID history lookup stays bounded to ten observations',t=>{
+ const b=fixture(t).make();let source;
+ for(let i=0;i<12;i++)source=b.record(observation({requestId:'r'+i,excerpt:String(i)}));
+ const rows=b.lookup({sourceIds:[source.sourceId]});assert.equal(rows.length,10);assert.equal(rows.at(-1).excerpt,'11');
+});

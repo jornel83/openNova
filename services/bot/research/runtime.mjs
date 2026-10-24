@@ -7,11 +7,11 @@ import {createResearchBudget} from './budget.mjs';
 import {withResearchSignal} from './policy.mjs';
 export function researchFailure(error,result) {
  const message=String(error?.message||result?.error?.message||'');
- if(/budget_exhausted|duplicate_research_call|read_failures/.test(message))return message;
+ if(/budget_exhausted|duplicate_research_call|read_failures/.test(message)||['auth','rate_limited'].includes(message))return message;
  const code=result?.meta?.statusCode;
  if(error?.name==='AbortError'||/cancel/i.test(message))return 'cancelled';
  if(/timeout|timed.out/i.test(message))return 'timeout';
- if(code===401||/401|402|credential|api.key/i.test(message))return 'auth';
+ if(code===401||code===402||/401|402|credential|api.key|insufficient.?balance|quota/i.test(message))return 'auth';
  if(code===429||/429|rate.limit/i.test(message))return 'rate_limited';
  if(code===403||/403|blocked|private|disallowed/i.test(message))return 'blocked';
  if(/unsupported|content.type/i.test(message))return 'unsupported';
@@ -33,7 +33,7 @@ export function installResearch(ctx,{ops,requests,config={}}) {
  ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
   const result=await next(),r=requests.active;if(!r||!active.has(r.id))return result;
   const state=budget.snapshot(r.id);return {...result,tools:result.tools.filter(t=>!(state.closed&&RESEARCH_TOOLS.includes(t.name))&&
-   !(t.name==='web_search'&&state.searchCalls>=limits.searchCalls)&&!(t.name==='web_fetch'&&(state.fetchClosed||state.fetchCalls>=limits.fetchCalls)))};
+   !(t.name==='web_search'&&(state.searchClosed||state.searchCalls>=limits.searchCalls))&&!(t.name==='web_fetch'&&(state.fetchClosed||state.fetchCalls>=limits.fetchCalls)))};
  });
  ctx.on('tools/execute',async(exec,next)=>{
   if(!RESEARCH_TOOLS.includes(exec.name))return next();
@@ -59,13 +59,13 @@ export function installResearch(ctx,{ops,requests,config={}}) {
     }
    }
    ops.put({...record,status:code==='cancelled'?'cancelled':code?'failed':'completed',completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,...code?{error:code}:{},sourceIds:found.map(s=>s.id),output:code?`检索未完成：${code}`:JSON.stringify(found.map(s=>({title:s.title,url:s.url,evidenceType:s.evidenceType}))) });
-   lease.finish({failed:!!code});
+   lease.finish({failed:!!code,code});
    if(valid(r))ops.finish(r.id,{research:{phase:'summarizing',outcome:code?'partial':'complete',callId:exec.callId,usage:budget.snapshot(r.id)}});
    return code?researchError(code):result;
   }catch(error){
    const code=valid(r)?researchFailure(error):'cancelled';
    ops.put({...record,status:code==='cancelled'?'cancelled':'failed',error:code,completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,output:`检索未完成：${code}`});
-   lease?.finish({failed:true});
+   lease?.finish({failed:true,code});
    if(valid(r))ops.finish(r.id,{research:{phase:'summarizing',outcome:'partial',callId:exec.callId,reason:code,usage:budget.snapshot(r.id)}});
    return researchError(code);
   }finally{lease?.finish();}
