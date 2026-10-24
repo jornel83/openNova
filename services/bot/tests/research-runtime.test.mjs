@@ -20,7 +20,7 @@ test('non research tools bypass middleware unchanged',async t=>{
 test('cancelled_result_cannot_create_observation',async t=>{
  const f=fixture();t.after(()=>f.runtime.close());let release;
  const work=f.hooks['tools/execute']({name:'web_search',arguments:{queries:['weather']},callId:'c2',signal:f.active.signal},()=>new Promise(r=>release=r));
- f.active.cancelled=true;f.active.controller.abort();release({isError:false,meta:{sources:[{url:'https://example.com'}]}});await work;
+ await Promise.resolve();f.active.cancelled=true;f.active.controller.abort();release({isError:false,meta:{sources:[{url:'https://example.com'}]}});await work;
  assert.equal([...f.rows.values()].find(r=>r.kind==='tool').status,'cancelled');
  assert.equal([...f.rows.values()].filter(r=>r.kind==='research_observation').length,0);
 });
