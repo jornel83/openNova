@@ -10,9 +10,11 @@ import {setup} from './setup.mjs';
 import {api} from '../../tools/bot/client.mjs';
 import {buildWeb} from './web/build.mjs';
 import {PROJECT_PLUGINS} from './project.mjs';
+import {loadResearchConfig,publicResearchConfig,researchTools} from './research/config.mjs';
+import {researchPlugins} from './research/plugins.mjs';
 
 process.umask(0o077);
-const b=botSettings(),s=loadSettings();
+const b=botSettings(),s=loadSettings(),research=loadResearchConfig();
 const options=process.argv.slice(2);
 if(options.some(x=>!['--check','--stop','--desktop'].includes(x)))throw Error('usage: run.command [--check | --stop | --desktop]');
 if(options.includes('--check')){
@@ -41,14 +43,15 @@ const patch=[
   {id:'bash-sandbox',config:{timeoutMs:120000}},
   {id:'preset-standard',config:{id:'standard',order:1,plugins:PROJECT_PLUGINS}},
   {insert:[
-    {id:'opennova-chatgpt',name:join(ROOT,'services/agent/provider.mjs'),config:{harnessRoot:s.harnessRoot,enableTools:true,allowedTools:ALLOWED_TOOLS,modelBudget:MODEL_BUDGET,requestFilter:join(ROOT,'services/bot/model-policy.mjs'),retiredMemoryPath:join(b.home,'retired.json')}},
-    {id:'opennova-bot',name:join(wrapper,'index.js'),config:{...b,harnessRoot:s.harnessRoot,webAssets,desktop:options.includes('--desktop')}},
+    ...researchPlugins({harnessRoot:s.harnessRoot,enabled:research.available}),
+    {id:'opennova-chatgpt',name:join(ROOT,'services/agent/provider.mjs'),config:{harnessRoot:s.harnessRoot,enableTools:true,allowedTools:researchTools(ALLOWED_TOOLS,research),modelBudget:MODEL_BUDGET,requestFilter:join(ROOT,'services/bot/model-policy.mjs'),retiredMemoryPath:join(b.home,'retired.json')}},
+    {id:'opennova-bot',name:join(wrapper,'index.js'),config:{...b,research:publicResearchConfig(research),harnessRoot:s.harnessRoot,webAssets,desktop:options.includes('--desktop')}},
   ]},
 ];
 // JSON is valid YAML; no shell interpolation or generated executable expressions.
 const patchPath=join(b.home,'experiment.patch.yml');writeFileSync(patchPath,JSON.stringify(patch,null,2));
 const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>!/(KEY|TOKEN|SECRET|PASSWORD)/.test(k)&&!['DSH_HOME','NODE_OPTIONS'].includes(k)));
-Object.assign(env,{DSH_HOME:join(b.home,'harness'),OPENNOVA_BOT_PLUGIN:b.plugin,OPENNOVA_HARNESS_ROOT:s.harnessRoot,
+Object.assign(env,research.childEnv,{DSH_HOME:join(b.home,'harness'),OPENNOVA_BOT_PLUGIN:b.plugin,OPENNOVA_HARNESS_ROOT:s.harnessRoot,
   PATH:dirname(process.execPath)+':'+(env.PATH||'/usr/bin:/bin'),
   OPENNOVA_SIWC_ROOT:s.siwcRoot,OPENNOVA_SIWC_STORAGE:s.storageDir,OPENNOVA_KEYCHAIN_HELPER:s.keychainPath,
   NODE_OPTIONS:`--import=${join(ROOT,'services/bot/resolve.mjs')}`});

@@ -5,7 +5,7 @@
     "keychain_helper": "",
     "siwc_storage": ""
   },
-  "web": {"enabled": false, "provider": "exa"},
+  "web": {"enabled": false, "provider": "deepseek"},
   "tts": {
     "provider": "studio",
     "doubao_voice": "zh_female_vv_uranus_bigtts",

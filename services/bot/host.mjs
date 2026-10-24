@@ -9,6 +9,8 @@ import {createDocumentOpener,createDocumentTool,inspectFileReference} from './de
 import {createWorkContext} from './desktop/context.mjs';
 import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
+import {researchTools} from './research/config.mjs';
+import {installResearch} from './research/runtime.mjs';
 import {Requests} from './requests.mjs';
 import {MemoryApprovals} from './memory.mjs';
 import {admitText,withoutNativeChannel,ownResources} from './lifecycle.mjs';
@@ -51,13 +53,15 @@ export async function apply(ctx,config) {
   resources.add(()=>ops.close());
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
-  const allowed=new Set(ALLOWED_TOOLS),approved=new WeakSet();
+  const allowed=new Set(researchTools(ALLOWED_TOOLS,config.research)),approved=new WeakSet();
   const context=createWorkContext({inspectFile:inspectFileReference,initial:ops.list('context')[0]?.value,
     onChange:value=>{ops.put({id:'work-context',kind:'context',value});events.publish('work.context',value);}});
   const documents=createDocumentOpener({workspace:config.workspace,ops,context});
   let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
+  const research=installResearch(ctx,{ops,requests,config:config.research});
+  resources.add(()=>research.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
     view:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
@@ -110,6 +114,7 @@ export async function apply(ctx,config) {
   });
   async function run(record,active) {
     const controller=active.controller;
+    research.begin(active);
     const cancel=async()=>{
       controller.abort();
       await cancelBot(rt,bot);
@@ -137,14 +142,14 @@ export async function apply(ctx,config) {
       console.error('Bot turn failure',JSON.stringify({code:error.message,reason:end?.data?.reason?.kind,failureCode:end?.data?.reason?.error?.code}));
       throw error;
     }
-    finally{clearTimeout(timeout);}
+    finally{clearTimeout(timeout);research.finish(record.id);}
   }
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
   const handle=createControls({ops,requests,memory,context,documents,events,voice,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({research:research.health(),runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
