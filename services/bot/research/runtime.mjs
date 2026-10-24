@@ -1,3 +1,6 @@
+import {join} from 'node:path';
+import {createResearchHttp} from './http.mjs';
+import {httpTool} from './http-tool.mjs';
 import {randomUUID} from 'node:crypto';
 import {publicResearchConfig,RESEARCH_TOOLS,DEFAULT_LIMITS} from './config.mjs';
 import {researchInstructions} from './instructions.mjs';
@@ -24,10 +27,11 @@ export function resultFailure(name,result){
  if(name==='web_search'&&!(result.meta?.sources??result.value?.sources)?.length)return 'empty';
  if(name==='web_fetch'&&result.value?.body?.kind==='text'&&!result.value.body.content?.trim())return 'empty';
 }
-export function installResearch(ctx,{ops,requests,config={}}) {
+export function installResearch(ctx,{ops,requests,config={},transport}) {
  const active=new Map();
  const limits={...DEFAULT_LIMITS,...config.limits},budget=createResearchBudget({limits});
  const sources=createSources({ops,botId:config.botId,workspace:config.workspace});
+ const http=transport?createResearchHttp({transport,sources,ops,artifactRoot:join(config.workspace,'output/research/requests')}):undefined;
  const valid=r=>requests.active===r&&!r.cancelled&&!r.signal.aborted;
  ctx.systemPrompt.context({name:'opennova-research',order:9910,required:true,interpolate:false,text:()=>researchInstructions({enabled:config.available,state:requests.active&&active.has(requests.active.id)?budget.snapshot(requests.active.id):undefined})});
  ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
@@ -40,12 +44,15 @@ export function installResearch(ctx,{ops,requests,config={}}) {
   const r=requests.active;
   if(!r||!active.has(r.id)||!valid(r))return researchError('cancelled');
   if(!config.available)return researchError('unavailable');
-  const record={id:randomUUID(),kind:'tool',operation:'research',tool:exec.name,requestId:r.id,callId:exec.callId,provider:'deepseek',status:'running',createdAt:Date.now(),description:exec.name==='web_search'?'后台联网搜索':'后台读取资料'};
+  const record={id:randomUUID(),kind:'tool',operation:'research',tool:exec.name,requestId:r.id,callId:exec.callId,provider:exec.name==='web_search'?'deepseek':'opennova-http',status:'running',createdAt:Date.now(),description:exec.name==='web_search'?'后台联网搜索':'后台读取资料'};
   ops.put(record);ops.finish(r.id,{research:{phase:exec.name==='web_search'?'searching':'reading',callId:exec.callId}});
   let lease;
   try{
-   lease=budget.claim(r.id,{name:exec.name,args:exec.arguments,callId:exec.callId});
-   const result=await withResearchSignal(exec,lease.signal,next);
+   lease=budget.claim(r.id,{name:exec.name==='web_request'?'web_fetch':exec.name,args:exec.arguments,callId:exec.callId});
+   const result=await withResearchSignal(exec,lease.signal,exec.name==='web_request'?async()=>{
+    const receipt=await http(exec.arguments,{requestId:r.id,callId:exec.callId,signal:exec.signal,valid:()=>valid(r)});
+    return {isError:!receipt.ok,value:JSON.stringify(receipt),meta:{receipt,statusCode:receipt.statusCode},content:[{type:'text',text:JSON.stringify(receipt)}]};
+   }:next);
    const code=!valid(r)?'cancelled':resultFailure(exec.name,result);
    const found=[];
    if(!code){
@@ -53,6 +60,7 @@ export function installResearch(ctx,{ops,requests,config={}}) {
     if(exec.name==='web_search')for(const source of (result.meta?.sources??result.value?.sources??[]).slice(0,5)){
      const s=sources.record({...common,...source,provider:'deepseek',query:exec.arguments?.queries?.[0],excerpt:source.snippet,evidenceType:'search_summary'});if(s)found.push(s);
     }
+    else if(exec.name==='web_request'){const receipt=result.meta.receipt;found.push(...sources.forRequest(r.id).filter(s=>s.observationId===receipt.observationId));}
     else {
      const value=result.value??{},s=sources.record({...common,url:result.meta?.url??value.url,requestedUrl:exec.arguments?.url,provider:'opennova-http',
       excerpt:value.body?.content??'',truncated:result.meta?.truncated??value.truncated,evidenceType:'page_body'});if(s)found.push(s);
@@ -75,6 +83,6 @@ export function installResearch(ctx,{ops,requests,config={}}) {
    const r=requests.active;if(!r||!valid(r))throw Error('request_not_active');
    const rows=sources.lookup(args);sources.use(r.id,rows);return {sources:rows};
   }];
- return {sourceTool,sources,reply:(text,id)=>projectResearchReply({text,requestId:id,sources,research:ops.request?.(id)?.research}),
+ return {sourceTool,tools:[httpTool],sources,reply:(text,id)=>projectResearchReply({text,requestId:id,sources,research:ops.request?.(id)?.research}),
   begin(r){active.set(r.id,r);budget.open(r.id,{signal:r.signal});},finish(id){budget.finish(id);active.delete(id);},health:()=>publicResearchConfig(config),close(){budget.close();active.clear();}};
 }

@@ -1,6 +1,6 @@
 import {readFileSync,existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-export const RESEARCH_TOOLS=['web_search','web_fetch'];
+export const RESEARCH_TOOLS=['web_search','web_fetch','web_request'];
 export const RESEARCH_VERSION=1;
 export const DEFAULT_LIMITS=Object.freeze({searchCalls:2,fetchCalls:3,searchMs:15000,fetchMs:10000,webMs:45000,softMs:30000});
 const read=path=>existsSync(path)?JSON.parse(readFileSync(path,'utf8')):{};

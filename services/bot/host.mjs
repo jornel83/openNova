@@ -10,6 +10,7 @@ import {createWorkContext} from './desktop/context.mjs';
 import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
 import {researchTools} from './research/config.mjs';
+import {createContentFetcher} from '../agent/web-fetch-content.mjs';
 import {installResearch} from './research/runtime.mjs';
 import {Requests} from './requests.mjs';
 import {MemoryApprovals} from './memory.mjs';
@@ -59,7 +60,8 @@ export async function apply(ctx,config) {
   let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
-  const research=installResearch(ctx,{ops,requests,config:{...config.research,botId:bot.id,workspace:config.workspace}});
+  const transport=(await createContentFetcher(config.harnessRoot)).transport;
+  const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,botId:bot.id,workspace:config.workspace}});
   resources.add(()=>research.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
@@ -82,7 +84,7 @@ export async function apply(ctx,config) {
     },
   });
   const moduleTools=[
-    research.sourceTool,
+    research.sourceTool,...research.tools,
     createDocumentTool({opener:documents,getRequest:()=>requests.active}),
     ...createBrowserTools({context,ops,getRequest:()=>requests.active,bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}}),
     ['start_test_task','启动用于验证重连的独立计时任务，持续 1 到 120 秒；不是实际计算作业。',{label:{type:'string',required:true},seconds:{type:'number',required:true}},a=>ops.startTask(a.label,Math.round(a.seconds*1000))],
