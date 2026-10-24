@@ -1,5 +1,6 @@
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {assessContent} from './web-content-quality.mjs';
 // Raw HTML and model text have separate limits. Preserve the native network and conversion safeguards.
 const HTML_LIMIT=500000;
 const TEXT_LIMIT=11000;
@@ -35,6 +36,8 @@ export async function createContentFetcher(root) {
   const result=await this.transport.fetch(request,signal);
   signal?.throwIfAborted();
   if(result.statusCode<200||result.statusCode>=300)return result;
+  const quality=assessContent(result);
+  if(quality.state!=='usable')throw Error(`web_page_body_unavailable:${quality.state}`);
   // Native rendering guards depth, omits scripts, preserves tables and marks truncation.
   const cap=HTML_LIMIT+4096;
   const prefix=formatFetchOutput({...result,body:{kind:'text',content:''},truncated:false},cap);
@@ -43,7 +46,7 @@ export async function createContentFetcher(root) {
   const content=withoutNavigation(rendered.replace(/\n\n\(Content truncated\.[^\n]*\)$/,''));
   if(!content || content.includes('[HTML content omitted:') || (truncated&&content.length<120))throw Error('web_page_body_unavailable');
   signal?.throwIfAborted();
-  return {...result,body:{kind:'text',content:content.slice(0,TEXT_LIMIT)},truncated:truncated||content.length>TEXT_LIMIT};
+  return {...result,quality,body:{kind:'text',content:content.slice(0,TEXT_LIMIT)},truncated:truncated||content.length>TEXT_LIMIT};
  }};
 }
 export const name='opennova-web-fetch-content';

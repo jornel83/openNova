@@ -1,8 +1,9 @@
 {
   "harness": {
     "url": "git@github.com:jornel83/deepseek-harness.git",
-    "revision": "d743267388641bc76f17c45ce8b4c231aed1d32c",
-    "pnpm": "11.28.5"
+    "revision": "bf89008192b279f9928aa4578aed183a7547a9d2",
+    "pnpm": "11.28.5",
+    "previous_revision": "d743267388641bc76f17c45ce8b4c231aed1d32c"
   },
   "siwc": {
     "url": "https://github.com/openai/sign-in-with-chatgpt-devkit.git",
