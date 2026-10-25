@@ -80,7 +80,11 @@ export function installResearch(ctx,{ops,requests,config={},transport}) {
       excerpt:value.body?.content??'',truncated:result.meta?.truncated??value.truncated,evidenceType:'page_body'});if(s)found.push(s);
     }
    }
-   ops.put({...record,status:code==='cancelled'?'cancelled':code?'failed':'completed',completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,...code?{error:code}:{},sourceIds:found.map(s=>s.id),output:code?`检索未完成：${code}`:JSON.stringify(found.map(s=>({title:s.title,url:s.url,evidenceType:s.evidenceType}))) });
+   const execution=result.meta?.execution,receipt=result.meta?.receipt,derivation=result.meta?.derivation;
+   const detail=execution?{command:execution.command,cwd:execution.cwd,exitCode:execution.exitCode,stdout:execution.stdout,stderr:execution.stderr,timedOut:execution.timedOut,httpFailures:execution.httpFailures,executionId:execution.id}:
+    receipt?{http:{statusCode:receipt.statusCode,contentType:receipt.contentType,encoding:receipt.encoding,retrievedAt:receipt.retrievedAt,quality:receipt.quality},receiptId:receipt.receiptId}:{};
+   const output=execution?[execution.stdout,execution.stderr].filter(Boolean).join('\n').slice(-12000):receipt?JSON.stringify(receipt):derivation?JSON.stringify(derivation):code?`检索未完成：${code}`:JSON.stringify(found.map(s=>({title:s.title,url:s.url,evidenceType:s.evidenceType})));
+   ops.put({...record,...detail,status:code==='cancelled'?'cancelled':code?'failed':'completed',completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,...code?{error:code}:{},sourceIds:found.map(s=>s.id),output});
    lease.finish({failed:!!code,code});
    if(valid(r))ops.finish(r.id,{research:{phase:'summarizing',outcome:code?'partial':'complete',callId:exec.callId,usage:budget.snapshot(r.id)}});
    return code?{...researchError(code),meta:result.meta}:result;
@@ -96,9 +100,11 @@ export function installResearch(ctx,{ops,requests,config={},transport}) {
  const sourceTool=['research_sources','回查已保存的检索来源和证据片段（不联网）。requestId/sourceIds 二选一；省略取最近已完成检索，历史证据不是最新天气。',
   {requestId:{type:'string'},sourceIds:{type:'array',items:{type:'string'}}},args=>{
    const r=requests.active;if(!r||!valid(r))throw Error('request_not_active');
-   const rows=sources.lookup(args);sources.use(r.id,rows);return {sources:rows,derivations:args.requestId?derivations.forRequest(args.requestId):[]};
+   let rows;try{rows=sources.lookup(args);}catch(error){if(error.message!=='source_not_found'||!args.requestId||!derivations.forRequest(args.requestId).length)throw error;rows=[];}
+   sources.use(r.id,rows);const id=args.requestId??rows.at(-1)?.requestId??ops.list('request').find(x=>x.status==='completed'&&derivations.forRequest(x.id).length)?.id;
+   return {sources:rows,derivations:id?derivations.forRequest(id):[]};
   }];
- return {sourceTool,tools:[httpTool,executionTool,derivationTool],sources,derivations,
+ return {refresh:record=>record?.derivations?.length?{...record,derivations:derivations.forRequest(record.id)}:record,sourceTool,tools:[httpTool,executionTool,derivationTool],sources,derivations,
   async httpFromScript(body){return executions.http(body,async(args,context)=>{
    const r=requests.active;if(!r||r.id!==context.requestId||!valid(r))throw Error('execution_not_active');
    const result=await executeResearch({name:'web_request',arguments:args,...context},()=>{});

@@ -61,8 +61,8 @@ class BotAgent:
                 key=(result.get('tool'),research.get('phase'),research.get('callId'))
                 if result.get('tool') and key!=tool:
                     tool=key
-                    phase={'searching':'searching','reading':'reading','summarizing':'answering'}.get(research.get('phase'),'working')
-                    if result.get('tool') not in ('web_search','web_fetch','research_sources'): phase='working'
+                    phase={'searching':'searching','reading':'reading','summarizing':'answering','requesting':'requesting','processing':'processing','verifying':'verifying'}.get(research.get('phase'),'working')
+                    if result.get('tool') not in ('web_search','web_fetch','research_sources','web_request','research_exec','research_derive'): phase='working'
                     yield {'type':'status','id':ident,'phase':phase,'tool':result['tool'],'callId':research.get('callId')}
                 await asyncio.sleep(.3)
             raise ValueError('Bot 等待超时；可用 /result 查询已提交请求。')

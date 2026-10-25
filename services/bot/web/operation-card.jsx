@@ -3,7 +3,7 @@ import {Button,DiffBlock} from '@deepseek-ai/dsh-client-ui-primitives';
 import {errorText} from './api.mjs';
 import {Icon} from './icons.jsx';
 const toolLabels={read:'读取文件',glob:'查找文件',grep:'搜索工程',edit:'修改文件',write:'写入文件',bash:'执行命令',shell:'执行命令',browser_open:'打开网页',browser_read:'读取网页',browser_click:'操作网页',browser_fill:'填写网页',browser_scroll:'浏览网页',document_open:'打开文件',remember:'保存记忆',forget:'更新记忆',web_search:'联网搜索',web_fetch:'读取网页'};
-toolLabels.research_sources='回查来源';
+Object.assign(toolLabels,{research_sources:'回查来源',web_request:'获取接口数据',research_exec:'运行研究脚本',research_derive:'记录脚本结果'});
 toolLabels.web_fetch='后台读取资料';
 export const operationLabel=record=>toolLabels[record.tool]||({file:'修改文件',memory:'更新记忆',browser:'操作网页',shell:'执行命令',document_open:'打开文件'})[record.operation]||'处理任务';
 export function OperationCard({record,disabled,onAction}){
@@ -21,9 +21,10 @@ function OperationDetails({item,disabled,onAction}) {
   if(item.kind==='tool'&&item.operation!=='file')return <div className="operation-detail" aria-label={'操作记录 '+item.tool}>
     <div className="approval-title"><strong>{item.description||item.tool}</strong><span className={'status '+item.status}>{statusLabels[item.status]||item.status}</span></div>
     {item.file&&<p className="subtle operation-path">{item.file.path} · {item.file.contentAccess==='not_connected'?'正文未接入':'文本可另行读取'}</p>}
+    {item.http&&<p className="subtle">HTTP {item.http.statusCode} · {item.http.encoding||'未知编码'} · {item.http.retrievedAt}</p>}
     {item.command&&<pre className="tool-output">{item.command}</pre>}
     <p className="subtle operation-path">{item.cwd}</p>
-    {item.operation==='shell'&&<p className="subtle">退出码：{item.exitCode??'—'}{item.timeoutMs?' · 时限 '+Math.round(item.timeoutMs/1000)+' 秒':''}</p>}
+    {(item.operation==='shell'||item.tool==='research_exec')&&<p className="subtle">退出码：{item.exitCode??'—'}{item.timeoutMs?' · 时限 '+Math.round(item.timeoutMs/1000)+' 秒':''}</p>}
     <div className="operation-output"><span className="subtle">执行输出</span><pre className="tool-output">{['browser','document_open'].includes(item.operation)?item.output||'等待回执…':item.operation==='shell'?[item.stdout,item.stderr].filter(Boolean).join('\n')||item.output||'等待命令结束…':item.output||'执行中…'}</pre></div>
     {(item.stdoutPath||item.stderrPath)&&<p className="subtle operation-path">完整日志：{item.stdoutPath||item.stderrPath}</p>}
     {item.error&&<p className="error">{item.error}</p>}

@@ -15,3 +15,13 @@ test('public source cards bound snippets while persistent evidence remains intac
  const r=projectResearchReply({text:'天气',requestId:'r',sources:{forReply:()=>[evidence]}});
  assert.equal(r.sources[0].excerpt.length,800);assert.equal(evidence.excerpt.length,12000);
 });
+test('derived outputs persist separately and raw code is excluded from speech',()=>{
+ const d={id:'d1',summary:'Selected record',inputObservationIds:['o1']};
+ const r=projectResearchReply({text:'查到结果。\n```js\nfetch("https://example.com")\n```',requestId:'r',sources:{forReply:()=>[]},derivations:{forRequest:id=>{assert.equal(id,'r');return [d];}}});
+ assert.deepEqual(r.derivations,[d]);assert.doesNotMatch(r.speechText,/fetch|https:/);
+});
+test('derivation input cards remain available even without a repeated citation',()=>{
+ const source={id:'s',observationId:'o1',url:'https://example.com/api',evidenceType:'api_response'};
+ const r=projectResearchReply({text:'字段已写入文件。',requestId:'r',sources:{forReply:()=>[],forRequest:()=>[source]},derivations:{forRequest:()=>[{id:'d',inputObservationIds:['o1']}]}});
+ assert.equal(r.sources[0]?.observationId,'o1');
+});

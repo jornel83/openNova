@@ -72,3 +72,15 @@ class BotAgentTests(unittest.IsolatedAsyncioTestCase):
         rows=await BotAgent(api=api).control('/operations')
         self.assertEqual(calls,['/operations'])
         self.assertEqual(rows[0]['tool'],'bash')
+
+    async def test_http_script_and_derivation_emit_real_progress(self):
+        polls=iter([
+            {'status':'running','tool':'web_request','research':{'phase':'requesting','callId':'c1'}},
+            {'status':'running','tool':'research_exec','research':{'phase':'processing','callId':'c2'}},
+            {'status':'running','tool':'research_derive','research':{'phase':'verifying','callId':'c3'}},
+            {'status':'completed','text':'完成','speechText':'完成','derivations':[{'id':'d1'}]},
+        ])
+        async def api(path,body): return next(polls) if path=='/result' else {}
+        events=[e async for e in BotAgent(api=api).stream('处理数据')]
+        self.assertEqual([e['phase'] for e in events if e['type']=='status'],['requesting','processing','verifying'])
+        self.assertEqual(events[-1]['derivations'][0]['id'],'d1')

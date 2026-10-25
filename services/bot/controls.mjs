@@ -38,7 +38,7 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,d
       const readState=()=>{const records=ops.list('request'),approvals=operationRecords(ops);
       const workContext=context?.capture()??{kind:'none'};
       return {workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
-        messages:records.slice(0,limit).reverse(),hasMore:records.length>limit,
+        messages:records.slice(0,limit).reverse().map(r=>research?.refresh(r)??r),hasMore:records.length>limit,
         approvals:approvals.filter((r,i)=>i<30||records.slice(0,limit).some(m=>m.id===r.requestId)||['pending','applying','running'].includes(r.status)).map(approvalPreview)};};
       if(!events)return readState();
       const {state,cursor}=events.snapshot(readState);return {...state,cursor};
@@ -50,7 +50,7 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,d
       return requests.exclusive(()=>{const file=documents.file(body.fileId);return documents.open({id:body.id,path:file.path,applicationId:file.applicationId});});
     }
     if(path==='/ask')return requests.submit(body.id,body.text,body.source||'text');
-    if(path==='/result')return ops.request(body.id);
+    if(path==='/result'){const record=ops.request(body.id);return research?.refresh(record)??record;}
     if(path==='/cancel'){
       const state=voice?.snapshot();
       let deliveryError;
