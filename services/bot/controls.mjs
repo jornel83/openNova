@@ -14,8 +14,9 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
+    if(path==='/research/http'){if(!research)throw Error('research_unavailable');return research.httpFromScript(body);}
     if(path==='/voice/publish')return voice.publish(body);
     if(path==='/voice/poll')return voice.poll(body.voiceInstanceId);
     if(path==='/voice/ack')return voice.ack(body);

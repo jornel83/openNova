@@ -22,7 +22,7 @@ import {completedReply} from '../agent/result.mjs';
 import {bindProject,settleBot,cancelBot,staleRequest,auditTool,recoverToolRuns,PROJECT_TOOLS,TURN_TIMEOUT_MS} from './project.mjs';
 
 export const name='opennova-bot-spike';
-export const inject=['llm','tools','systemPrompt','sessionController','sessions','sessionTitle','workspaceRegistry','workingDirectory','permissionPresets','connection'];
+export const inject=['shell','llm','tools','systemPrompt','sessionController','sessions','sessionTitle','workspaceRegistry','workingDirectory','permissionPresets','connection'];
 export const textResult=value=>({isError:false,value:JSON.stringify(value),content:[{type:'text',text:JSON.stringify(value)}]});
 
 export async function apply(ctx,config) {
@@ -61,7 +61,7 @@ export async function apply(ctx,config) {
   requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
   const transport=(await createContentFetcher(config.harnessRoot)).transport;
-  const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,botId:bot.id,workspace:config.workspace}});
+  const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,home:config.home,port:config.port,botId:bot.id,workspace:config.workspace}});
   resources.add(()=>research.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
@@ -148,7 +148,7 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,context,documents,events,voice,browserState:()=>desktop?.status()??{connected:false},
+  const handle=createControls({ops,requests,memory,context,documents,events,voice,research,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
     health:()=>({research:research.health(),runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
