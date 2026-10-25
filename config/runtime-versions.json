@@ -1,7 +1,7 @@
 {
   "harness": {
     "url": "git@github.com:jornel83/deepseek-harness.git",
-    "revision": "bf89008192b279f9928aa4578aed183a7547a9d2",
+    "revision": "cccbe9cb4763f597bfb83129ca03345c3fbead1b",
     "pnpm": "11.28.5",
     "previous_revision": "d743267388641bc76f17c45ce8b4c231aed1d32c"
   },

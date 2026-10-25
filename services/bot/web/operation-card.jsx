@@ -22,6 +22,7 @@ function OperationDetails({item,disabled,onAction}) {
     <div className="approval-title"><strong>{item.description||item.tool}</strong><span className={'status '+item.status}>{statusLabels[item.status]||item.status}</span></div>
     {item.file&&<p className="subtle operation-path">{item.file.path} · {item.file.contentAccess==='not_connected'?'正文未接入':'文本可另行读取'}</p>}
     {item.http&&<p className="subtle">HTTP {item.http.statusCode} · {item.http.encoding||'未知编码'} · {item.http.retrievedAt}</p>}
+    {item.httpFailures>0&&<p className="subtle">取数记录：{item.httpSuccesses??0} 次成功，{item.httpFailures} 次失败；失败请求保留在操作记录中。</p>}
     {item.command&&<pre className="tool-output">{item.command}</pre>}
     <p className="subtle operation-path">{item.cwd}</p>
     {(item.operation==='shell'||item.tool==='research_exec')&&<p className="subtle">退出码：{item.exitCode??'—'}{item.timeoutMs?' · 时限 '+Math.round(item.timeoutMs/1000)+' 秒':''}</p>}

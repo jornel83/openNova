@@ -38,3 +38,14 @@ test('research schemas compile through the actual Harness tool compiler',async()
  const {httpTool}=await import('../research/http-tool.mjs');const {executionTool}=await import('../research/exec.mjs');const {derivationTool}=await import('../research/derivation.mjs');
  for(const [name,description,parameters] of [httpTool,executionTool,derivationTool])assert.doesNotThrow(()=>defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},execute:async()=>''}));
 });
+test('a 600KB JSON response remains parseable in the artifact while the model excerpt is bounded',async t=>{
+ const {createServer}=await import('node:http');const {createContentFetcher}=await import('../../agent/web-fetch-content.mjs');const {loadSettings}=await import('../../agent/settings.mjs');
+ const content=JSON.stringify({data:'x'.repeat(600000)}),server=createServer((req,res)=>{res.writeHead(200,{'content-type':'application/json'});res.end(content);});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();server.close();});
+ const provider=await createContentFetcher(loadSettings().harnessRoot,async()=>[{address:'127.0.0.1',family:4}]);
+ const f=fixture(t),ops={put:r=>f.rows.set(r.id,r)};
+ const run=http.createResearchHttp({transport:provider.transport,sources:f.sources,ops,artifactRoot:f.root});
+ const receipt=await run({url:`http://example.com:${server.address().port}/`,responseType:'json'},context());
+ assert.equal(receipt.ok,true);assert.equal(receipt.truncated,false);assert.equal(receipt.excerpt.length,11000);
+ assert.equal(JSON.parse(readFileSync(receipt.artifactPath,'utf8')).data.length,600000);
+});

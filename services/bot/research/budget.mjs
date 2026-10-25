@@ -26,7 +26,7 @@ export function createResearchBudget({limits={},now=()=>performance.now(),timers
     if(!Array.isArray(args.queries)||!args.queries.length||args.queries.length>2||args.queries.some(q=>typeof q!=='string'||!q.trim()))throw Error('invalid_research_queries');
     units=args.queries.length;keys=args.queries.map(q=>'search:'+q.trim().toLowerCase());
    }else if(name==='web_request')keys=['read:'+JSON.stringify(normalizeHttpRequest(args))];
-   else if(name==='web_fetch')keys=['read:'+JSON.stringify(normalizeHttpRequest({url:canonicalUrl(args.url)}))];
+   else if(name==='web_fetch')keys=['page:'+JSON.stringify(normalizeHttpRequest({url:canonicalUrl(args.url)}))];
    else keys=[kind+':'+(key??JSON.stringify(args))];
    if(!Number.isInteger(units)||units<1)throw Error('invalid_research_units');
    if(new Set(keys).size!==keys.length||keys.some(k=>r.seen.has(k)))throw Error('duplicate_research_call');

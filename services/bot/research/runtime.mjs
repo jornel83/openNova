@@ -66,7 +66,7 @@ export function installResearch(ctx,{ops,requests,config={},transport}) {
    }:exec.name==='research_derive'?async()=>{
     const value=derivations.record(exec.arguments,{requestId:r.id,callId:exec.callId,signal:exec.signal});
     return {isError:false,value:JSON.stringify(value),meta:{derivation:value},content:[{type:'text',text:JSON.stringify(value)}]};
-   }:next);
+   }:next,{joinOnAbort:exec.name==='research_exec'});
    const code=!valid(r)?'cancelled':resultFailure(exec.name,result);
    const found=[];
    if(!code){
@@ -81,7 +81,7 @@ export function installResearch(ctx,{ops,requests,config={},transport}) {
     }
    }
    const execution=result.meta?.execution,receipt=result.meta?.receipt,derivation=result.meta?.derivation;
-   const detail=execution?{command:execution.command,cwd:execution.cwd,exitCode:execution.exitCode,stdout:execution.stdout,stderr:execution.stderr,timedOut:execution.timedOut,httpFailures:execution.httpFailures,executionId:execution.id}:
+   const detail=execution?{command:execution.command,cwd:execution.cwd,exitCode:execution.exitCode,stdout:execution.stdout,stderr:execution.stderr,timedOut:execution.timedOut,httpFailures:execution.httpFailures,httpSuccesses:execution.httpSuccesses,httpOutcome:execution.httpOutcome,executionId:execution.id}:
     receipt?{http:{statusCode:receipt.statusCode,contentType:receipt.contentType,encoding:receipt.encoding,retrievedAt:receipt.retrievedAt,quality:receipt.quality},receiptId:receipt.receiptId}:{};
    const output=execution?[execution.stdout,execution.stderr].filter(Boolean).join('\n').slice(-12000):receipt?JSON.stringify(receipt):derivation?JSON.stringify(derivation):code?`检索未完成：${code}`:JSON.stringify(found.map(s=>({title:s.title,url:s.url,evidenceType:s.evidenceType})));
    ops.put({...record,...detail,status:code==='cancelled'?'cancelled':code?'failed':'completed',completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,...code?{error:code}:{},sourceIds:found.map(s=>s.id),output});

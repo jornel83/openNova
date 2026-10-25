@@ -35,3 +35,9 @@ test('helper_counts_once independently of execution',t=>{
  const {budget:b}=fixture(t);const e=b.claim('r',{kind:'exec',key:'script'});b.claim('r',{kind:'read',key:'https://example.com'}).finish();e.finish();
  assert.equal(b.snapshot('r').researchExecCalls,1);assert.equal(b.snapshot('r').readCalls,1);
 });
+test('a raw request can follow a failed webpage extraction without permitting repeated identical raw calls',t=>{
+ const {budget:b}=fixture(t),args={url:'https://example.com/data.js'};
+ b.claim('r',{name:'web_fetch',args}).finish({failed:true,code:'unsupported'});
+ assert.doesNotThrow(()=>b.claim('r',{name:'web_request',args}).finish());
+ assert.throws(()=>b.claim('r',{name:'web_request',args}),/duplicate/);assert.equal(b.snapshot('r').readCalls,2);
+});

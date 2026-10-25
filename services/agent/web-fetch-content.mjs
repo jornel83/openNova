@@ -27,15 +27,16 @@ function withoutNavigation(text) {
   return rest.join('').replace(/[\s*#>·•—_-]/g,'').length>30;
  }).join('\n\n').trim();
 }
-export async function createContentFetcher(root) {
+export async function createContentFetcher(root,resolveAddresses) {
  const {HttpFetchProvider}=await import(pathToFileURL(join(root,'packages/web/web-fetch-http/lib/index.js')));
  const {formatFetchOutput,fetchMetaFromValue}=await import(pathToFileURL(join(root,'packages/web/tool-web/lib/index.js')));
- const transport=new HttpFetchProvider({maxResponseBytes:2000000,maxBodyChars:HTML_LIMIT,timeoutMs:10000,maxRedirects:5,userAgent:'OpenNova/0.1'});
+ const transport=new HttpFetchProvider({maxResponseBytes:2000000,maxBodyChars:2000000,timeoutMs:10000,maxRedirects:5,userAgent:'OpenNova/0.1'},resolveAddresses);
  return {id:'opennova-http',available:()=>true,transport,async fetch(request,signal){
   signal?.throwIfAborted();
-  const result=await this.transport.fetch(request,signal);
+  let result=await this.transport.fetch(request,signal);
   signal?.throwIfAborted();
   if(result.statusCode<200||result.statusCode>=300)return result;
+  if(result.body?.kind==='html'&&result.body.content.length>HTML_LIMIT)result={...result,body:{...result.body,content:result.body.content.slice(0,HTML_LIMIT)},truncated:true};
   const quality=assessContent(result);
   if(quality.state!=='usable')throw Error(`web_page_body_unavailable:${quality.state}`);
   // Native rendering guards depth, omits scripts, preserves tables and marks truncation.
