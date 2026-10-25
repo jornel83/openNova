@@ -238,3 +238,5 @@ GPT 的 HTTP 代理可通过 `--proxy` / `OPENNOVA_PROXY` 配置。豆包 TTS �
 ## 2026-10-25：通用联网研究执行
 
 后台研究扩展为 DeepSeek 搜索 → 网页 / 公开 HTTP 接口 → 原生研究脚本 → 来源与结果关联。Bot 可自行选择调用路径，查询不要求工作浏览器在线。新增 `web_request`、`research_exec`、`research_derive`，支持国内编码、必要 Referer、统一预算、取消和历史回查。普通工程 Shell 保持原权限；其中自行联网的响应不自动成为已记录 HTTP 来源。详细边界、验证与回退见 [通用联网研究验收](opennova-research-execution-test-cases.md)。
+
+R6–R11 实施验证更新（2026-10-25）：日常 Bot 已启用研究 version 2；Node 259、Python 103、Harness HTTP 74 项通过。重复股票取数 8/9，历史日期 1/1；北京天气本次未能核实，真人语音现场验收待完成。详情见 [通用研究验收记录](opennova-research-execution-test-cases.md)。
