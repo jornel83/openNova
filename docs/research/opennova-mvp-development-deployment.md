@@ -231,3 +231,7 @@ TTS 长句持续生成的 RTF 应小于 1，才有持续实时播放的基础；
 Vivian 接入无需真人参考录音。当前终端 Demo 已完成 LLM 接入、Harness 会话与文件输入语音闭环，豆包 ASR 账号与实时接口也已通过独立验证。
 
 当前版本收尾验证与命令集中在 [Demo 运行说明](../../tools/voice/README.md)。下一轮仍需用内置和蓝牙设备检查外放自触发、插话及时停声、开头不丢字与真实设备重连；咳嗽误触发优化暂缓。后续工程方向为统一启动 / 网络诊断，以及首个 Agent 工作协同闭环，Studio 常驻迁移另行推进。连续模式两轮记录见 `output/voice/continuous-real-04/conversation.json`；六句增量合成记录见 `output/voice/continuous-long-01/conversation.json`。不以文件测试或静音播放代替真人外放验证。
+
+## 2026-10-25：通用联网研究执行
+
+后台研究扩展为 DeepSeek 搜索 → 网页 / 公开 HTTP 接口 → 原生研究脚本 → 来源与结果关联。Bot 可自行选择调用路径，查询不要求工作浏览器在线。新增 `web_request`、`research_exec`、`research_derive`，支持国内编码、必要 Referer、统一预算、取消和历史回查。普通工程 Shell 保持原权限；其中自行联网的响应不自动成为已记录 HTTP 来源。详细边界、验证与回退见 [通用联网研究验收](opennova-research-execution-test-cases.md)。

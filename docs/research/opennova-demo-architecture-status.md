@@ -234,3 +234,7 @@ GPT 的 HTTP 代理可通过 `--proxy` / `OPENNOVA_PROXY` 配置。豆包 TTS �
 `start.command --ui` 已串联 Bot、双窗口、TTS 与原生语音，保留设备和后端参数。浏览器扩展负责两个 Chrome 窗口的首次布局与缺失窗口补齐；仅首次新建时按实际尺寸校正，重复启动保留用户布局，不重开历史文件。网页顶部“打开工作窗口”复用同一协调器。语音仍由终端拥有，网页不另开麦克风；退出语音后文字入口保留。
 
 真实 Chrome 已验证窗口复用、文件引用不被自动开窗抢占、显式返回工作网页；豆包链路一键启动及原生音频控制通过。当前执行环境麦克风返回全零信号，真人语音与声学听感未计为通过。Studio 当次连通情况、测试计数和逐项验收见 [M4 验证记录](opennova-desktop-interaction-test-cases.md#m4一键启动与双窗口)。
+
+## 2026-10-25：通用联网研究执行
+
+后台研究扩展为 DeepSeek 搜索 → 网页 / 公开 HTTP 接口 → 原生研究脚本 → 来源与结果关联。Bot 可自行选择调用路径，查询不要求工作浏览器在线。新增 `web_request`、`research_exec`、`research_derive`，支持国内编码、必要 Referer、统一预算、取消和历史回查。普通工程 Shell 保持原权限；其中自行联网的响应不自动成为已记录 HTTP 来源。详细边界、验证与回退见 [通用联网研究验收](opennova-research-execution-test-cases.md)。

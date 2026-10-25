@@ -21,3 +21,7 @@ M4 使用根目录 `start.command --ui` 统一启动：Bot → 扩展及双窗�
 
 
 2026-10-24 联网研究：回复下新增可折叠的“参考来源”，显示真实链接、搜索摘要 / 已读取正文、原获取时间和证据片段；历史快照直接恢复，不重新联网。环形 Nova 在思考状态显示实际检索阶段。Python 语音客户端消费同一请求结果，口播省略来源 URL 和正文。启动配置、边界和验收见 [联网研究验收](../../../docs/research/opennova-bot-research-test-cases.md)。
+
+通用研究结果额外包含 `api_response` 来源和独立 `derivations[]` 脚本记录；接口卡显示真实 HTTP 状态、编码和获取时间，脚本卡引用输入 observation，文件变化显示提醒。界面不把正常退出或收到 HTTP 200 标为业务已核验。详见 [验收说明](../../../docs/research/opennova-research-execution-test-cases.md)。
+
+研究 Shell 的 HTTP 辅助命令仅能在活跃执行中通过本机认证桥调用 `/research/http`；普通网页 API 不开放该路由。请求结束或取消后 executionId 失效。脚本原始响应和产物位于 Git 忽略的 `output/research/requests/`。
