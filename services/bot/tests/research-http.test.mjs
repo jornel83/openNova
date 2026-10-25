@@ -32,3 +32,9 @@ test('invalid headers and cancellation never create a receipt',async t=>{
  await assert.rejects(f.run({url:'https://example.com',headers:{Cookie:'secret'}},context()),/header/);
  const c=new AbortController();c.abort();await assert.rejects(f.run({url:'https://example.com'}, {...context(),signal:c.signal}));assert.equal(f.rows.size,0);
 });
+test('research schemas compile through the actual Harness tool compiler',async()=>{
+ const {loadSettings}=await import('../../agent/settings.mjs');const {pathToFileURL}=await import('node:url');
+ const {defineTool}=await import(pathToFileURL(join(loadSettings().harnessRoot,'packages/core/tools/lib/index.js')));
+ const {httpTool}=await import('../research/http-tool.mjs');const {executionTool}=await import('../research/exec.mjs');const {derivationTool}=await import('../research/derivation.mjs');
+ for(const [name,description,parameters] of [httpTool,executionTool,derivationTool])assert.doesNotThrow(()=>defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},execute:async()=>''}));
+});

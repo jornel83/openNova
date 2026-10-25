@@ -34,3 +34,8 @@ test('disabled mode does not read secrets and invalid provider degrades explicit
  const opts=fixture(t,{enabled:false});writeFileSync(opts.secretsFile,'broken');assert.equal(loadResearchConfig(opts).available,false);
  assert.equal(loadResearchConfig(fixture(t,{enabled:true,provider:'exa'})).reason,'research_provider_unsupported');
 });
+
+test('missing_key_still_allows_public_http and research scripts',t=>{
+ const opts=fixture(t);writeFileSync(opts.secretsFile,'{}');const c=loadResearchConfig(opts);assert.equal(c.httpAvailable,true);assert.equal(c.available,false);
+ assert.ok(researchTools(['bash'],c).includes('web_request'));assert.ok(researchTools(['bash'],c).includes('research_exec'));assert.ok(!researchTools(['bash'],c).includes('web_search'));
+});

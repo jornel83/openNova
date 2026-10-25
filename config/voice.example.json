@@ -5,7 +5,7 @@
     "keychain_helper": "",
     "siwc_storage": ""
   },
-  "web": {"enabled": false, "provider": "deepseek"},
+  "web": {"enabled": false, "provider": "deepseek", "limits": {"searchCalls": 2, "fetchCalls": 6, "execCalls": 4, "execMs": 45000, "searchMs": 15000, "fetchMs": 10000, "softMs": 60000, "webMs": 90000}},
   "tts": {
     "provider": "studio",
     "doubao_voice": "zh_female_vv_uranus_bigtts",

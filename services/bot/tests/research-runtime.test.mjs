@@ -24,3 +24,12 @@ test('cancelled_result_cannot_create_observation',async t=>{
  assert.equal([...f.rows.values()].find(r=>r.kind==='tool').status,'cancelled');
  assert.equal([...f.rows.values()].filter(r=>r.kind==='research_observation').length,0);
 });
+test('web_request records API evidence through middleware without native dispatch',async t=>{
+ const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');const workspace=mkdtempSync(join(tmpdir(),'runtime-http-'));t.after(()=>rmSync(workspace,{recursive:true,force:true}));
+ const hooks={},rows=new Map(),c=new AbortController(),requests={active:{id:'r',signal:c.signal}};
+ const ops={put:r=>(rows.set(r.id,r),r),list:k=>[...rows.values()].filter(r=>r.kind===k),finish(){}};
+ const ctx={on:(n,f)=>hooks[n]=f,systemPrompt:{context(){}}};
+ const runtime=installResearch(ctx,{ops,requests,config:{enabled:true,available:false,httpAvailable:true,workspace,botId:'b'},transport:{async fetchWithOptions(){return {url:'https://example.com/api',statusCode:200,body:{kind:'text',content:'{"date":"2026-10-23"}'},contentType:'application/json',encoding:'utf-8',replacementCount:0};}}});runtime.begin(requests.active);t.after(()=>runtime.close());
+ const out=await hooks['tools/execute']({name:'web_request',arguments:{url:'https://example.com/api',responseType:'json'},callId:'c',signal:c.signal},()=>assert.fail('must use observed transport'));
+ assert.equal(out.isError,false);assert.equal(out.meta.receipt.ok,true);assert.equal(runtime.sources.forRequest('r')[0].evidenceType,'api_response');
+});
