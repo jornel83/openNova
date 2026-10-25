@@ -33,6 +33,7 @@ OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI �
 | `services/agent/` | Harness 桥接、官方 ChatGPT 授权、模型适配与 Keychain helper 源码 |
 | `services/tts/` | Studio MLX 推理环境、固定模型下载、Vivian 请求与变速处理 |
 | `tools/setup/` | 固定版本的 Agent 依赖安装与环境检查 |
+| `third_party/deepseek-harness/` | 自有 DSH Fork 的 Git Submodule，源码可编辑、提交独立 |
 | `config/` | 配置模板与上游版本清单；真实配置使用 `.local.json` |
 | `docs/product/`、`docs/research/` | PRD、产品架构、技术选型和部署说明 |
 | `videos/` | 产品演示视频工程 |
@@ -56,7 +57,7 @@ cp -n config/voice.example.json config/voice.local.json
 
 | 配置 | 默认值 / 用途 | 环境变量覆盖 |
 | --- | --- | --- |
-| `agent.harness_root` | 相邻 `../deepseek-harness` | `OPENNOVA_HARNESS_ROOT` |
+| `agent.harness_root` | 工程内 `third_party/deepseek-harness` | `OPENNOVA_HARNESS_ROOT` |
 | `agent.siwc_root` | `~/.local/share/opennova/siwc-devkit` | `OPENNOVA_SIWC_ROOT` |
 | `agent.keychain_helper` | `~/.local/share/opennova/bin/siwc-keychain` | `OPENNOVA_KEYCHAIN_HELPER` |
 | `agent.siwc_storage` | `~/.config/opennova-siwc-probe`；保留已有独立授权 | `OPENNOVA_SIWC_STORAGE` |
@@ -78,7 +79,7 @@ cp -n config/voice.example.json config/voice.local.json
    python3.11 tools/setup/bootstrap.py --check
    ```
 
-   安装入口使用[固定版本清单](config/runtime-versions.json)下载并构建 Harness 与官方 SIWC DevKit，在本机编译 `keychain.swift`。Harness 固定为用户仓库 `git@github.com:jornel83/deepseek-harness.git` 的 `v0.2.1-alpha.2`，需要本机 GitHub SSH 访问权限。已有正确版本及构建会复用；版本不匹配或存在未提交文件时停止，保留原目录，可在配置中换一个路径再安装。已有检出升级后须重新安装依赖和构建。不会重新登录或覆盖已有 helper。首次完整构建会联网下载依赖，需要一定时间和磁盘空间。
+   安装入口按 Git Submodule 固定的提交初始化 `third_party/deepseek-harness`，按[依赖元数据](config/runtime-versions.json)构建 Harness 与官方 SIWC DevKit，并在本机编译 `keychain.swift`。Harness 来自你的 `git@github.com:jornel83/deepseek-harness.git`，需要 GitHub SSH 访问权限。版本不匹配或存在未提交文件时保留检出并停止；版本变化会使旧构建回执失效，重新安装构建后才能启动 Bot。凭据、授权与已有 helper 保留。首次完整构建会联网下载依赖。源码开发、官方更新与回退流程见 [Harness 开发说明](docs/research/opennova-harness-development.md)。
 
 2. **准备 Studio 的 TTS**：将仓库放到 Studio，从 `services/tts/` 运行：
 

@@ -1,13 +1,13 @@
 import {execFileSync} from 'node:child_process';
 import {mkdirSync,existsSync,writeFileSync,readFileSync} from 'node:fs';
 import {join,dirname} from 'node:path';
-import {BOT_REV,HARNESS_REV,botSettings} from './settings.mjs';
+import {BOT_REV,botSettings} from './settings.mjs';
 import {loadSettings} from '../agent/settings.mjs';
+import {assertHarnessReady} from '../agent/dependencies.mjs';
 
 export function setup(source) {
   const settings=botSettings(),{harnessRoot}=loadSettings();
-  if(execFileSync('git',['-C',harnessRoot,'rev-parse','HEAD'],{encoding:'utf8'}).trim()!==HARNESS_REV)throw Error('harness_revision_mismatch');
-  if(!existsSync(join(harnessRoot,'apps/cli/lib/bin.js')))throw Error('harness_build_missing');
+  assertHarnessReady(harnessRoot);
   const dest=dirname(settings.plugin),receipt=join(dest,'revision');
   if(existsSync(receipt)&&readFileSync(receipt,'utf8').trim()===BOT_REV)return settings;
   mkdirSync(dest,{recursive:true});

@@ -89,6 +89,6 @@ JSONL ready 包含 `outputMode: incremental | settled-answer`。联网模式仅�
 
 ## 环境重建
 
-从仓库根目录运行 `python3.11 tools/setup/bootstrap.py --install`；`--check` 只检查依赖，不打开凭据。版本由 `config/runtime-versions.json` 固定，路径可在 Git 忽略的 `config/voice.local.json` 配置，详见[根目录说明](../../README.md)。Harness 源码从用户的 GitHub SSH 仓库获取，需要本机有相应访问权限。`keychain.swift` 已纳入源码；安装过程保留已有 helper 与授权数据。
+从仓库根目录运行 `python3.11 tools/setup/bootstrap.py --install`；`--check` 只检查依赖，不打开凭据。Harness 提交由 `third_party/deepseek-harness` 的 Git Submodule 固定，SIWC 版本和构建元数据由 `config/runtime-versions.json` 保存，路径可在 Git 忽略的 `config/voice.local.json` 配置，详见[根目录说明](../../README.md)。Harness 源码从用户的 GitHub SSH 仓库获取，需要本机有相应访问权限。`keychain.swift` 已纳入源码；安装过程保留已有 helper 与授权数据。
 
-已有 Harness 检出切换版本后，需使用新版本声明的 pnpm 安装锁定依赖并重新构建；bootstrap 只检查构建入口存在，不会按源码提交自动判定旧产物是否失效。本机 `origin` 指向用户仓库，`upstream` 保留官方仓库；旧提交由 `codex/baseline-0.1.6-alpha.2-20261012` 保留。回退代码时也必须重新安装与构建，不能混用不同版本的产物。
+Harness 默认使用工程内 `third_party/deepseek-harness`，显式路径覆盖仍有效。安装和 Bot 校验使用同一 gitlink 版本；切换版本或回退后，构建回执不匹配时必须运行安装器重建。本机 `origin` 指向用户 Fork，`upstream` 保留官方仓库。参见[源码开发与升级](../../docs/research/opennova-harness-development.md)。
