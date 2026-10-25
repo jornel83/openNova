@@ -13,7 +13,7 @@ export function createSources({ops,botId,workspace}){
  const list=kind=>ops.list(kind).filter(scope);
  const observations=()=>list('research_observation').sort((a,b)=>a.sequence-b.sequence);
  const view=o=>({id:o.sourceId,sourceId:o.sourceId,observationId:o.id,url:o.finalUrl,title:o.title,requestId:o.requestId,callId:o.callId,
-  provider:o.provider,evidenceType:o.evidenceType,retrieval:o.evidenceType==='api_response'?'http':o.evidenceType==='page_body'?'fetch':'search',excerpt:o.excerpt,truncated:o.truncated,
+  provider:o.provider,evidenceType:o.evidenceType,retrieval:o.evidenceType==='api_response'?'http':['page_body','page_response'].includes(o.evidenceType)?'fetch':'search',excerpt:o.excerpt,truncated:o.truncated,
   statusCode:o.statusCode,contentType:o.contentType,encoding:o.encoding,quality:o.quality,artifactPath:o.artifactPath,artifactHash:o.artifactHash,queries:o.queries,
   retrievedAt:o.retrievedAt,...o.publishedAt?{publishedAt:o.publishedAt}:{},...o.publishedAtRaw?{publishedAtRaw:o.publishedAtRaw}:{},...o.eventDate?{eventDate:o.eventDate}:{}});
  function forRequest(id){
@@ -46,7 +46,7 @@ export function createSources({ops,botId,workspace}){
     provider:o.provider,query:clip(o.query,512),requestedUrl:canonicalUrl(o.requestedUrl??o.url)??url,finalUrl:url,title,
     retrievedAt:o.retrievedAt??new Date().toISOString(),publishedAt,publishedAtRaw:rawDate||undefined,eventDate:clip(o.eventDate,100)||undefined,
     statusCode:o.statusCode,contentType:o.contentType,encoding:o.encoding,quality:o.quality,artifactPath:o.artifactPath,artifactHash:o.artifactHash,queries:o.queries,
-    evidenceType:['api_response','page_body'].includes(o.evidenceType)?o.evidenceType:'search_summary',excerpt:clip(o.excerpt,12000),truncated:!!o.truncated||(o.excerpt?.length??0)>12000,
+    evidenceType:['api_response','page_body','page_response','search_link'].includes(o.evidenceType)?o.evidenceType:'search_summary',excerpt:clip(o.excerpt,12000),truncated:!!o.truncated||(o.excerpt?.length??0)>12000,
     status:'completed',sequence:observations().length+1};
    ops.put(record);return {...view(record),sourceId};
   },

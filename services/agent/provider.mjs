@@ -4,16 +4,25 @@ import { join } from 'node:path';
 import { createClient } from './chatgpt.mjs';
 import { responseChunks } from './provider-core.mjs';
 import { responseToolChunks } from './responses-protocol.mjs';
+import {errorEvent} from './errors.mjs';
+import {MODEL_RETRY_POLICY} from './model-retry.mjs';
 
 export const name = 'opennova-chatgpt';
 export const inject = ['llm'];
 
 export async function apply(ctx, config) {
   if (!config?.harnessRoot) throw new Error('harnessRoot_required');
-  const {LlmAdapter} = await import(pathToFileURL(join(config.harnessRoot, 'packages/llm/llm/lib/index.js')).href);
+  const llm = await import(pathToFileURL(join(config.harnessRoot, 'packages/llm/llm/lib/index.js')).href);
   const client = await createClient({capabilities:config.enableTools?'tools':'text'});
   const filter=config.requestFilter?(await import(pathToFileURL(config.requestFilter).href)).filterRequest:options=>options;
-  class SubscriptionAdapter extends LlmAdapter {
+  ctx.effect(() => ctx.llm.registerAdapter(['opennova-chatgpt'], createSubscriptionAdapter(llm,client,config,filter)));
+}
+
+export function createSubscriptionAdapter({LlmAdapter,LlmError},client,config,filter=options=>options){
+  return new class SubscriptionAdapter extends LlmAdapter {
+    providerRetryPolicy(provider){
+      return provider==='opennova-chatgpt'?MODEL_RETRY_POLICY:undefined;
+    }
     info(provider,id='gpt-6.1-sol') {
       const budget=config.modelBudget;
       return {provider,id,name:'GPT-6.1 Sol',inputModalities:['text'],
@@ -26,7 +35,16 @@ export async function apply(ctx, config) {
       if (model !== 'gpt-6.1-sol') throw new Error('unsupported_model');
       return this.info(provider,model);
     }
-    stream(options) { const request=filter(options,config);return config.enableTools ? responseToolChunks(client,request,config.allowedTools) : responseChunks(client, request); }
-  }
-  ctx.effect(() => ctx.llm.registerAdapter(['opennova-chatgpt'], new SubscriptionAdapter()));
+    async *stream(options) {
+      try{
+        const request=filter(options,config);
+        yield* config.enableTools?responseToolChunks(client,request,config.allowedTools):responseChunks(client,request);
+      }catch(error){
+        // Native LlmError preserves safe provider facts through finish and turn/end.
+        const {code,status,requestId}=errorEvent(error,'conversation');
+        const failureCode=status===503?'model_service_unavailable':code==='model_service_unavailable'?'agent_runtime_failed':code;
+        throw new LlmError(failureCode,failureCode,{status,requestId});
+      }
+    }
+  }();
 }

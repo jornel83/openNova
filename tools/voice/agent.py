@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,6 +16,7 @@ def failure_message(event):
     hints = {
         'network_error':'无法连接 ChatGPT，请检查当前网络连接。',
         'connection_error':'无法连接 ChatGPT，请检查当前网络连接。',
+        'stream_interrupted':'ChatGPT 连接在回复完成前中断，请稍后重试。',
         'cancelled':'请求已取消或超时。',
         'chatgpt_authorization_required':'需要重新完成 OpenNova 的 ChatGPT 授权。',
         'secure_storage_unavailable':'无法访问本机 Keychain 凭据存储。',
@@ -27,7 +29,7 @@ def failure_message(event):
         'deepseek_api_key_missing':'联网模式需要 DeepSeek API Key，请配置本机 config/secrets.local.json 的 web.deepseek_api_key。',
         'invalid_web_configuration':'联网配置格式有误，请参考 config/voice.example.json。',
         'siwc_tools_extension_missing':'请先运行 python3.11 tools/setup/bootstrap.py --install --web。',
-        'agent_timeout':'本轮已超过 90 秒，请重试或缩小问题范围。',
+        'agent_timeout':'本轮处理超时，请检查操作记录后再重试。',
         'web_time_budget':'本轮检索已达到时间预算，请缩小问题范围后重试。',
         'model_budget_exceeded':'本轮工具推理步骤已达上限，请缩小问题范围。',
     }
@@ -38,8 +40,10 @@ def failure_message(event):
         hint = {401:'ChatGPT 拒绝了当前凭据，请检查授权。',
                 403:'ChatGPT 请求被拒绝，请检查网络连接及账号或应用的访问权限。',
                 429:'请求受限，请检查用量并稍后再试。'}.get(status if type(status) is int else None,
-                    '请检查 Agent 依赖与服务状态。')
-    return f'{stage}失败{http}：{hint}'
+                    'ChatGPT 服务暂时异常，请稍后重试。' if type(status) is int and 500 <= status <= 599 else '请检查 Agent 依赖与服务状态。')
+    request_id=event.get('requestId')
+    ref=f' 服务请求：{request_id}' if isinstance(request_id,str) and re.fullmatch(r'(?:req_[A-Za-z0-9_-]{1,120}|[a-fA-F0-9]{16,64}(?:-[A-Z]{3})?|[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})',request_id) else ''
+    return f'{stage}失败{http}：{hint}{ref}'
 
 
 async def stop_process(process):

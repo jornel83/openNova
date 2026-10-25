@@ -1,6 +1,9 @@
 # OpenNova Demo 技术架构与功能进展
 
-更新：2026-10-24，桌面开发分支。依据当前仓库实现及既有验证记录整理，包含网页共享会话、真实工程工具、一键启动、豆包云端 TTS 和 Bot 后台联网研究。完整产品范围仍以 [MVP PRD](../product/opennova-mvp-prd.md) 为准。
+> 2026-10-25 联网接入更新：默认改为 DSH 原生 web_search / web_fetch / bash；OpenNova 监听进度、保存来源和处理语音交互。旧版研究预算和 web_request / research_exec / research_derive 只在显式 legacy 回退模式启用。启动与验收见 [原生联网验收](opennova-native-research-test-cases.md)。文末旧阶段记录保留用于历史追溯。
+
+
+更新：2026-10-25，桌面开发分支。依据当前仓库实现及既有验证记录整理，包含网页共享会话、真实工程工具、一键启动、豆包云端 TTS 和 Bot 原生联网接入。完整产品范围仍以 [MVP PRD](../product/opennova-mvp-prd.md) 为准。
 
 ## 1 当前进展
 
@@ -37,8 +40,9 @@ flowchart TB
         HARNESS <--> PROVIDER["GPT 模型适配器<br/>既有 ChatGPT 授权"]
         BOT <--> MEMORY["本地 Bot 会话与记忆"]
         HARNESS <--> TOOLS["开发与助手工具<br/>glob / grep / read / write / edit / bash<br/>记忆、计时任务"]
-        HARNESS <--> RESEARCH["联网研究<br/>web_search / web_fetch / research_sources<br/>检索预算、取消与证据绑定"]
-        RESEARCH <--> STATE
+        HARNESS <--> RESEARCH["DSH 原生联网工具<br/>web_search / web_fetch"]
+        HARNESS -->|"会话事件"| OBSERVE["OpenNova 联网接入<br/>进度、来源记录 / research_sources"]
+        OBSERVE <--> STATE
         BRIDGE --> STATE["SQLite<br/>请求、操作记录、任务<br/>来源与历史观察"]
         TOOLS <--> STATE
         TOOLS <--> FILES["OpenNova 真实工程文件"]
@@ -52,8 +56,8 @@ flowchart TB
     subgraph CLOUD["云端"]
         ASR["豆包流式语音识别 2.0"]
         GPT["GPT-6.1 Sol"]
-        SEARCH["DeepSeek 原生搜索 provider<br/>辅助模型 deepseek-flash"]
-        PUBLIC["公开 HTML / 文本网页"]
+        SEARCH["DeepSeek 原生搜索 provider<br/>默认辅助模型 deepseek-v4-flash"]
+        PUBLIC["公开网页与 HTTP 接口"]
         DTTS["豆包语音合成 2.0<br/>VV 预设女声"]
     end
     subgraph STUDIO["Mac Studio：当前仅承载 TTS"]
@@ -63,6 +67,7 @@ flowchart TB
     PROVIDER <-->|"上下文、回复、工具调用"| GPT
     RESEARCH <-->|"后台搜索"| SEARCH
     RESEARCH <-->|"HTTP 正文读取"| PUBLIC
+    TOOLS <-->|"按需 bash / curl"| PUBLIC
     TTSA <-->|"doubao：HTTPS SSE<br/>文字请求／Base64 PCM"| DTTS
     TUNNEL <-->|"HTTP 流式合成"| TTS
 ```
@@ -77,7 +82,7 @@ flowchart TB
 | 语音控制器 | Air，Python 3.11+ | 协调监听、识别、思考、播报和插话；区分旧轮次，阻止被取消回复继续播放；合成在可取消的独立子进程中进行 |
 | Agent 与 Bot | Air，Node 24 | Harness 负责模型和工具运行；Bot 提供固定助手及持续会话；OpenNova 桥接负责请求与操作控制 |
 | LLM | 云端 GPT-6.1 Sol | 沿用已验证的独立 ChatGPT 授权适配；当前适配只接收文本，未接入图片或视频 |
-| 联网研究 | Harness 原生 DeepSeek 搜索 + OpenNova HTTP 读取 | 普通查询后台执行；显式开网页仍用浏览器。最多 2 次搜索 / 3 次读取，30 秒停止新检索、45 秒收尾；不关闭工程工具 |
+| 联网研究 | DSH 原生 DeepSeek 搜索、HTTP 读取与 bash；OpenNova 观察事件并保存来源 | 普通查询后台执行；显式开网页仍用浏览器。无额外研究次数或截止限制；搜索 60 秒、读取 30 秒，整轮 600 秒及用户取消保留 |
 | 状态与数据 | Air 本地文件 + SQLite | Bot 会话和记忆、请求结果、修改记录、计时任务及来源观察保存在客户端之外；宿主重启后可读取 |
 | 云端 TTS | 豆包语音合成 2.0，资源 `seed-tts-2.0` | VV 预设女声，Speaker ID 为 `zh_female_vv_uranus_bigtts`；HTTP SSE 返回 Base64 PCM，Air 解码后按 1 倍原速播放 |
 | 本地 TTS | Studio，MLX-Audio / Qwen3-TTS-12Hz-1.7B-CustomVoice | Vivian 预设音色；HTTP 返回 PCM，Air 用 FFmpeg 做 1.5 倍保调变速；与云端输出统一为 24 kHz 单声道 16-bit PCM |
@@ -136,13 +141,15 @@ GPT 的 HTTP 代理可通过 `--proxy` / `OPENNOVA_PROXY` 配置。豆包 TTS �
 
 `start.command` 固定使用 `--bot`。Bot 在 `web.enabled=true`、DeepSeek Key 可用时加载 `web_search` / `web_fetch`，无需另加 `--web`。`research_sources` 可回查已保存来源，即使关闭网络检索仍可使用。网页与语音显示实际阶段和来源卡片，口播不读 URL 或证据正文。旧 `--web` 参数仍是独立模式，与 `--bot` 互斥。
 
-普通信息查询走后台检索，不导航工作窗口；“打开网站 / 看看当前页面”使用原浏览器工具。网页读取失败时允许带说明使用搜索摘要，不把摘要冒充已读正文。来源记录按请求保存，后续新抓取不覆盖旧证据；新鲜度取决于实际来源，历史证据不会自动成为实时答案。配置与验收见 [联网研究验收](opennova-bot-research-test-cases.md)。
+普通信息查询走后台检索，不导航工作窗口；“打开网站 / 看看当前页面”使用原浏览器工具。Agent 自主选择搜索、读取或 bash 获取公开接口；原始工具错误保留，失败后可继续换源。来源区分搜索链接、引用片段及网页响应，HTTP 成功不代表事实已核验。记录按请求保存，后续新抓取不覆盖旧观察；Shell 输出保留在操作记录中，不自动生成来源卡片。配置与验收见 [原生联网验收](opennova-native-research-test-cases.md)。
 
 “ASR 流式识别”“LLM 增量输出”“TTS 流式音频”是不同环节。Bot 模式已经接入流式音频播放，但尚未把 LLM 增量回复交给 TTS；目前分句合成与播放串行进行，也没有跨句预合成。这是后续响应速度优化的明确位置。
 
 原先不带 `--continuous` 的轮流对话模式仍保留，不是本次持续 Bot 测试入口。
 
 ## 4 已实现能力与验证边界
+
+2026-10-25 原生联网 M1–M4：262 项 Node、103 项 Python 测试通过；真实隔离 Bot 完成北京/广州天气、国内历史行情、官方文档、来源回查、公开 JSON 保存及取消测试，并验证 legacy 回退。日常 18564 服务已升级为 version 3 / native，Studio Vivian 和蓝牙设备参数预检通过。部分站点 TLS 仍失败，Agent 可继续换源；真人语音需复测。详见 [原生联网验收](opennova-native-research-test-cases.md)。
 
 2026-10-24：Bot 联网研究回归通过 235 项 Node 测试、101 项 Python 测试；真实隔离会话完成天气、公开链接、来源追问、重启恢复、取消及“检索→保存报告→Shell 检查”。当前 18564 开发服务已启用 DeepSeek 检索，原桌面能力与 600 秒工程时限保留。具体用例、边界与真人语音复测见 [联网研究验收](opennova-bot-research-test-cases.md)。
 
@@ -156,7 +163,7 @@ GPT 的 HTTP 代理可通过 `--proxy` / `OPENNOVA_PROXY` 配置。豆包 TTS �
 | 持续记忆 | 基于上游记忆存储；直接新增、更正、删除有效记忆，无需确认 | 自动提取关闭；项目/个人分类及检索策略待完善；删除有效记忆不等于清除全部历史副本 |
 | 请求持久化 | SQLite 保存状态与最终结果，支持按 ID 查询；重启核对未完成操作 | 中断的前台请求标为 interrupted，不自动重新执行 |
 | 独立任务 | 计时任务可在客户端退出后保留，重启保留截止时间，支持显式取消 | 仅 1–120 秒计时任务；不代表真实开发、训练或生产提醒已经实现 |
-| 联网研究 | Bot 已集成 DeepSeek 搜索、后台正文读取、SQLite 来源观察、预算与取消；真实查询无需浏览器连接 | 支持公开 HTML / 文本；PDF/OCR、登录墙、专用天气数据源和长研究任务未实现。读取正文不等于事实已交叉核验 |
+| 联网研究 | Bot 使用原生搜索、HTTP 读取和 bash；SQLite 来源观察、跨轮回查及取消；真实查询无需浏览器连接 | 部分站点仍有网络/动态内容限制；专用天气数据源、PDF/OCR 和长研究任务未实现。网页响应不等于事实已交叉核验 |
 | 操作控制 | 本机认证，原生完整执行权限，读取版本冲突检查、请求去重与操作记录 | Shell 按宿主用户权限执行，工程 cwd 不是沙箱；尚无产品级项目授权界面 |
 
 真实工程接入验收：118 项 Node 测试、69 项 Python 语音回归通过。真实 GPT 已完成工程浏览/搜索/读取、修改实现、测试失败→通过、保存报告，以及取消实际 Shell 进程；网页显示文件差异和退出码。联调中曾出现 GPT 请求中断，重试后完整探针通过。原语音验收记录保留，本轮没有重新录制麦克风。具体证据与限制见 [接入实验验证记录](opennova-bot-spike.md)。
@@ -172,7 +179,7 @@ GPT 的 HTTP 代理可通过 `--proxy` / `OPENNOVA_PROXY` 配置。豆包 TTS �
 | 方向 / PRD 对应项 | 已有基础 | 后续需要补齐 |
 | --- | --- | --- |
 | 项目上下文，A1 | OpenNova 工程根目录、目录浏览/代码搜索/读取、持续会话 | 网页 / 选区及文件引用已接入；后续补项目切换、恢复决定与任务背景 |
-| 研究与学习，A2–A3 | Bot 后台搜索、正文读取、来源持久化、跨轮回查与检索预算 | 文本 PDF 读取、结构化研究结论与决定保存、来源质量策略和专用实时数据源 |
+| 研究与学习，A2–A3 | 原生后台搜索、HTTP 与 Shell 取数、来源持久化、跨轮回查与取消 | 文本 PDF 读取、结构化研究结论与决定保存、来源质量策略和专用实时数据源 |
 | 成果与文件，A4、A5.1 | 原生创建/局部编辑并保留差异 | 变更版本与撤销、成果预览/导出、实验数据与日志关联；真实共享目录的事务方案 |
 | 软件研发执行，A5.2、A6 | 原生 Shell 测试/构建/检查、退出码、完成输出、超时/取消和持久请求 | 长期后台作业、增量日志、产物关联和断线任务接续 |
 | 硬件设计助手，A5.5 | 可讨论方案、编辑文本 | 读取规格与参数资料，整理带来源的器件候选、BOM、选型比较与接口表；专业 CAD/EDA 属后续扩展 |
@@ -235,7 +242,7 @@ GPT 的 HTTP 代理可通过 `--proxy` / `OPENNOVA_PROXY` 配置。豆包 TTS �
 
 真实 Chrome 已验证窗口复用、文件引用不被自动开窗抢占、显式返回工作网页；豆包链路一键启动及原生音频控制通过。当前执行环境麦克风返回全零信号，真人语音与声学听感未计为通过。Studio 当次连通情况、测试计数和逐项验收见 [M4 验证记录](opennova-desktop-interaction-test-cases.md#m4一键启动与双窗口)。
 
-## 2026-10-25：通用联网研究执行
+## 2026-10-25：通用联网研究执行（历史方案，现仅 legacy 回退）
 
 后台研究扩展为 DeepSeek 搜索 → 网页 / 公开 HTTP 接口 → 原生研究脚本 → 来源与结果关联。Bot 可自行选择调用路径，查询不要求工作浏览器在线。新增 `web_request`、`research_exec`、`research_derive`，支持国内编码、必要 Referer、统一预算、取消和历史回查。普通工程 Shell 保持原权限；其中自行联网的响应不自动成为已记录 HTTP 来源。详细边界、验证与回退见 [通用联网研究验收](opennova-research-execution-test-cases.md)。
 

@@ -43,3 +43,12 @@ test('failed cancellation remains exclusive but cleanup can be retried',async()=
  assert.throws(()=>requests.submit('new','new input'),/bot_busy/);
  await requests.cancel('old');assert.equal(ops.request('old').status,'cancelled');assert.equal(requests.active,undefined);assert.equal(attempts,2);
 });
+test('user cancellation clears incidental model failures from the final result',async()=>{
+ const ops=store();let reject,started;
+ const entered=new Promise(r=>started=r),requests=new Requests(ops,async(_,active)=>{
+  active.cancel=async()=>reject(Object.assign(Error('api_error'),{code:'api_error',status:403}));
+  started();await new Promise((_,r)=>reject=r);
+ });
+ requests.submit('one','hello');await entered;await requests.cancel('one');
+ assert.equal(ops.request('one').status,'cancelled');assert.equal(ops.request('one').diagnostic,undefined);
+});

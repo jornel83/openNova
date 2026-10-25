@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {installResearch} from '../research/runtime.mjs';
+import {installResearch} from '../research/legacy-runtime.mjs';
 export function fixture(){
  const hooks={},rows=new Map(),controller=new AbortController();
  const active={id:'r1',controller,signal:controller.signal,cancelled:false};

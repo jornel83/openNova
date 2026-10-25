@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 import urllib.request
 import urllib.error
+from agent import failure_message
 
 class BotAgent:
     def __init__(self, *, api=None):
@@ -46,7 +47,7 @@ class BotAgent:
         try:
             yield {'type':'request','id':ident}
             await self.api('/ask',{'id':ident,'text':text,'source':'voice'})
-            tool=None
+            tool=None; retry_seen=None
             for _ in range(2100):
                 result=await self.api('/result',{'id':ident})
                 status=result['status']
@@ -56,7 +57,20 @@ class BotAgent:
                     return
                 if status not in ('queued','running'):
                     terminal=True
-                    raise ValueError(result.get('error') or status)
+                    error=result.get('error') or status
+                    if result.get('diagnostic'):
+                        error=failure_message(result['diagnostic'])
+                    elif error in ('network_error','connection_error','stream_interrupted','incomplete_agent_turn'):
+                        error=failure_message({'code':error,'stage':'conversation'})
+                    raise ValueError(error)
+                retry=result.get('modelRetry') or {}
+                if retry.get('status') in ('waiting','requesting'):
+                    key=(retry.get('retryId'),retry.get('retry'))
+                    if key!=retry_seen:
+                        retry_seen=key
+                        yield {'type':'status','id':ident,'phase':'retrying','retry':retry.get('retry'),'maxRetries':retry.get('maxRetries')}
+                    await asyncio.sleep(.3)
+                    continue
                 research=result.get('research') or {}
                 key=(result.get('tool'),research.get('phase'),research.get('callId'))
                 if result.get('tool') and key!=tool:

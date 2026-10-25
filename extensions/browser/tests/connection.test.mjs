@@ -21,3 +21,8 @@ test('large DOM snapshots stay within the 128 KiB wire limit with visible trunca
  const r=boundedResult({id:'large',status:'completed',snapshot:{text:'中文'.repeat(6000),truncated:false,targets:Array.from({length:100},(_,i)=>({ref:'t'+i,name:'long',href:'https://example.test/'+('x'.repeat(8000))}))}});
  assert.equal(r.status,'completed');assert.ok(new TextEncoder().encode(JSON.stringify({type:'result',result:r})).length<=131072);assert.equal(r.snapshot.targetsTruncated,true);
 });
+test('chat.show crosses command runner without replaying an already completed call',async()=>{
+ let saved={},called=0;const run=createCommandRunner({storage:{get:async()=>saved,set:async v=>{saved=v;}},execute:async c=>{assert.equal(c.method,'chat.show');called++;return {status:'completed',windows:{chatWindowId:8}};}});
+ const cmd={id:'show-nova',method:'chat.show',args:{},deadlineAt:Date.now()+10000};
+ assert.equal((await run(cmd)).status,'completed');assert.equal((await run(cmd)).status,'completed');assert.equal(called,1);
+});

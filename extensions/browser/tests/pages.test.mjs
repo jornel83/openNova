@@ -1,8 +1,8 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {createPageAdapter} from '../pages.mjs';
 function fixture(){let store={},url='https://example.com/one',doc='d1',tabId=1,bindingId='b';const published=[];
- const chrome={storage:{session:{get:async()=>structuredClone(store),set:async v=>Object.assign(store,structuredClone(v))}},tabs:{get:async()=>({id:tabId,url,title:'Page',status:'complete'})},webNavigation:{getFrame:async()=>({documentId:doc})},scripting:{executeScript:async p=>p.files?[]:[{result:{text:'hello',truncated:false,targets:[],contentType:'text/html'}}]}};
- const windows={binding:async()=>({bindingId,workTabId:tabId,chatUrl:'http://127.0.0.1:18562/'})};
+ const chrome={storage:{session:{get:async()=>structuredClone(store),set:async v=>Object.assign(store,structuredClone(v))}},tabs:{get:async()=>({id:tabId,windowId:10,url,title:'Page',status:'complete'})},webNavigation:{getFrame:async()=>({documentId:doc})},scripting:{executeScript:async p=>p.files?[]:[{result:p.args?{text:'hello',truncated:false,targets:[],contentType:'text/html'}:'complete'}]}};
+ const windows={binding:async()=>({bindingId,workTabId:tabId,workWindowId:10,chatUrl:'http://127.0.0.1:18562/'})};
  const pages=createPageAdapter({chrome,windows,publish:(c,a)=>published.push({c,a})});
  return {pages,published,chrome,windows,setURL:v=>url=v,setDoc:v=>doc=v,setTab:(id)=>{tabId=id;bindingId='b'+id;}};}
 test('real navigation and SPA routes invalidate old references and selections',async()=>{
@@ -109,4 +109,73 @@ test('startup window ensure preserves file focus; explicit work-window action ac
  assert.equal(f.published.at(-1).a,false);
  await f.pages.execute({method:'windows.ensure',args:{activate:true}},'http://127.0.0.1:18562');
  assert.equal(f.published.at(-1).a,true);
+});
+for(const state of ['normal','minimized','maximized']){
+ test(`explicit webpage open foregrounds its work window from ${state} state`,async()=>{
+  const f=fixture(),binding=await f.windows.binding();
+  f.windows.binding=async()=>({...binding,workWindowId:10});
+  const work={id:10,state,focused:false,left:85,top:33,width:973,height:923};
+  const updates=[];
+  f.chrome.windows={
+   get:async id=>{assert.equal(id,10);return {...work};},
+   update:async(id,props)=>{assert.equal(id,10);updates.push(props);Object.assign(work,props);return {...work};},
+  };
+  f.chrome.tabs.update=async(id,props)=>{
+   assert.equal(id,1);assert.equal(props.active,true);f.setURL(props.url);
+   await f.pages.navigation({tabId:1,frameId:0,loading:false});return {id,windowId:10,url:props.url};
+  };
+  const result=await f.pages.execute({method:'open',args:{url:'https://example.com/next'}},'http://127.0.0.1:18562');
+  assert.equal(result.status,'completed');assert.equal(result.page.url,'https://example.com/next');
+  assert.equal(work.focused,true);
+  assert.deepEqual(updates,[state==='minimized'?{focused:true,state:'normal'}:{focused:true}]);
+  assert.equal(work.state,state==='minimized'?'normal':state);
+  assert.deepEqual([work.left,work.top,work.width,work.height],[85,33,973,923]);
+ });
+}
+test('background read and a cancelled open never foreground a window',async()=>{
+ const f=fixture();let focusCalls=0,tabUpdates=0;
+ f.chrome.windows={update:async()=>{focusCalls++;}};
+ f.chrome.tabs.update=async()=>{tabUpdates++;};
+ assert.equal((await f.pages.execute({method:'read'})).status,'completed');
+ await assert.rejects(f.pages.execute({method:'open',args:{url:'https://example.com/next'}},'http://127.0.0.1:18562',()=>true),/command_cancelled/);
+ assert.equal(focusCalls,0);assert.equal(tabUpdates,0);
+});
+
+function openingFixture(){
+ const f=fixture(),executeScript=f.chrome.scripting.executeScript;
+ f.chrome.windows={get:async()=>({id:10,state:'normal'}),update:async()=>({id:10})};
+ f.chrome.scripting.executeScript=async p=>p.func&&!p.args?[{result:'complete'}]:executeScript(p);
+ f.chrome.tabs.update=async(id,{url})=>{
+  f.setURL(url);f.setDoc('intermediate');
+  await f.pages.navigation({tabId:1,frameId:0,loading:false});
+  return {id,windowId:10,url};
+ };
+ return f;
+}
+test('open waits through a delayed redirect before returning the page for reading',async t=>{
+ const f=openingFixture(),update=f.chrome.tabs.update;
+ f.chrome.tabs.update=async(...args)=>{
+  const tab=await update(...args);
+  const timer=setTimeout(()=>{
+   f.setURL('https://www.example.com/');f.setDoc('destination');
+   void f.pages.navigation({tabId:1,frameId:0,loading:false});
+  },250);t.after(()=>clearTimeout(timer));return tab;
+ };
+ const result=await f.pages.execute({method:'open',args:{url:'https://example.com/'}});
+ assert.equal(result.page.url,'https://www.example.com/');
+ assert.equal(result.page.documentId,'destination');
+ assert.equal((await f.pages.execute({method:'read',page:result.page})).snapshot.text,'hello');
+});
+test('open reports a pending page when DOM readiness cannot be established before its deadline',async()=>{
+ const f=openingFixture(),executeScript=f.chrome.scripting.executeScript;
+ f.chrome.scripting.executeScript=async p=>p.func&&!p.args?[{result:'loading'}]:executeScript(p);
+ const result=await f.pages.execute({method:'open',args:{url:'https://example.com/'},deadlineAt:Date.now()+300});
+ assert.equal(result.status,'completed');assert.equal(result.navigation,'dispatched');
+ assert.equal(result.pagePending,true);assert.equal(result.page,undefined);
+});
+test('chat.show uses trusted local chat URL and does not publish a work context',async()=>{
+ const f=fixture();await f.pages.refresh();const before=structuredClone(f.published);
+ f.windows.showChat=async({chatUrl},check)=>{assert.equal(chatUrl,'http://127.0.0.1:18562/');check();return {chatWindowId:20,created:true};};
+ const r=await f.pages.execute({method:'chat.show',args:{chatUrl:'https://evil.example/'}},'http://127.0.0.1:18562');
+ assert.equal(r.status,'completed');assert.equal(r.windows.chatWindowId,20);assert.deepEqual(f.published,before);
 });

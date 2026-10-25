@@ -13,12 +13,16 @@ import {researchTools} from './research/config.mjs';
 import {createContentFetcher} from '../agent/web-fetch-content.mjs';
 import {installResearch} from './research/runtime.mjs';
 import {Requests} from './requests.mjs';
+import {installModelGate} from './model-gate.mjs';
+import {installModelRetryObserver} from './model-retry.mjs';
+import {MODEL_RETRY_POLICY} from '../agent/model-retry.mjs';
 import {MemoryApprovals} from './memory.mjs';
 import {admitText,withoutNativeChannel,ownResources} from './lifecycle.mjs';
 import {createBridge} from './http.mjs';
 import {createControls} from './controls.mjs';
 import {ALLOWED_TOOLS,INSTRUCTIONS} from './policy.mjs';
 import {completedReply} from '../agent/result.mjs';
+import {errorEvent} from '../agent/errors.mjs';
 import {bindProject,settleBot,cancelBot,staleRequest,auditTool,recoverToolRuns,PROJECT_TOOLS,TURN_TIMEOUT_MS} from './project.mjs';
 
 export const name='opennova-bot-spike';
@@ -60,8 +64,9 @@ export async function apply(ctx,config) {
   let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
-  const transport=(await createContentFetcher(config.harnessRoot)).transport;
-  const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,home:config.home,port:config.port,botId:bot.id,workspace:config.workspace}});
+  const transport=config.research.mode==='legacy'?(await createContentFetcher(config.harnessRoot)).transport:undefined;
+  const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,home:config.home,port:config.port,botId:bot.id,workspace:config.workspace},
+    onObservationError:()=>console.error('Research observation could not be saved; native execution continues.')});
   resources.add(()=>research.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
@@ -96,11 +101,7 @@ export async function apply(ctx,config) {
   ctx.on('agent/pre-step',(payload,next)=>staleRequest(payload.messages,requests.active)?{kind:'reject'}:next(),{prepend:true});
   ctx.on('system-prompt/assemble',async(assembly,context,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
   ctx.systemPrompt.context({name:'opennova-experiment',order:9900,required:true,interpolate:false,text:()=>INSTRUCTIONS});
-  ctx.on('llm/stream',(options,next)=>{
-    if((!requests.active||requests.active.cancelled)&&!rt.ownRequest(options))throw Error('bridge_request_required');
-    if(options.provider!=='opennova-chatgpt'||options.model!=='gpt-6.1-sol')throw Error('bot_model_not_allowed');
-    return next();
-  });
+  installModelGate(ctx,{rt,bot,getActive:()=>requests.active,onMaintenance:record=>console.log('Bot context maintenance',JSON.stringify(record))});
   ctx.on('tools/execute',async(exec,next)=>{
     if(['remember','forget'].includes(exec.name)&&!approved.has(exec.signal))return textResult(await memory.mutate(exec.name,exec.arguments,exec.signal));
     if(requests.active)ops.finish(requests.active.id,{phase:'tool',tool:exec.name});
@@ -114,6 +115,7 @@ export async function apply(ctx,config) {
     if(event.type==='user/message'&&event.data?.source?.rpcId===active.id)active.started=true;
     if(active.started)active.events.push(event);
   });
+  installModelRetryObserver(ctx,{ops,requests,onRetry:record=>console.log('Bot model retry',JSON.stringify(record))});
   async function run(record,active) {
     const controller=active.controller;
     research.begin(active);
@@ -140,7 +142,7 @@ export async function apply(ctx,config) {
       return {...research.reply(text,record.id),sessionId:rt.chatOf(bot.id),elapsed_ms:Date.now()-record.createdAt};
     }catch(error){
       const end=active?.events.findLast(e=>e.type==='turn/end');
-      console.error('Bot turn failure',JSON.stringify({code:error.message,reason:end?.data?.reason?.kind,failureCode:end?.data?.reason?.error?.code}));
+      console.error('Bot turn failure',JSON.stringify({bridgeRequestId:record.id,sessionId:active.sessionId,elapsedMs:Date.now()-record.createdAt,reason:end?.data?.reason?.kind,diagnostic:errorEvent(error,'conversation')}));
       throw error;
     }
     finally{clearTimeout(timeout);research.finish(record.id);}
@@ -150,7 +152,7 @@ export async function apply(ctx,config) {
   resources.assertOpen();
   const handle=createControls({ops,requests,memory,context,documents,events,voice,research,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({research:research.health(),runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

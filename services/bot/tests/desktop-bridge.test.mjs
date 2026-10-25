@@ -58,3 +58,20 @@ test('obsolete authenticated sockets cannot publish context after replacement',a
  const closed=once(old,'close');old._socket.resume();await closed;
  assert.equal(contexts.some(c=>c.page?.bindingId==='obsolete'),false);
 });
+test('close scope and PageRef cross the authenticated WebSocket bridge',async t=>{
+ const f=await fixture(t),{token}=await (await f.pair(f.bridge.pairing().code)).json(),ws=await f.connect(token);
+ ws.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='command'){
+  assert.equal(m.command.method,'close');assert.equal(m.command.args.scope,'window');assert.equal(m.command.page.tabId,7);
+  ws.send(JSON.stringify({type:'result',result:{id:m.command.id,status:'completed',action:'close',scope:'window',page:null}}));
+ }});
+ const r=await f.bridge.execute({id:'close',method:'close',page:{tabId:7},args:{scope:'window'}});
+ assert.equal(r.status,'completed');assert.equal(r.page,null);
+});
+test('chat.show can be dispatched without any work page reference',async t=>{
+ const f=await fixture(t),{token}=await (await f.pair(f.bridge.pairing().code)).json(),ws=await f.connect(token);
+ ws.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='command'){
+  assert.equal(m.command.method,'chat.show');assert.equal(m.command.page,undefined);
+  ws.send(JSON.stringify({type:'result',result:{id:m.command.id,status:'completed',windows:{chatWindowId:7,created:true}}}));
+ }});
+ assert.equal((await f.bridge.execute({id:'show',method:'chat.show',args:{}})).status,'completed');
+});

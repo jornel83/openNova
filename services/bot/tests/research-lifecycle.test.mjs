@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {installResearch} from '../research/runtime.mjs';
+import {installResearch} from '../research/legacy-runtime.mjs';
 function fixture(t,limits={}){const hooks={},rows=new Map(),requests={};const ctx={on:(name,f)=>hooks[name]=f,systemPrompt:{context(){}}};
  const ops={put:r=>(rows.set(r.id,r),r),finish:(id,r)=>rows.set(id,{...rows.get(id),...r}),list:k=>[...rows.values()].filter(r=>r.kind===k)};
  const runtime=installResearch(ctx,{ops,requests,config:{available:true,limits:{searchCalls:1,searchMs:10,...limits}}});t.after(()=>runtime.close());

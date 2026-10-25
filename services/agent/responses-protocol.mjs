@@ -1,4 +1,5 @@
 /** Stateless Responses projection. Only completed output is executable by Harness. */
+import {safeError} from './errors.mjs';
 const FORMAT='opennova-responses-v1';
 const DEFAULT_TOOLS=['web_search','web_fetch'];
 const textOf=content => {
@@ -46,14 +47,18 @@ export function projectToolRequest(options, allowedTools=DEFAULT_TOOLS) {
     } else throw Error('unsupported_role');
   }
   return {model:options.model,input,...(options.system?{instructions:options.system}:{}),
-    ...(tools.length?{tools:[{type:'namespace',name:'opennova',description:'OpenNova tools',tools}]}:{})};
+    ...(tools.length&&options.purpose!=='compaction'?{tools:[{type:'namespace',name:'opennova',description:'OpenNova tools',tools}]}:{})};
 }
 export async function* responseToolChunks(client, options, allowedTools=DEFAULT_TOOLS) {
   const request=projectToolRequest(options,allowedTools);
-  const result=await client.streamItems({...request,signal:options.signal});
+  let result;
+  try { result=await client.streamItems({...request,signal:options.signal}); }
+  catch(error) {
+    throw safeError(error);
+  }
   options.signal?.throwIfAborted();
   if (!Array.isArray(result?.output)) throw Error('incomplete_model_response');
-  const allowed=new Set((options.tools??[]).map(t=>t.name));
+  const allowed=new Set(options.purpose==='compaction'?[]:(options.tools??[]).map(t=>t.name));
   const blocks=[], replay=[], ids=new Set();let pending=[], characters=0;
   for (const item of result.output) {
     if (item.type==='reasoning') {pending.push(item);continue;}

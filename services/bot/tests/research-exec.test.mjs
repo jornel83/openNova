@@ -27,7 +27,7 @@ test('late_helper_after_cancel_rejected and process reaped',async t=>{
  const result=await work;assert.equal(result.status,'cancelled');await assert.rejects(manager.http({executionId:id,request:{}},()=>{}),/execution_not_active/);
 });
 test('middleware cancellation joins a native Shell that ignores TERM before returning',async t=>{
- const {installResearch}=await import('../research/runtime.mjs');const f=await fixture(t),hooks={},c=new AbortController();
+ const {installResearch}=await import('../research/legacy-runtime.mjs');const f=await fixture(t),hooks={},c=new AbortController();
  const requests={active:{id:'r-cancel',signal:c.signal}};f.ops.finish=()=>{};
  const ctx={get:()=>f.ctx.shell,on:(n,fn)=>hooks[n]=fn,systemPrompt:{context(){}}};
  const runtime=installResearch(ctx,{ops:f.ops,requests,config:{available:true,workspace:f.home,home:f.home,port:18560}});
@@ -38,7 +38,7 @@ test('middleware cancellation joins a native Shell that ignores TERM before retu
  const [record]=f.ops.list('research_execution');assert.equal(record.status,'cancelled');assert.ok(record.completedAt);
 });
 test('native research helper uses one read budget and exit zero cannot hide HTTP failure',async t=>{
- const {installResearch}=await import('../research/runtime.mjs');const {createControls}=await import('../controls.mjs');const f=await fixture(t),hooks={},c=new AbortController();
+ const {installResearch}=await import('../research/legacy-runtime.mjs');const {createControls}=await import('../controls.mjs');const f=await fixture(t),hooks={},c=new AbortController();
  const requests={active:{id:'r-live',signal:c.signal}};f.ops.finish=(id,p)=>f.rows.set(id,{...f.rows.get(id),...p});
  let runtime;const server=createBridge({token:'test',handle:createControls({ops:f.ops,requests,research:{httpFromScript:body=>runtime.httpFromScript(body)}})});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();server.close();});writeFileSync(join(f.home,'client.token'),'test');
@@ -51,7 +51,7 @@ test('native research helper uses one read budget and exit zero cannot hide HTTP
  const operation=[...f.rows.values()].find(r=>r.kind==='tool'&&r.callId==='parent');assert.equal(operation.exitCode,0);assert.equal(operation.status,'failed');assert.match(operation.stdout,/502/);
 });
 test('native script can recover from a failed source and derive from the successful response',async t=>{
- const {installResearch}=await import('../research/runtime.mjs');const f=await fixture(t),hooks={},c=new AbortController();
+ const {installResearch}=await import('../research/legacy-runtime.mjs');const f=await fixture(t),hooks={},c=new AbortController();
  const requests={active:{id:'r-recover',signal:c.signal}};f.ops.finish=()=>{};let runtime;
  const server=createBridge({token:'test',handle:(path,body)=>runtime.httpFromScript(body)});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();server.close();});writeFileSync(join(f.home,'client.token'),'test');

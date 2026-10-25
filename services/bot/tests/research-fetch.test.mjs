@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {loadSettings} from '../../agent/settings.mjs';
 import {createContentFetcher} from '../../agent/web-fetch-content.mjs';
-import {resultFailure} from '../research/runtime.mjs';
+import {resultFailure} from '../research/legacy-runtime.mjs';
 test('fetch_preserves_tables_and_final_url',async()=>{
  const fetcher=await createContentFetcher(loadSettings().harnessRoot);
  fetcher.transport.fetch=async()=>({url:'https://example.com/final',statusCode:200,truncated:false,body:{kind:'html',content:'<table><tr><td>北京</td><td>20℃</td></tr></table>'}});

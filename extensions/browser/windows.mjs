@@ -13,10 +13,21 @@ export function createWindowManager(chrome){
  const get=async()=>(await chrome.storage.session.get('binding')).binding||{};
  const save=async value=>{await chrome.storage.session.set({binding:value});return value;};
  async function isWorkValid(b){try{const t=await chrome.tabs.get(b.workTabId);return t.windowId===b.workWindowId&&!isChatPage(t.url,b.chatUrl);}catch{return false;}}
+ async function repair(b){
+  // Keep the surviving work window when only one of its tabs was removed.
+  const tabs=Number.isInteger(b.workWindowId)&&b.workWindowId!==b.chatWindowId
+   ?await chrome.tabs.query({windowId:b.workWindowId}).catch(()=>[]):[];
+  const eligible=tabs.filter(t=>!isChatPage(t.url,b.chatUrl));
+  const next=eligible.find(t=>t.active)||eligible[0];
+  const {bindingId,workWindowId,workTabId,...rest}=b;
+  popup=null;destinations.clear();
+  return save(next?{...rest,bindingId:crypto.randomUUID(),workWindowId:next.windowId,workTabId:next.id}:rest);
+ }
  async function ensure(options){
   const chatUrl=options.chatUrl,u=new URL(chatUrl);if(u.origin!==`http://127.0.0.1:${u.port}`||u.username||u.password)throw Error('invalid_chat_url');
   let b=await get();const displays=await chrome.system.display.getInfo(),area=options.bounds||(displays.find(d=>d.isPrimary)||displays[0]).workArea;
   const bounds=layout(area);let workCreated=false,chatCreated=false;
+  if(!await isWorkValid(b)&&Number.isInteger(b.workWindowId))b=await repair(b);
   if(!await isWorkValid(b)){workCreated=true;creatingWork=true;const w=await chrome.windows.create({url:'about:blank',type:'normal',focused:false,...bounds.work});b={...b,bindingId:crypto.randomUUID(),workWindowId:w.id,workTabId:w.tabs[0].id};}
   let chatValid=false;try{const w=await chrome.windows.get(b.chatWindowId,{populate:true});chatValid=w.tabs?.some(t=>t.url===chatUrl||t.pendingUrl===chatUrl);}catch{}
   if(!chatValid){chatCreated=true;const w=await chrome.windows.create({url:chatUrl,type:'popup',...bounds.chat});b.chatWindowId=w.id;}
@@ -43,6 +54,49 @@ export function createWindowManager(chrome){
  }
  async function bind(tab){const b=await get();if(tab.windowId===b.chatWindowId||isChatPage(tab.url,b.chatUrl))throw Error('chat_page_cannot_be_work_page');if(!/^https?:\/\//.test(tab.url||''))throw Error('unsupported_page');return save({...b,bindingId:crypto.randomUUID(),workWindowId:tab.windowId,workTabId:tab.id});}
  return {binding:get,bind:tab=>serial(()=>bind(tab)),
+  showChat({chatUrl},check=()=>{}){return serial(async()=>{
+   const url=new URL(chatUrl);
+   if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!url.port||url.pathname!=='/'||url.search||url.hash||url.username||url.password)throw Error('invalid_chat_url');
+   check();const b=await get();
+   const chatTab=w=>w?.tabs?.find(t=>isChatPage(t.url,chatUrl)||isChatPage(t.pendingUrl,chatUrl));
+   const matches=w=>w&&w.id!==b.workWindowId&&w.type==='popup'&&chatTab(w);
+   let window=Number.isInteger(b.chatWindowId)?await chrome.windows.get(b.chatWindowId,{populate:true}).catch(()=>null):null,created=false;
+   // Recover an existing dedicated popup after an extension reload; do not
+   // adopt ordinary browser tabs or windows the user repurposed.
+   if(!matches(window))window=(await chrome.windows.getAll({populate:true,windowTypes:['popup']})).find(matches);
+   if(!window){
+    const displays=await chrome.system.display.getInfo(),area=(displays.find(d=>d.isPrimary)||displays[0]).workArea;
+    check();window=await chrome.windows.create({url:chatUrl,type:'popup',focused:true,...layout(area).chat});created=true;
+   }else{
+    check();const tab=chatTab(window);
+    if(!tab.active)await chrome.tabs.update(tab.id,{active:true});
+    check();window=await chrome.windows.update(window.id,{focused:true,...(window.state==='minimized'?{state:'normal'}:{})});
+   }
+   await save({...b,chatUrl,chatWindowId:window.id});
+   return {chatWindowId:window.id,created};
+  });},
+  close(page,scope,check=()=>{}){return serial(async()=>{
+   if(!['tab','window'].includes(scope))throw Error('invalid_close_scope');
+   const b=await get();
+   if(!page||b.bindingId!==page.bindingId||b.workTabId!==page.tabId)throw Error('context_changed');
+   const tab=await chrome.tabs.get(b.workTabId),frame=await chrome.webNavigation.getFrame({tabId:tab.id,frameId:0});
+   if(tab.windowId===b.chatWindowId||isChatPage(tab.url,b.chatUrl))throw Error('chat_page_cannot_be_work_page');
+   if(tab.windowId!==b.workWindowId||tab.url!==page.url||frame?.documentId!==page.documentId)throw Error('context_changed');
+   if(scope==='window'){
+    const w=await chrome.windows.get(b.workWindowId,{populate:true});
+    if(w.tabs?.some(t=>isChatPage(t.url,b.chatUrl)||isChatPage(t.pendingUrl,b.chatUrl)))throw Error('chat_page_cannot_be_work_page');
+   }
+   check();
+   if(scope==='window')await chrome.windows.remove(b.workWindowId);
+   else await chrome.tabs.remove(b.workTabId);
+   await repair(b);
+   return {status:'completed',action:'close',scope,closed:{tabId:tab.id,windowId:b.workWindowId}};
+  });},
+  removed({tabId,windowId}){return serial(async()=>{
+   const b=await get();
+   if(tabId!==undefined&&b.workTabId===tabId||windowId!==undefined&&b.workWindowId===windowId){await repair(b);return true;}
+   return false;
+  });},
   expectPopup({id,page,href}){popup=href?{id,page,href,expiresAt:Date.now()+2500}:null;},
   clearPopup(id){if(popup?.id===id)popup=null;destinations.delete(id);},
   isCommandDestination(id,page){const d=destinations.get(id);return !!d&&d.bindingId===page?.bindingId&&d.tabId===(page?.tabId??page?.workTabId);},

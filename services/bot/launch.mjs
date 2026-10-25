@@ -38,12 +38,13 @@ const manifest=JSON.parse(readFileSync(join(b.plugin,'package.json'),'utf8'));
 writeFileSync(join(wrapper,'package.json'),JSON.stringify({name:'opennova-bot-experiment',version:manifest.version,type:'module',main:'index.js',exports:{'.':'./index.js'}}));
 writeFileSync(join(wrapper,'index.js'),`export * from ${JSON.stringify(pathToFileURL(join(ROOT,'services/bot/host.mjs')).href)};\n`);
 const patch=[
-  ...['llm-deepseek','llm-deepseek-account','llm-pi-ai','session-title-llm','llm-retry','hmr'].map(id=>({id,disabled:true})),
+  ...['llm-deepseek','llm-deepseek-account','llm-pi-ai','session-title-llm','hmr'].map(id=>({id,disabled:true})),
+  {id:'llm-retry',disabled:false},
   {id:'agent-default-model',config:{provider:'opennova-chatgpt',model:'gpt-6.1-sol'}},
   {id:'bash-sandbox',config:{timeoutMs:120000}},
   {id:'preset-standard',config:{id:'standard',order:1,plugins:PROJECT_PLUGINS}},
   {insert:[
-    ...researchPlugins({harnessRoot:s.harnessRoot,enabled:research.httpAvailable,searchAvailable:research.available,limits:research.limits}),
+    ...researchPlugins({harnessRoot:s.harnessRoot,enabled:research.httpAvailable,searchAvailable:research.available,mode:research.mode,limits:research.limits}),
     {id:'opennova-chatgpt',name:join(ROOT,'services/agent/provider.mjs'),config:{harnessRoot:s.harnessRoot,enableTools:true,allowedTools:researchTools(ALLOWED_TOOLS,research),modelBudget:MODEL_BUDGET,requestFilter:join(ROOT,'services/bot/model-policy.mjs'),retiredMemoryPath:join(b.home,'retired.json')}},
     {id:'opennova-bot',name:join(wrapper,'index.js'),config:{...b,research:publicResearchConfig(research),harnessRoot:s.harnessRoot,webAssets,desktop:options.includes('--desktop')}},
   ]},

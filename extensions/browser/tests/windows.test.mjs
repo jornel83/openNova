@@ -2,9 +2,9 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {createWindowManager,layout} from '../windows.mjs';
 function fake(){let i=0,store={};const windows=new Map(),tabs=new Map();return {storage:{session:{get:async()=>structuredClone(store),set:async v=>Object.assign(store,structuredClone(v))}},system:{display:{getInfo:async()=>[{isPrimary:true,workArea:{left:0,top:20,width:1440,height:880}}]}},windows:{
  create:async props=>{const w={id:++i,...props};const t={id:++i,windowId:w.id,url:props.url};w.tabs=[t];windows.set(w.id,w);tabs.set(t.id,t);return structuredClone(w);},
- get:async id=>{if(!windows.has(id))throw Error('no window');return structuredClone(windows.get(id));},
+ get:id=>{if(!Number.isInteger(id))throw Error('No matching signature');if(!windows.has(id))return Promise.reject(Error('no window'));return Promise.resolve(structuredClone(windows.get(id)));},
  update:async()=>{throw Error('should not rearrange existing windows');},
- },tabs:{get:async id=>{if(!tabs.has(id))throw Error('no tab');return {...tabs.get(id)};}},windowsMap:windows,tabsMap:tabs};}
+ },tabs:{query:async q=>[...tabs.values()].filter(t=>t.windowId===q.windowId),get:async id=>{if(!tabs.has(id))throw Error('no tab');return {...tabs.get(id)};}},windowsMap:windows,tabsMap:tabs};}
 test('repeated ensure reuses windows, aligns heights; chat or unrelated focus never binds it',async()=>{
  const chrome=fake(),m=createWindowManager(chrome),args={chatUrl:'http://127.0.0.1:18562/'};
  const a=await m.ensureWindows(args),b=await m.ensureWindows(args);assert.deepEqual(a,b);assert.equal(chrome.windowsMap.size,2);
@@ -72,4 +72,49 @@ test('explicit toolbar bind during ensure survives its stale initial binding sna
  const binding=m.bind({id:88,windowId:89,url:'https://example.com/new-work'});
  release();await ensuring;await binding;
  assert.equal((await m.binding()).workTabId,88);
+});
+function chatFixture(){
+ const chrome=fake();
+ chrome.windows.getAll=async()=>[...chrome.windowsMap.values()].map(w=>structuredClone(w));
+ chrome.windows.update=async(id,props)=>{const w=chrome.windowsMap.get(id);if(!w)throw Error('missing window');Object.assign(w,props);return structuredClone(w);};
+ chrome.tabs.update=async(id,props)=>{const t=chrome.tabsMap.get(id);if(!t)throw Error('missing tab');Object.assign(t,props);return {...t};};
+ return {chrome,m:createWindowManager(chrome),args:{chatUrl:'http://127.0.0.1:18562/'}};
+}
+test('show Nova recreates only the closed chat window and preserves work binding',async()=>{
+ const {chrome,m,args}=chatFixture();const pair=await m.ensureWindows(args),before=await m.binding();
+ chrome.windowsMap.delete(pair.chatWindowId);
+ const result=await m.showChat(args);
+ assert.equal(result.created,true);assert.notEqual(result.chatWindowId,pair.chatWindowId);
+ const after=await m.binding();assert.equal(after.bindingId,before.bindingId);assert.equal(after.workTabId,before.workTabId);
+ assert.equal(chrome.windowsMap.size,2);const chat=chrome.windowsMap.get(result.chatWindowId);
+ assert.equal(chat.type,'popup');assert.equal(chat.focused,true);assert.equal(chat.url,args.chatUrl);
+ assert.equal(chat.left,1040);assert.equal(chat.width,400);
+});
+for(const state of ['normal','minimized','maximized'])test(`show Nova reuses ${state} window without resetting user geometry`,async()=>{
+ const {chrome,m,args}=chatFixture();const pair=await m.ensureWindows(args);
+ const chat=chrome.windowsMap.get(pair.chatWindowId);Object.assign(chat,{state,left:900,top:100,width:450,height:720,focused:false});
+ const result=await m.showChat(args);assert.equal(result.created,false);assert.equal(result.chatWindowId,pair.chatWindowId);
+ assert.equal(chat.focused,true);assert.equal(chat.state,state==='minimized'?'normal':state);
+ assert.deepEqual([chat.left,chat.top,chat.width,chat.height],[900,100,450,720]);assert.equal(chrome.windowsMap.size,2);
+});
+test('show Nova without work window creates only chat and repeated commands reuse it',async()=>{
+ const {chrome,m,args}=chatFixture();const a=await m.showChat(args),b=await m.showChat(args);
+ assert.equal(a.chatWindowId,b.chatWindowId);assert.equal(chrome.windowsMap.size,1);assert.equal((await m.binding()).workTabId,undefined);
+});
+test('show Nova recovers its existing popup after session binding is lost',async()=>{
+ const {chrome,m,args}=chatFixture();const pair=await m.ensureWindows(args);
+ await chrome.storage.session.set({binding:{}});
+ const result=await m.showChat(args);assert.equal(result.created,false);assert.equal(result.chatWindowId,pair.chatWindowId);assert.equal(chrome.windowsMap.size,2);
+});
+test('show Nova never adopts a repurposed window or a normal browser tab',async()=>{
+ const {chrome,m,args}=chatFixture();const pair=await m.ensureWindows(args);
+ const old=chrome.windowsMap.get(pair.chatWindowId);old.tabs[0].url='https://example.com/';
+ const normal=await chrome.windows.create({url:args.chatUrl,type:'normal'});
+ const result=await m.showChat(args);assert.notEqual(result.chatWindowId,old.id);assert.notEqual(result.chatWindowId,normal.id);assert.equal(result.created,true);
+});
+test('show Nova rejects nonlocal URL and cancellation before creating or focusing',async()=>{
+ const {chrome,m,args}=chatFixture();await assert.rejects(m.showChat({chatUrl:'https://example.com/'}),/invalid_chat_url/);
+ await assert.rejects(m.showChat(args,()=>{throw Error('command_cancelled');}),/command_cancelled/);assert.equal(chrome.windowsMap.size,0);
+ await m.ensureWindows(args);const count=chrome.windowsMap.size;let checks=0;
+ await assert.rejects(m.showChat(args,()=>{if(++checks>1)throw Error('command_cancelled');}),/command_cancelled/);assert.equal(chrome.windowsMap.size,count);
 });

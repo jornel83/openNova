@@ -1,5 +1,8 @@
 # OpenNova MVP 开发环境部署方案
 
+> 2026-10-25 联网接入更新：默认改为 DSH 原生 web_search / web_fetch / bash；OpenNova 仅监听进度、保存来源和处理语音交互。旧版研究预算和 web_request / research_exec / research_derive 只在显式 legacy 回退模式启用。启动与验收见 [原生联网验收](opennova-native-research-test-cases.md)。以下早期阶段记录保留用于历史追溯。
+
+
 2026-10-24 当前增量：**Bot 已统一接入 DeepSeek 后台搜索、公开网页正文、持久来源与检索预算**。沿用当前 Air Bot + 可切换 TTS，`config/voice.local.json` 中启用 `web.enabled=true`、`web.provider="deepseek"`，密钥沿用本机 secrets 的 `web.deepseek_api_key`。无须 Exa，无须为 Bot 追加旧 `--web`。配置在 Bot 启动时加载，退出语音不等于重启 Bot；一键启动会提示当前宿主能力和是否需要重启。详见 [联网研究验收及配置](opennova-bot-research-test-cases.md) 与 [当前实际架构](opennova-demo-architecture-status.md)。
 
 以下 2026-10-13 及更早内容为历史部署基线和目标设计；其中 Exa 依赖、浏览器待开发、Studio 常驻 Agent 等说明不代表当前已部署状态。

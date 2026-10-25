@@ -39,7 +39,7 @@ async function fixture(t) {
       if(!tts && req.headers.authorization!=='Bearer fixture-token'){res.writeHead(401);return res.end('{}');}
       if(!tts){
         fs.appendFileSync(root+'/requests',req.url+'\\n');
-        if(req.url==='/desktop/status')return res.end(JSON.stringify({paired:true,connected:process.env.EXTENSION_OFF!=='1'}));
+        if(req.url==='/desktop/status')return res.end(JSON.stringify({paired:true,connected:process.env.EXTENSION_OFF!=='1'||fs.existsSync(root+'/browser-ready')}));
         if(req.url==='/desktop/open'){fs.appendFileSync(root+'/window-ensures','ensure\\n');return res.end(JSON.stringify({status:'completed',windows:{workWindowId:1,chatWindowId:2}}));}
         if(req.url==='/snapshot')return res.end(JSON.stringify({desktop:{voice:{connected:process.env.EXISTING_VOICE==='1'}}}));
       }
@@ -271,6 +271,19 @@ test('missing extension keeps text and voice, opens fallback once per Bot boot w
  assert.equal(opened.filter(Boolean)[0],`http://127.0.0.1:${f.env.OPENNOVA_BOT_PORT}/`);
  assert.equal(existsSync(join(f.root,'window-ensures')),false);
  assert.ok(logs.some(x=>x.includes('扩展')));
+ assert.equal(existsSync(join(f.root,'voice.json')),true);
+});
+test('UI launch reconnects the configured paired browser before opening windows and voice',async t=>{
+ const f=await fixture(t);f.env.EXTENSION_OFF='1';
+ f.env.OPENNOVA_BROWSER_EXECUTABLE=join(f.root,'bin/paired-chrome');
+ f.env.OPENNOVA_BROWSER_USER_DATA_DIR=join(f.root,'paired profile');
+ writeFileSync(f.env.OPENNOVA_BROWSER_EXECUTABLE,`#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(join(f.root,'browser-args'))},JSON.stringify(process.argv.slice(2)));fs.writeFileSync(${JSON.stringify(join(f.root,'browser-ready'))},'ready');`,{mode:0o700});
+ assert.equal(await launch({...f.options,ui:true,ttsProvider:'doubao'},f.runtime),0);
+ const args=JSON.parse(readFileSync(join(f.root,'browser-args'),'utf8'));
+ assert.ok(args.includes('--user-data-dir='+join(f.root,'paired profile')));
+ assert.ok(args.includes('--load-extension='+join(f.root,'extensions/browser')));
+ assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\n');
+ assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'ui-fallback.json')),false);
  assert.equal(existsSync(join(f.root,'voice.json')),true);
 });
 test('UI preflight and list-devices never open windows; explicit no-ui overrides UI',async t=>{

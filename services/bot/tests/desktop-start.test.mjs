@@ -18,5 +18,7 @@ test('authenticated desktop open ensures windows with trusted chat URL and prese
  assert.equal((await post({})).status,200);assert.equal(sent[0].method,'windows.ensure');assert.equal(sent[0].args.chatUrl,base+'/');assert.equal(sent[0].args.activate,false);
  await post({chatUrl:'http://127.0.0.1:9999/'});assert.equal(sent[1].args.chatUrl,base+'/');
  await post({url:'https://example.com/'});assert.equal(sent[2].method,'open');assert.equal(sent[2].args.url,'https://example.com/');
+ const chat=await fetch(base+'/desktop/chat',{method:'POST',headers:{Authorization:'Bearer cli-only'},body:JSON.stringify({chatUrl:'https://evil.example/',page:{tabId:999}})});
+ assert.equal(chat.status,200);assert.equal(sent.at(-1).method,'chat.show');assert.deepEqual(sent.at(-1).args,{});assert.equal(sent.at(-1).page,undefined);
  const count=sent.length;assert.equal((await fetch(base+'/desktop/open',{method:'POST',headers:{Origin:base,Authorization:'Bearer cli-only'},body:'{}'})).status,403);assert.equal(sent.length,count);
 });

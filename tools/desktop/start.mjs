@@ -4,7 +4,19 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {desktopApi} from './client.mjs';
 
-async function openChrome(url,{signal}={}){
+export async function openChrome(url,{signal,root,env=process.env}={}){
+ signal?.throwIfAborted();
+ const executable=env.OPENNOVA_BROWSER_EXECUTABLE,profile=env.OPENNOVA_BROWSER_USER_DATA_DIR;
+ if(executable||profile){
+  if(!executable||!profile)throw Error('需要同时设置 OPENNOVA_BROWSER_EXECUTABLE 和 OPENNOVA_BROWSER_USER_DATA_DIR');
+  // Pairing belongs to a browser profile. Keep that profile across restarts;
+  // never silently open daily Chrome when the configured browser is missing.
+  const extension=join(root,'extensions/browser');
+  return new Promise((resolve,reject)=>{
+   const child=spawn(executable,['--no-first-run','--no-default-browser-check',`--user-data-dir=${profile}`,`--load-extension=${extension}`,`--disable-extensions-except=${extension}`,...(url?[url]:['--no-startup-window'])],{stdio:'ignore',detached:true});
+   child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});
+  });
+ }
  return new Promise((resolve,reject)=>{
   const child=spawn('/usr/bin/open',['-a','Google Chrome',...(url?[url]:[])],{stdio:'ignore',signal});
   child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(Error('chrome_launch_failed')));
@@ -12,7 +24,7 @@ async function openChrome(url,{signal}={}){
 }
 
 /** Window creation belongs to the paired extension; the launcher never moves native apps. */
-export async function prepareDesktop({config,root,health,signal,log,openBrowser=url=>openChrome(url,{signal}),waitMs=8000}){
+export async function prepareDesktop({config,root,health,signal,log,env=process.env,openBrowser=url=>openChrome(url,{signal,root,env}),waitMs=8000}){
  const call=(path,body={})=>desktopApi(path,body,false,{config,signal});
  const url=config.url+'/',marker=join(config.home,'ui-fallback.json');
  log('检查浏览器扩展与双窗口……');
@@ -20,7 +32,7 @@ export async function prepareDesktop({config,root,health,signal,log,openBrowser=
  try{state=await call('/desktop/status');}
  catch{signal?.throwIfAborted();log('当前 Bot 尚未启用浏览器接入；请结束当前任务后 tools/bot/run.command --stop，再用 start.command --ui 启动。');}
  if(state&&!state.connected){
-  try{await openBrowser();}catch{signal?.throwIfAborted();log('未能自动打开 Google Chrome，请手动打开已安装扩展的浏览器。');}
+  try{await openBrowser();}catch{signal?.throwIfAborted();log('未能自动打开已配置的浏览器，请检查浏览器路径、配置目录，或手动打开已配对的浏览器。');}
   const deadline=Date.now()+waitMs;
   while(!state.connected&&Date.now()<deadline){
    await delay(Math.min(300,waitMs),undefined,{signal});

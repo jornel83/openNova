@@ -1,6 +1,6 @@
 /** M0 wire protocol. The browser is an authenticated but untrusted input source. */
 export const VERSION=1, MAX_PACKET=128*1024;
-export const METHODS=new Set(['open','read','click','fill','scroll','windows.ensure','cancel']);
+export const METHODS=new Set(['open','read','click','fill','scroll','close','windows.ensure','chat.show','cancel']);
 export const extensionOrigin=value=>typeof value==='string'&&/^chrome-extension:\/\/[a-p]{32}$/.test(value);
 export const id=value=>typeof value==='string'&&value.length>0&&value.length<=100;
 export function pageRef(p){

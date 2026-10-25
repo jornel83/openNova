@@ -207,6 +207,8 @@ class Conversation:
                         elif event['type'] == 'status':
                             phase = event.get('phase')
                             record['tool_events'].append({'phase':phase,'step':event.get('step'),'at':time.monotonic()})
+                            if phase == 'retrying':
+                                self.log(f"模型暂时繁忙，正在自动重试（{event['retry']}/{event['maxRetries']}）……")
                             if phase in ('searching','reading','requesting','processing','verifying'):
                                 self.log({'searching':'正在联网搜索。','reading':'正在读取资料。','requesting':'正在获取数据。','processing':'正在处理数据。','verifying':'正在核对结果。'}[phase])
                                 if settled and notice_task is None: notice_task = asyncio.create_task(delayed_notice())

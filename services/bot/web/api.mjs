@@ -1,11 +1,13 @@
 import {readEvents} from './events.mjs';
+import {diagnosticText} from '../../agent/errors.mjs';
 export const labels={browser_disconnected:'浏览器扩展未连接。请打开已配对的 Chrome，再点击打开工作窗口；文字和本地文件仍可使用。',browser_not_enabled:'当前 Bot 未启用浏览器接入。结束当前任务后用 start.command --ui 重启服务。',browser_open_unknown:'开窗结果暂未确认。请查看 Chrome；再次点击只会补齐缺失窗口。',voice_unavailable:'语音进程未连接，请在终端启动语音。',stale_voice_control:'语音状态已变化，请重试当前操作。',voice_control_busy:'语音控制正在处理中，请稍候。',bot_busy:'OpenNova 正在处理另一条消息，请稍后再试。',file_conflict:'文件已被其他操作修改。请让 OpenNova 重新读取并提出修改。',
   approval_not_pending:'这项修改已经处理，请查看最新状态。',unknown_id:'没有找到这条记录。',host_stopping:'服务正在停止，请重新启动 Bot。',
   memory_match_changed:'原记忆已经变化，请重新提出修改。',invalid_request:'消息不能为空，且不能超过 8000 个字符。',
   cancelled:'回复已停止。',interrupted:'服务曾重启，这条回复未完成。',agent_timeout:'本轮回复超时，请重试。'};
 Object.assign(labels,{timeout:'本次检索超时，已保留取得的资料。',budget_exhausted:'本轮检索预算已用尽，正在整理已有资料。',empty:'未取得可用的搜索结果或正文。',blocked:'网站暂时无法读取。',rate_limited:'搜索服务暂时限流。',auth:'搜索账号权限或额度不可用。',read_failures:'连续读取失败，已停止继续读取。',duplicate_research_call:'本轮已查询过该内容。'});
+Object.assign(labels,{network_error:'无法连接 ChatGPT，请检查当前网络或代理后重试。',connection_error:'无法连接 ChatGPT，请检查当前网络或代理后重试。',stream_interrupted:'ChatGPT 连接在回复完成前中断，请稍后重试。',incomplete_agent_turn:'本轮模型回复未完整完成，请重试；已执行的操作可在记录中查看。'});
 Object.assign(labels,{title_only:'页面只有标题，没有可用正文。',encoding_error:'来源编码异常，未作为有效证据。',invalid_json:'接口响应不是有效 JSON。',http_failed:'脚本中的取数未完成，请查看 HTTP 记录。',script_failed:'研究脚本未成功完成。',input_artifact_changed:'输入文件已变化，请重新核对。'});
-export const errorText=error=>labels[error?.code||error?.message]||'操作未完成：'+(error?.message||'请检查 Bot 服务后重试。');
+export const errorText=error=>error?.diagnostic?diagnosticText(error.diagnostic):(labels[error?.code]||labels[error?.message]||'操作未完成：'+(error?.message||'请检查 Bot 服务后重试。'));
 
 export class WebApi {
   constructor(base=''){this.base=base;}

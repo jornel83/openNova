@@ -1,4 +1,5 @@
 /** Text-only first-demo adapter. Unsupported capabilities fail rather than disappear. */
+import {safeError} from './errors.mjs';
 export function projectRequest(options) {
   if (options.model !== 'gpt-6.1-sol') throw new Error('unsupported_model');
   if (options.tools?.length) throw new Error('voice_demo_tools_disabled');
@@ -23,7 +24,7 @@ export async function* responseChunks(client, options) {
     if (characters > 16000) { abort.abort(); throw new Error('response_too_large'); }
     queue.push(text); wake?.();
   }}).then(value => { result = value; }, error => {
-    failure = new Error(/^[a-z_]{1,80}$/.test(error.code ?? '') ? error.code : 'model_request_failed');
+    failure = safeError(error);
   }).finally(() => { done = true; wake?.(); });
   try {
     yield {type: 'block-start', index: 0, blockType: 'text'};

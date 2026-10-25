@@ -1,4 +1,5 @@
 /** Serial foreground admission; client lifetimes do not own the running work. */
+import {errorEvent} from '../agent/errors.mjs';
 export class Requests {
   constructor(ops,run,{context,events}={}) {
     this.context=context;this.events=events;
@@ -18,7 +19,7 @@ export class Requests {
       this.ops.finish(id,{status:'running',startedAt:Date.now()});
       const result=await this.run(r,current);
       if(!current.cancelled)this.ops.finish(id,{...result,status:'completed'});
-    }).catch(error=>this.ops.finish(id,{status:'failed',error:String(error.message||'agent_failed').slice(0,250)}))
+    }).catch(error=>{const diagnostic=errorEvent(error,'conversation');this.ops.finish(id,{status:'failed',error:diagnostic.code,diagnostic});})
       .finally(async()=>{try{await current.cancelling;}catch{}if(current.cancelError)return;this.settle(current);});
     return r;
   }
@@ -46,7 +47,8 @@ export class Requests {
     return this.ops.request(id);
   }
   settle(current){
-    if(current.cancelled)this.ops.finish(current.id,{status:current.timedOut?'failed':'cancelled',error:current.timedOut?'agent_timeout':undefined});
+    if(current.cancelled)this.ops.finish(current.id,{status:current.timedOut?'failed':'cancelled',error:current.timedOut?'agent_timeout':undefined,
+      diagnostic:current.timedOut?errorEvent(Error('agent_timeout'),'conversation'):undefined});
     if(this.active===current){this.active=undefined;this.events?.publish('request.updated',this.ops.request(current.id),current.id);}
   }
 }

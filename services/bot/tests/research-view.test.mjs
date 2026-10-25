@@ -2,6 +2,12 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {sourceCards,researchPhaseLabel} from '../web/research-view.mjs';
 import {RESEARCH_VERSION} from '../research/config.mjs';
 import {researchStartupNotice} from '../../../tools/voice/start.mjs';
+test('model connection and incomplete turn failures have distinct actionable UI messages',async()=>{
+ const {errorText}=await import('../web/api.mjs');
+ const network=errorText({message:'network_error'}),incomplete=errorText({message:'incomplete_agent_turn'});
+ assert.match(network,/ChatGPT/);assert.match(network,/网络|代理/);assert.doesNotMatch(network,/network_error/);
+ assert.match(incomplete,/未完整|未完成/);assert.doesNotMatch(incomplete,/incomplete_agent_turn/);assert.notEqual(network,incomplete);
+});
 test('source_cards_restore_from_snapshot with evidence and separate timestamps',()=>{
  const snapshot=JSON.parse(JSON.stringify({sources:[{id:'s',observationId:'o',url:'https://example.com/x',title:'北京天气',evidenceType:'search_summary',retrievedAt:'2026-10-24T03:00:00Z',publishedAtRaw:'3 hours ago'}]}));
  const [card]=sourceCards(snapshot.sources);assert.equal(card.title,'北京天气');assert.equal(card.evidenceLabel,'搜索摘要');assert.match(card.retrievedLabel,/2026/);assert.match(card.publishedLabel,/3 hours ago/);

@@ -8,7 +8,7 @@ export function sourceCards(sources=[]){
  return sources.flatMap(s=>{try{
   const url=new URL(s.url);if(!['https:','http:'].includes(url.protocol)||url.username||url.password)return [];
   return [{key:s.observationId||s.id||url.href,url:url.href,title:s.title||url.hostname,excerpt:s.excerpt?.slice(0,800),
-   evidenceLabel:s.evidenceType==='api_response'?'接口响应':s.evidenceType==='page_body'?'已读取正文':'搜索摘要',httpLabel:s.statusCode?'HTTP '+s.statusCode+(s.encoding?' · '+s.encoding:''):'',truncated:!!s.truncated,
+   evidenceLabel:({api_response:'接口响应',page_body:'已读取正文',page_response:'网页响应',search_link:'搜索链接'})[s.evidenceType]||'搜索摘要',httpLabel:s.statusCode?'HTTP '+s.statusCode+(s.encoding?' · '+s.encoding:''):'',truncated:!!s.truncated,
    retrievedLabel:s.retrievedAt?'获取：'+time(s.retrievedAt):'',
    publishedLabel:s.publishedAt?'发布：'+s.publishedAt:s.publishedAtRaw?'来源标注：'+s.publishedAtRaw:''}];
  }catch{return [];}});

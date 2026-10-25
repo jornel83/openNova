@@ -50,7 +50,8 @@ chrome.action.onClicked.addListener(async tab=>{try{await windows.bind(tab);awai
 chrome.tabs.onActivated.addListener(info=>{void windows.activated(info).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.webNavigation.onCreatedNavigationTarget.addListener(details=>{void windows.createdTarget(details).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.windows.onFocusChanged.addListener(id=>{void windows.focused(id).then(active=>active&&pages.refresh({activate:true})).catch(()=>{});});
-chrome.tabs.onRemoved.addListener(tabId=>{void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
+chrome.tabs.onRemoved.addListener(tabId=>{void windows.removed({tabId}).then(changed=>changed&&pages.refresh({activate:true})).catch(()=>{});});
+chrome.windows.onRemoved.addListener(windowId=>{void windows.removed({windowId}).then(changed=>changed&&pages.refresh({activate:true})).catch(()=>{});});
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='complete'||change.title)void windows.binding().then(b=>b.workTabId===tabId&&pages.refresh()).catch(()=>{});});
 chrome.webNavigation.onBeforeNavigate.addListener(d=>{void pages.navigation({...d,loading:true}).catch(()=>{});});
 for(const event of [chrome.webNavigation.onCommitted,chrome.webNavigation.onDOMContentLoaded,chrome.webNavigation.onCompleted])event.addListener(d=>{void pages.navigation({...d,loading:false}).catch(()=>{});});

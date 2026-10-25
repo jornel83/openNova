@@ -6,6 +6,35 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from bot_agent import BotAgent
 
 class BotAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_model_retry_is_progress_not_spoken_text_and_is_not_repeated_each_poll(self):
+        retry={'status':'waiting','retryId':'retry-one','retry':1,'maxRetries':2,'delayMs':1000}
+        polls=iter([
+            {'status':'running','tool':'web_search','modelRetry':retry},
+            {'status':'running','tool':'web_search','modelRetry':{**retry,'status':'requesting'}},
+            {'status':'completed','text':'核对完成','speechText':'核对完成','modelRetry':{**retry,'status':'recovered'}},
+        ])
+        async def api(path,body): return next(polls) if path=='/result' else {}
+        events=[e async for e in BotAgent(api=api).stream('查天气')]
+        self.assertEqual([e['phase'] for e in events if e['type']=='status'],['retrying'])
+        self.assertEqual(events[1]['retry'],1)
+        self.assertEqual(events[1]['maxRetries'],2)
+        self.assertEqual([e['speechText'] for e in events if e['type']=='reply'],['核对完成'])
+
+    async def test_http_failure_preserves_status_and_request_id_without_speaking_partial_answer(self):
+        async def api(path,body):
+            return {'status':'failed','error':'api_error','text':'partial','diagnostic':{'code':'api_error','stage':'conversation','status':403,'requestId':'req_access_123'}}
+        events=[]
+        with self.assertRaisesRegex(ValueError, 'HTTP 403.*权限.*req_access_123'):
+            async for event in BotAgent(api=api).stream('test'): events.append(event)
+        self.assertFalse(any(e['type']=='reply' for e in events))
+
+    async def test_network_failure_explains_connection_and_never_emits_reply(self):
+        async def api(path,body): return {'status':'failed','error':'network_error'}
+        events=[]
+        with self.assertRaisesRegex(ValueError, '无法连接 ChatGPT'):
+            async for event in BotAgent(api=api).stream('查天气'): events.append(event)
+        self.assertFalse(any(e['type']=='reply' for e in events))
+
     async def test_two_search_calls_produce_distinct_progress_and_sources_reach_reply(self):
         polls=iter([
             {'status':'running','tool':'web_search','research':{'phase':'searching','callId':'c1'}},

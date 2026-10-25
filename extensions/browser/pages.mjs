@@ -51,6 +51,18 @@ export function createPageAdapter({chrome,windows,publish}){
   async execute(command,base,isCancelled=()=>false){
    const check=()=>{if(isCancelled()||command.deadlineAt&&command.deadlineAt<Date.now())throw Error('command_cancelled');};
    check();
+   if(command.method==='chat.show')return {status:'completed',windows:await windows.showChat({chatUrl:base+'/'},check)};
+   if(command.method==='close')return serial(async()=>{
+    if(!['tab','window'].includes(command.args?.scope))throw Error('invalid_close_scope');
+    check();const epoch=epochOf(command.page?.tabId),{page}=await refresh();
+    if(!same(command.page,page)||command.page.url!==page.url)throw Error('context_changed');
+    const receipt=await windows.close(page,command.args.scope,()=>{
+     check();if(epoch!==epochOf(page.tabId))throw Error('context_changed');
+    });
+    navigation=null;
+    const next=await refresh({activate:true});
+    return {...receipt,page:next.page};
+   });
    if(['click','fill','scroll'].includes(command.method)){
     try{
     const receipt=await serial(async()=>{
@@ -92,14 +104,34 @@ export function createPageAdapter({chrome,windows,publish}){
    if(command.method==='read')return serial(()=>{check();return read(command.page);});
    if(command.method==='open'){
     const url=new URL(command.args.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('invalid_url');
-    const b=await windows.binding();if(isChatPage(url.href,b.chatUrl||base+'/'))throw Error('chat_page_cannot_be_work_page');if(!b.workTabId)await windows.ensureWindows({chatUrl:base+'/'});
+    const b=await windows.binding();if(isChatPage(url.href,b.chatUrl||base+'/'))throw Error('chat_page_cannot_be_work_page');
+    const existing=b.workTabId?await chrome.tabs.get(b.workTabId).catch(()=>null):null;
+    if(!existing||existing.windowId!==b.workWindowId)await windows.ensureWindows({chatUrl:base+'/'});
     const bound=await windows.binding();if(command.page){const current=(await load()).page;if(!same(command.page,current))throw Error('stale_page');}
-    navigation={bindingId:bound.bindingId,tabId:bound.workTabId,loading:true,error:false};await serial(()=>save({page:null,selection:null},true));check();await chrome.tabs.update(bound.workTabId,{url:url.href,active:true});
-    // Navigation accepted is not the same as DOM read. Completion is reported separately by context events.
+    navigation={bindingId:bound.bindingId,tabId:bound.workTabId,loading:true,error:false};await serial(()=>save({page:null,selection:null},true));check();
+    const opened=await chrome.tabs.update(bound.workTabId,{url:url.href,active:true});
+    // An active tab can still be behind another app. Foreground only explicit
+    // opens, restoring a minimized window without changing its saved geometry.
+    const workWindow=await chrome.windows.get(opened.windowId);check();
+    await chrome.windows.update(workWindow.id,{focused:true,...(workWindow.state==='minimized'?{state:'normal'}:{})});
+    // A committed document may still be a redirect landing page. Wait for DOM
+    // readiness and a short quiet period; slow subresources need not finish.
     const end=Math.min(command.deadlineAt||Date.now()+8000,Date.now()+8000);
+    let candidate=null,stableSince=0;
     while(Date.now()<end&&!isCancelled()){
      await new Promise(r=>setTimeout(r,100));const latest=await this.refresh({activate:true});
-     if(latest.page&&latest.page.tabId===bound.workTabId&&latest.page.url!=='about:blank')return {status:'completed',navigation:'dispatched',page:latest.page};
+     const page=latest.page;
+     if(!page||page.url==='about:blank'){candidate=null;continue;}
+     if(page.bindingId!==bound.bindingId||page.tabId!==bound.workTabId)return {status:'failed',error:'context_changed',navigation:'dispatched'};
+     const epoch=epochOf(page.tabId);
+     if(page.readable){
+      let ready;
+      try{ready=(await chrome.scripting.executeScript({target:{tabId:page.tabId,documentIds:[page.documentId]},func:()=>document.readyState}))[0]?.result;}catch{}
+      if(!['interactive','complete'].includes(ready)||epoch!==epochOf(page.tabId)){candidate=null;continue;}
+     }
+     const key=JSON.stringify([page.bindingId,page.tabId,page.documentId,page.revision,page.url,epoch]);
+     if(key!==candidate){candidate=key;stableSince=Date.now();}
+     if(Date.now()-stableSince>=500&&Date.now()<end&&!isCancelled())return {status:'completed',navigation:'dispatched',page};
     }
     return {status:'completed',navigation:'dispatched',pagePending:true};
    }

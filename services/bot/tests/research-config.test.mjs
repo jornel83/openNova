@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {loadResearchConfig,publicResearchConfig,researchTools} from '../research/config.mjs';
 import {researchPlugins} from '../research/plugins.mjs';
 import {ALLOWED_TOOLS} from '../policy.mjs';
-function fixture(t,web={enabled:true,provider:'deepseek'}) {
+function fixture(t,web={enabled:true,provider:'deepseek',mode:'legacy'}) {
  const dir=mkdtempSync(join(tmpdir(),'nova-research-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const configFile=join(dir,'config.json'),secretsFile=join(dir,'secrets.json');
  writeFileSync(configFile,JSON.stringify({web}));writeFileSync(secretsFile,JSON.stringify({web:{deepseek_api_key:'test-only-key'}}));
@@ -15,7 +15,7 @@ function fixture(t,web={enabled:true,provider:'deepseek'}) {
 test('enabled_bot_registers_search_without_losing_project_tools',t=>{
  const config=loadResearchConfig(fixture(t)),names=researchTools(ALLOWED_TOOLS,config);
  for(const name of ['web_search','read','write','bash','browser_open'])assert.ok(names.includes(name));
- const plugins=researchPlugins({harnessRoot:'/test/harness',enabled:config.available});
+ const plugins=researchPlugins({harnessRoot:'/test/harness',enabled:config.available,mode:config.mode});
  assert.equal(plugins.find(p=>p.id==='web').config.searchProvider,'deepseek-official');
  assert.equal(plugins.find(p=>p.id==='web-search-deepseek').config.maxUses,1);
  assert.deepEqual(researchPlugins({enabled:false}),[]);
