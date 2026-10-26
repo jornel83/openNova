@@ -1,3 +1,5 @@
+// Modified by OpenNova (2026-10-27): authenticated structured response streaming.
+// Modifications use the SIWC Noncommercial License v1.0; see ../../../LICENSE.
 export interface SessionIdentity {
   name?: string;
   email?: string;
@@ -80,6 +82,15 @@ export interface StreamResponseOptions {
   onDelta?: (delta: string) => void;
 }
 
+export interface StreamItemsOptions {
+  model: string;
+  input: import("openai/resources/responses/responses").ResponseInputItem[];
+  tools?: import("openai/resources/responses/responses").Tool[];
+  instructions?: string;
+  signal?: AbortSignal;
+  onEvent?: (event: import("openai/resources/responses/responses").ResponseStreamEvent) => void;
+}
+
 export interface SignInOptions {
   signal?: AbortSignal;
   /** Register another account instead of reauthorizing the selected profile. */
@@ -101,6 +112,7 @@ export interface ChatGPTClient {
   /** Sign out of the selected profile. Its registration and identity remain saved. */
   disconnect(): Promise<void>;
   streamResponse(options: StreamResponseOptions): Promise<{ text: string }>;
+  streamItems(options: StreamItemsOptions): Promise<{ output: import("openai/resources/responses/responses").ResponseOutputItem[] }>;
 }
 
 export interface StoredCredentials {

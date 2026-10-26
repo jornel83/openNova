@@ -1,0 +1,111 @@
+// Modified by OpenNova (2026-10-27): authenticated structured response streaming.
+// Modifications use the SIWC Noncommercial License v1.0; see ../../../LICENSE.
+import OpenAI from "openai";
+import { apiError, ChatGPTError, isObject } from "./errors.js";
+import type { StreamItemsOptions } from "./types.js";
+
+export async function streamItems(
+  accessToken: string,
+  options: StreamItemsOptions,
+  signal: AbortSignal,
+): Promise<{ output: OpenAI.Responses.ResponseOutputItem[] }> {
+  signal = options.signal ? AbortSignal.any([signal, options.signal]) : signal;
+  const input = options.input;
+  if (!Array.isArray(input) || input.length === 0) throw new ChatGPTError("invalid_request", "Input items are required.");
+
+  // The DevKit supplies the selected ChatGPT account's refreshed OAuth token.
+  // Leave org/project unset; they are not placeholders for a Platform API account.
+  const client = new OpenAI({
+    apiKey: accessToken,
+    baseURL: "https://api.openai.com/v1",
+    organization: null,
+    project: null,
+    // Keep the SDK's default without inheriting OPENAI_LOG=debug, which can log clipboard text.
+    logLevel: "warn",
+    // Report ChatGPT sharing-limit errors immediately instead of retrying HTTP 429s.
+    maxRetries: 0,
+    // A redirect can forward the clipboard body to another origin.
+    fetchOptions: { redirect: "error" },
+    // Also prevent OPENAI_CUSTOM_HEADERS from replacing this account's credentials or tenant.
+    defaultHeaders: {
+      authorization: `Bearer ${accessToken}`,
+      "openai-organization": null,
+      "openai-project": null,
+    },
+  });
+  // The SDK's timeout ends at headers; keep the existing deadline on the body too.
+  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
+  let response: Response | undefined;
+  try {
+    const result = await client.responses.create({
+      model: options.model,
+      input,
+      ...(options.tools !== undefined ? { tools: options.tools } : {}),
+      include: ["reasoning.encrypted_content"],
+      parallel_tool_calls: false,
+      ...(options.instructions !== undefined ? { instructions: options.instructions } : {}),
+      store: false,
+      stream: true,
+    }, { signal: requestSignal, headers: { accept: "text/event-stream" } }).withResponse();
+    response = result.response;
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    // The direct route can return valid SSE without Content-Type. In that case,
+    // validate the events below and still require response.completed for success.
+    if (!response.body || (contentType && contentType !== "text/event-stream")) {
+      await response.body?.cancel();
+      throw new ChatGPTError("invalid_stream", "ChatGPT did not return the expected response stream.", true, response.status);
+    }
+
+    let completed = false;
+    let output: OpenAI.Responses.ResponseOutputItem[] = [];
+    let eventBytes = 0;
+    const added = new Set<number>();
+    const settled = new Map<number, OpenAI.Responses.ResponseOutputItem>();
+    for await (const event of result.data) {
+      requestSignal.throwIfAborted();
+      if (!isObject(event)) continue;
+      eventBytes += JSON.stringify(event).length;
+      if (eventBytes > 2_000_000) throw new ChatGPTError("response_too_large", "The response was too large.");
+      if (event.type === "response.output_item.added") added.add(event.output_index);
+      if (event.type === "response.output_item.done") settled.set(event.output_index, event.item);
+      if (event.type === "response.failed" || event.type === "error") {
+        const detail = event.type === "response.failed" ? event.response : event;
+        throw apiError(detail, response.status, result.request_id);
+      } else if (event.type === "response.incomplete") {
+        throw new ChatGPTError("response_incomplete", "ChatGPT stopped before completing the response. You can keep the partial text or try again.", true);
+      } else if (event.type === "response.completed") {
+        if (!Array.isArray(event.response.output)) throw new ChatGPTError("invalid_stream", "Missing completed output.");
+        output = event.response.output;
+        // SIWC can finish with an empty output array after sending complete items.
+        if (output.length === 0) {
+          const indices = [...settled.keys()].sort((a, b) => a - b);
+          if (!indices.length || indices.some((n, i) => n !== i) || [...added].some(n => !settled.has(n))) {
+            throw new ChatGPTError("invalid_stream", "Missing completed output items.");
+          }
+          output = indices.map(n => settled.get(n)!);
+        }
+        options.onEvent?.(event);
+        completed = true;
+        break;
+      }
+      options.onEvent?.(event);
+    }
+    // The SDK may finish iteration on an aborted connection without throwing.
+    requestSignal.throwIfAborted();
+    if (!completed) throw new ChatGPTError("stream_interrupted", "The response ended before completion. You can keep the partial text or try again.", true);
+    return { output };
+  } catch (error) {
+    if (signal.aborted) throw new ChatGPTError("cancelled", "The response was cancelled.");
+    if (error instanceof ChatGPTError) throw error;
+    // SDK errors can contain submitted text. Only expose our sanitized diagnostics,
+    // including errors the SDK raises while decoding an SSE 'error' event.
+    if (error instanceof OpenAI.APIError && !(error instanceof OpenAI.APIConnectionError) && !(error instanceof OpenAI.APIUserAbortError)) {
+      // The SDK also unwraps the string in an OAuth { error: "code" } response.
+      const detail = typeof error.error === "string" ? { error: error.error } : error.error;
+      throw apiError(detail, error.status ?? response?.status, error.requestID ?? response?.headers.get("x-request-id"));
+    }
+    if (!response) throw new ChatGPTError("network_error", "Could not reach ChatGPT. Check your connection and try again.", true);
+    if (error instanceof SyntaxError) throw new ChatGPTError("invalid_stream", "The response stream contained an invalid event. Try again.", true);
+    throw new ChatGPTError("stream_interrupted", "The connection was interrupted. You can keep the partial text or try again.", true);
+  }
+}

@@ -1,3 +1,5 @@
+// Modified by OpenNova (2026-10-27): authenticated structured response streaming.
+// Modifications use the SIWC Noncommercial License v1.0; see ../../../LICENSE.
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -5,6 +7,7 @@ import { asError, ChatGPTError, requiresReauthentication } from "./errors.js";
 import { listModels } from "./models.js";
 import { authorize, identityVerificationUnavailable, refreshConnection, revokeConnection } from "./oauth.js";
 import { streamResponse } from "./responses.js";
+import { streamItems } from "./items.js";
 import { ConnectionStore } from "./storage.js";
 import type { ChatGPTClient, ChatGPTConfig, LoginProfile, PendingRegistration, SessionState, StoredConnection, StoredProfile, StoredState } from "./types.js";
 
@@ -327,6 +330,11 @@ export function createChatGPT(config: ChatGPTConfig): ChatGPTClient {
     },
 
     async listModels(options = {}) { return authenticated(listModels, options.signal); },
+
+    async streamItems(options) {
+      if (!options.model.trim()) throw new ChatGPTError("invalid_request", "Choose a model before starting a request.");
+      return authenticated((accessToken, signal) => streamItems(accessToken, options, signal), options.signal);
+    },
 
     async streamResponse(options) {
       if (!options.model.trim()) throw new ChatGPTError("invalid_request", "Choose a model before starting a request.");

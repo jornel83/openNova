@@ -1,32 +1,14 @@
---- a/packages/local/src/types.ts
-+++ b/packages/local/src/types.ts
-@@ -80,6 +80,15 @@
-   onDelta?: (delta: string) => void;
- }
- 
-+export interface StreamItemsOptions {
-+  model: string;
-+  input: import("openai/resources/responses/responses").ResponseInputItem[];
-+  tools?: import("openai/resources/responses/responses").Tool[];
-+  instructions?: string;
-+  signal?: AbortSignal;
-+  onEvent?: (event: import("openai/resources/responses/responses").ResponseStreamEvent) => void;
-+}
-+
- export interface SignInOptions {
-   signal?: AbortSignal;
-   /** Register another account instead of reauthorizing the selected profile. */
-@@ -101,6 +110,7 @@
-   /** Sign out of the selected profile. Its registration and identity remain saved. */
-   disconnect(): Promise<void>;
-   streamResponse(options: StreamResponseOptions): Promise<{ text: string }>;
-+  streamItems(options: StreamItemsOptions): Promise<{ output: import("openai/resources/responses/responses").ResponseOutputItem[] }>;
- }
- 
- export interface StoredCredentials {
+diff --git a/packages/local/src/index.ts b/packages/local/src/index.ts
+index 24301e6f4f..abb8c89a3f 100644
 --- a/packages/local/src/index.ts
 +++ b/packages/local/src/index.ts
-@@ -5,6 +5,7 @@
+@@ -1,3 +1,5 @@
++// Modified by OpenNova (2026-10-27): authenticated structured response streaming.
++// Modifications use the SIWC Noncommercial License v1.0; see ../../../LICENSE.
+ import { randomUUID } from "node:crypto";
+ import { homedir } from "node:os";
+ import { isAbsolute, join } from "node:path";
+@@ -5,6 +7,7 @@ import { asError, ChatGPTError, requiresReauthentication } from "./errors.js";
  import { listModels } from "./models.js";
  import { authorize, identityVerificationUnavailable, refreshConnection, revokeConnection } from "./oauth.js";
  import { streamResponse } from "./responses.js";
@@ -34,7 +16,7 @@
  import { ConnectionStore } from "./storage.js";
  import type { ChatGPTClient, ChatGPTConfig, LoginProfile, PendingRegistration, SessionState, StoredConnection, StoredProfile, StoredState } from "./types.js";
  
-@@ -328,6 +329,11 @@
+@@ -328,6 +331,11 @@ export function createChatGPT(config: ChatGPTConfig): ChatGPTClient {
  
      async listModels(options = {}) { return authenticated(listModels, options.signal); },
  
@@ -46,9 +28,14 @@
      async streamResponse(options) {
        if (!options.model.trim()) throw new ChatGPTError("invalid_request", "Choose a model before starting a request.");
        return authenticated((accessToken, signal) => streamResponse(accessToken, options, signal), options.signal);
+diff --git a/packages/local/src/items.ts b/packages/local/src/items.ts
+new file mode 100644
+index 0000000000..4ee6acafeb
 --- /dev/null
 +++ b/packages/local/src/items.ts
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,111 @@
++// Modified by OpenNova (2026-10-27): authenticated structured response streaming.
++// Modifications use the SIWC Noncommercial License v1.0; see ../../../LICENSE.
 +import OpenAI from "openai";
 +import { apiError, ChatGPTError, isObject } from "./errors.js";
 +import type { StreamItemsOptions } from "./types.js";
@@ -158,3 +145,37 @@
 +    throw new ChatGPTError("stream_interrupted", "The connection was interrupted. You can keep the partial text or try again.", true);
 +  }
 +}
+diff --git a/packages/local/src/types.ts b/packages/local/src/types.ts
+index e80f3d2fd6..39f7a83fbf 100644
+--- a/packages/local/src/types.ts
++++ b/packages/local/src/types.ts
+@@ -1,3 +1,5 @@
++// Modified by OpenNova (2026-10-27): authenticated structured response streaming.
++// Modifications use the SIWC Noncommercial License v1.0; see ../../../LICENSE.
+ export interface SessionIdentity {
+   name?: string;
+   email?: string;
+@@ -80,6 +82,15 @@ export interface StreamResponseOptions {
+   onDelta?: (delta: string) => void;
+ }
+ 
++export interface StreamItemsOptions {
++  model: string;
++  input: import("openai/resources/responses/responses").ResponseInputItem[];
++  tools?: import("openai/resources/responses/responses").Tool[];
++  instructions?: string;
++  signal?: AbortSignal;
++  onEvent?: (event: import("openai/resources/responses/responses").ResponseStreamEvent) => void;
++}
++
+ export interface SignInOptions {
+   signal?: AbortSignal;
+   /** Register another account instead of reauthorizing the selected profile. */
+@@ -101,6 +112,7 @@ export interface ChatGPTClient {
+   /** Sign out of the selected profile. Its registration and identity remain saved. */
+   disconnect(): Promise<void>;
+   streamResponse(options: StreamResponseOptions): Promise<{ text: string }>;
++  streamItems(options: StreamItemsOptions): Promise<{ output: import("openai/resources/responses/responses").ResponseOutputItem[] }>;
+ }
+ 
+ export interface StoredCredentials {
