@@ -1,5 +1,7 @@
 # OpenNova 语音对话 Demo
 
+> Harness 与 Bot 已作为源码纳入 OpenNova。首次运行先按[根目录说明](../../README.md)执行 `pnpm run setup -- --chatgpt` 与 `pnpm run build`。旧的外部 Harness 路径配置不再生效；以下历史验证记录保持原有日期。
+
 ## 一键启动共享 Bot 语音
 
 2026-10-14 新增根目录 `start.command`，推荐用于当前 DeepSeek-Bot 版本。它自动使用 `--bot`，与网页共享上下文、工程文件和 Shell 能力；下文原有 `run-continuous.command` 仍是手动入口。

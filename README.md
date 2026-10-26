@@ -1,61 +1,70 @@
 # OpenNova
 
-OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI 超级助手。本仓库保存产品定义、技术预研与开发实现。
+OpenNova 是面向工作协同与持续交流的 AI 助手。当前包含网页聊天、持久 Bot、文件与命令工具、记忆、任务，以及 macOS 持续语音入口。
 
-当前开发基线为 **持续语音 Demo（2026-10-12）**：本地 VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Qwen3-TTS Vivian，采用 1.5 倍保调语速。持续模式已实现边听边说、增量分句合成、候选插话暂停与确认打断，以及输入 / 输出设备选择；原轮流模式保留。用户已确认原有完整对话可运行，持续模式的外放回声和插话听感仍需现场验证。
+DeepSeek Harness 和 DeepSeek-Bot 的完整工程源码已通过 **Git subtree** 纳入本仓库。普通 clone 或源码压缩包包含这两部分，无需相邻目录、私有 GitHub SSH 仓库、submodule 或源码软链接。安装 npm/Python 依赖仍需要网络；模型授权、语音服务与模型权重按需配置。
 
-2026-10-14 新增 **DeepSeek-Bot 小范围接入实验**：单 Bot 持久会话、文件和记忆直接执行、受控任务以及可选语音 `--bot`。用户已通过三轮真人语音测试，验证上下文改口和 Vivian 播放。现已接入复用原生聊天组件的网页入口，支持文本对话、操作记录及语音共享上下文；已接入 OpenNova 真实工程的目录浏览、代码搜索、文件读写和 Shell/测试执行，均无需二次确认；操作记录展示文件差异、命令输出与退出码。启动及验证边界见[接入实验说明](docs/research/opennova-bot-spike.md)；实际部署、模式差异与后续缺口见 [Demo 技术架构与功能进展](docs/research/opennova-demo-architecture-status.md)。
+## 快速开始
 
-启动 Bot 后打开 [OpenNova 网页聊天](http://127.0.0.1:18560/)，纯文字无需启动 TTS：
+目前支持和验证的开发环境是 **macOS、Node 24、pnpm 11.28.5**。完整离线回归另需 Python 3.11、uv、FFmpeg；原生构建和语音需要 Xcode Command Line Tools。持续语音要求 macOS 15+，Studio 本地 TTS 要求 Apple Silicon。其他系统尚未完成产品验证。
 
-```sh
-OPENNOVA_PROXY=http://127.0.0.1:7897 ./tools/bot/run.command
-```
-
-完整语音现在可以一键启动，无需分别打开 Bot、SSH 和语音终端：
+在仓库根目录执行：
 
 ```sh
-# 系统默认输入 / 输出
-./start.command
-
-# 显式选择蓝牙设备；代理地址按实际环境填写
-./start.command --proxy http://127.0.0.1:7897 --device 'SRS-XB100' --output-device 'SRS-XB100'
-
-# 办公室：使用豆包云端 TTS，跳过 Studio / SSH
-./start.command --tts-provider doubao --device 'MacBook Air麦克风' --output-device '外置耳机'
-
-# 启动缺失服务并检查依赖，不打开麦克风
-./start.command --check --device 'MacBook Air麦克风'
+corepack enable
+corepack prepare pnpm@11.28.5 --activate
+pnpm run setup
+pnpm run build
+pnpm run doctor
+pnpm test
+pnpm run test:bot
 ```
 
-脚本检查并复用 Bot，经 `agent-control` 按需启动 Studio 已安装的 TTS，建立 / 复用 Air `127.0.0.1:18000` 到 Studio `127.0.0.1:8000` 的 SSH 转发，再进入共享 Bot 的持续语音。`--list-devices` 只列设备；`--help` 查看参数。退出后 Bot 和远端 TTS 保留，仅关闭本次新建的转发。首次依赖安装、模型下载、授权和 SSH 免密连接仍按下文完成；[详细启动说明](tools/voice/README.md#一键启动共享-bot-语音)。
+请使用 **`pnpm run setup`**：`pnpm setup` 是 pnpm 自身的命令。`setup` 安装三个项目各自锁定的依赖；`build` 构建 Harness、Bot 和 OpenNova 网页。`doctor` 只检查本地源码与构建，不登录、不访问模型、不打开麦克风。上述测试使用本地模拟模型和临时数据目录。
 
-2026-10-15 新增可选豆包语音合成 2.0：`--tts-provider doubao`（别名 `cloud`），默认音色为豆包 VV，使用 1 倍原速。该模式直连豆包，不访问 Studio；GPT 的代理配置照常使用。已有 `doubao.api_key` 可复用，但需要在同一应用单独开通语音合成模型 2.0。启动 / `--check` 会合成一次“你好。”验证权限，丢弃音频，产生少量计费用量。切回家中 Vivian 使用 `--tts-provider studio`。配置与验证见[云端 TTS 说明](services/tts/README.md#豆包云端-tts办公室模式)。
+当前产品模型适配使用 OpenNova 独立的 Sign in with ChatGPT。在 macOS 上准备该可选适配，再由本人授权：
+
+```sh
+pnpm run setup -- --chatgpt
+pnpm run build
+pnpm run test:chatgpt
+node services/agent/authorize.mjs
+pnpm start
+```
+
+`--chatgpt` 单独下载固定版本的公开 SIWC DevKit、构建工具调用扩展并编译 Keychain helper，不会触发登录。该依赖是模型适配器，Harness/Bot 本体已在仓库中。已有授权会继续复用。实际模型可用性取决于账号权限。
+
+启动后打开 [本地网页聊天](http://127.0.0.1:18560/)。需要代理时通过 `OPENNOVA_PROXY` 设置自己的代理地址。网页和语音共用一个 Bot；默认允许助手在当前 OpenNova 工程工作，文件、Shell 等操作具有当前用户的权限。
 
 ## 工程结构
 
-2026-10-13 新增可选联网模式 `--web`：Harness 原生 `web_search` / `web_fetch` → GPT 工具回传 → 带来源的完整答案 → Vivian。搜索后端可选 Exa 或 DeepSeek；DeepSeek 实际搜索、GPT 来源答复与同会话追问已通过文字验证。网页读取与语音文件链路已有验证记录，搜索后的现场听感仍待验收。不传 `--web` 继续使用原增量语音模式。安装、命令和验收边界见[联网版验收记录](docs/research/opennova-web-search-verification.md)。
-
 | 目录 | 职责 |
 | --- | --- |
-| `tools/voice/` | 完整对话入口、收音分轮、Agent 进程管理与播放 |
-| `tools/asr/` | Silero VAD、豆包 WebSocket 协议、独立 ASR 测试 |
-| `services/agent/` | Harness 桥接、官方 ChatGPT 授权、模型适配与 Keychain helper 源码 |
-| `services/bot/`、`tools/bot/` | 持续 Bot 宿主、文件与记忆执行、持久请求与计时任务、网页和终端文字客户端 |
-| `services/tts/` | Studio MLX / Vivian、豆包云端 TTS 适配、模型下载与变速处理 |
-| `tools/setup/` | 固定版本的 Agent 依赖安装与环境检查 |
-| `config/` | 配置模板与上游版本清单；真实配置使用 `.local.json` |
-| `docs/product/`、`docs/research/` | PRD、产品架构、技术选型和部署说明 |
-| `videos/` | 产品演示视频工程 |
-| `output/` | 本机生成的音频、测量报告及对话记录，Git 忽略 |
+| `engine/harness/` | 完整 Harness：Agent 运行时、SDK、工具、存储、插件与原生界面 |
+| `engine/bot/` | 完整 DeepSeek-Bot 上游；实际插件位于 `ds-bot/` |
+| `services/runtime/` | 仓库内源码定位、版本验证与 Harness 包解析 |
+| `services/agent/` | OpenNova 模型适配、授权、流式会话与联网策略 |
+| `services/bot/` | OpenNova Bot 宿主、请求与记忆策略、网页及工具操作记录 |
+| `services/tts/` | Studio Vivian / MLX、豆包云端 TTS |
+| `tools/voice/`、`tools/asr/` | 音频、VAD、ASR、持续语音与播放 |
+| `scripts/` | 根目录安装、构建、诊断和离线回归 |
+| `config/` | 配置模板；真实配置保存在忽略的 `*.local.json` |
+| `upstream.lock.json` | Harness/Bot 来源、导入提交和保留补丁 |
+| `output/` | 本机产物、扩展构建和日志，不进入 Git |
 
-**MacBook Air** 负责拾音、VAD、豆包 ASR 接入、Agent 和播放；**Mac Studio** 负责 Vivian 推理，通过 SSH 转发连接。ASR 与 LLM 使用已配置的云端服务。
+```mermaid
+flowchart TD
+  UI[网页 / 终端 / 持续语音] --> Product[OpenNova services/bot 与 services/agent]
+  Product --> Bot[engine/bot/ds-bot]
+  Bot --> Harness[engine/harness]
+  Product --> Harness
+  Harness --> Model[OpenNova 模型适配]
+  Harness --> State[仓库外的会话 / 记忆 / SQLite]
+```
 
-## 本地配置
+## 语音与本地配置
 
-真实豆包密钥保存于 `config/secrets.local.json`，读取顺序为 `DOUBAO_ASR_API_KEY` 环境变量 → 本地文件；可用 `OPENNOVA_SECRETS_FILE` 指定其他文件。README 不存放也不提供密钥。模板中的密钥值为空。
-
-首次配置时复制模板，已有文件不要覆盖：
+首次配置可复制模板，已有文件请保留：
 
 ```sh
 cp -n config/secrets.example.json config/secrets.local.json
@@ -63,86 +72,25 @@ chmod 600 config/secrets.local.json
 cp -n config/voice.example.json config/voice.local.json
 ```
 
-在本地文件填写 `doubao.api_key_name`、`doubao.api_key`。`voice.local.json` 不含凭据，用于配置机器路径：
-
-| 配置 | 默认值 / 用途 | 环境变量覆盖 |
-| --- | --- | --- |
-| `agent.harness_root` | 相邻 `../deepseek-harness` | `OPENNOVA_HARNESS_ROOT` |
-| `agent.siwc_root` | `~/.local/share/opennova/siwc-devkit` | `OPENNOVA_SIWC_ROOT` |
-| `agent.keychain_helper` | `~/.local/share/opennova/bin/siwc-keychain` | `OPENNOVA_KEYCHAIN_HELPER` |
-| `agent.siwc_storage` | `~/.config/opennova-siwc-probe`；保留已有独立授权 | `OPENNOVA_SIWC_STORAGE` |
-| `tts.data_dir` | `~/AgentWorkstation`；**推理服务器上的绝对路径** | `OPENNOVA_TTS_DATA_DIR` |
-| `tts.url` | `http://127.0.0.1:18000`；Air 的转发地址 | `OPENNOVA_TTS_URL` |
-| `tts.provider` | `studio`；选 `doubao` 使用云端 | `OPENNOVA_TTS_PROVIDER` |
-| `tts.doubao_voice` | `zh_female_vv_uranus_bigtts`；豆包 VV | `OPENNOVA_DOUBAO_TTS_VOICE` |
-
-配置留空使用默认值；路径请用绝对路径。`OPENNOVA_CONFIG` 可指定其他非敏感配置文件。在 Air 上，`tts.data_dir` 必须填写 Studio 模型目录的根路径。本机已保存当前 Studio 路径，原启动命令可继续使用。Studio 可使用其自身默认主目录。
-
-`.gitignore` 排除两份本地配置、`.env`、虚拟环境、日志、缓存与 `output/`。ChatGPT 凭据使用本机 Keychain 加密，保存在仓库外；换机器需独立授权。
-
-## 搭建与启动
-
-以下命令在仓库根目录执行。Air 需要 macOS 15+、Xcode Command Line Tools、Git、Python 3.11+、**Node 24**（含 npm/npx）、uv 和 FFmpeg。本机已验证 Node 24；虽上游声明兼容部分 Node 22 版本，本机曾遇到 Node 22 初始化退出，因此启动脚本优先使用 Homebrew Node 24。Studio 需要 Apple Silicon、uv 和 Python 3.12（由 uv 安装）。
-
-1. **准备 Air 的 Agent 环境**：
-
-   ```sh
-   python3.11 tools/setup/bootstrap.py --install
-   python3.11 tools/setup/bootstrap.py --check
-   ```
-
-   安装入口使用[固定版本清单](config/runtime-versions.json)下载并构建 Harness 与官方 SIWC DevKit，在本机编译 `keychain.swift`。Harness 固定为用户仓库 `git@github.com:jornel83/deepseek-harness.git` 的 `v0.2.1-alpha.2`，需要本机 GitHub SSH 访问权限。已有正确版本及构建会复用；版本不匹配或存在未提交文件时停止，保留原目录，可在配置中换一个路径再安装。已有检出升级后须重新安装依赖和构建。不会重新登录或覆盖已有 helper。首次完整构建会联网下载依赖，需要一定时间和磁盘空间。
-
-2. **准备 Studio 的 TTS**：将仓库放到 Studio，从 `services/tts/` 运行：
-
-   ```sh
-   uv sync --locked --python 3.12.14
-   uv run --locked python download_model.py
-   sh serve.sh
-   ```
-
-   服务监听 `127.0.0.1:8000`。权重按固定快照下载到 `tts.data_dir`，不进入 Git。详见 [TTS 说明](services/tts/README.md)。已有服务无需重复启动。
-
-3. **连接 TTS 与授权**：在 Air 的独立终端保持 SSH 转发；`agent-control` 是当前 Studio 的 SSH 别名，新环境请改为自己的主机。
-
-   ```sh
-   ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18000:127.0.0.1:8000 agent-control
-   node services/agent/authorize.mjs
-   ```
-
-   按终端提示完成 OpenNova 自身的 Sign in with ChatGPT 授权。已授权时会复用。当前模型固定为 `gpt-6.1-sol`，以账号实际模型目录和额度为准。
-
-4. **检查并开始对话**：
-
-   ```sh
-   tools/voice/run-continuous.command --list-devices
-   tools/voice/run-continuous.command --check --device 'SRS-XB100' --output-device 'SRS-XB100'
-   tools/voice/run-continuous.command --device 'SRS-XB100' --output-device 'SRS-XB100'
-   ```
-
-   内置设备可改为 `--device 'MacBook Air麦克风' --output-device 'MacBook Air扬声器'`，省略参数则使用系统默认设备。参数只影响本进程，不修改系统默认路由。`--check` 不打开麦克风，不调用 ASR 识别或生成模型回复；会检查音频设备、授权、Harness、VAD 依赖和 TTS 可达性。首次使用需要系统麦克风权限。输入 `/mute` 静音、`/stop` 停止回复、`/retry` 重建音频、`/quit` 或 `Ctrl+C` 退出。代理设置和原轮流模式见[完整运行说明](tools/voice/README.md)。
-
-## 验证与当前边界
-
-离线回归（需要 FFmpeg，不使用麦克风或云端推理）：
+按 [语音说明](tools/voice/README.md) 配置豆包 ASR、Studio TTS 或豆包云端 TTS。完成依赖、授权和服务配置后：
 
 ```sh
-python3.11 -m unittest discover -s tools/asr/tests -v
-python3.11 -m unittest discover -s tools/voice/tests -v
-python3.11 -m unittest discover -s services/tts/tests -v
-python3.11 -m unittest discover -s tools/setup/tests -v
-node --test services/agent/tests/*.test.mjs
+pnpm run start:voice -- --help
+./start.command
+# 云端 TTS 示例
+./start.command --tts-provider doubao
 ```
 
-联网扩展测试需先执行 `python3.11 tools/setup/bootstrap.py --install --web`，使用 Node 24，并确保 `agent.harness_root` 指向固定版本的已构建 Harness。
+语音 `--check` 与 `pnpm run doctor` 不同：前者会检查实际服务和授权；豆包 TTS 模式会合成一段探针音频并产生少量计费用量。真人麦克风、声学打断和云端效果需要在目标设备另行验收。
 
-完整链路可向持续模式入口传入 `--audio <一次自然发言.wav> --no-play`，可重复 `--audio` 验证多轮上下文；文件最长 60 秒，单次连续发言应小于 45 秒，尾部保留至少 2 秒静音。显式传 `--output-dir output/voice/<新目录>` 时，持续模式只保存文字与时序 JSON，原轮流模式另保存回复 WAV。Harness 文字会话保存在 `~/.local/share/opennova/harness-home/sessions/`；重新启动 Demo 会新建模型会话。
+已有 Bot 数据仍在 `~/.local/share/opennova/bot-spike/`，独立 Harness 语音会话仍在 `~/.local/share/opennova/harness-home/`。迁移不搬动会话、记忆、权限或 Keychain。`agent.harness_root` 和用户传入的 `OPENNOVA_HARNESS_ROOT` 不再选择外部源码；SIWC、Keychain、TTS 的机器配置继续有效。
 
-目前支持当前进程内的多轮文字上下文与 Vivian 固定音色。已接入系统 Voice Processing 和打断流程，声学效果仍待验证；Studio GPU 停算未获得确认。工作工具执行、长期记忆、视觉输入、硬件集成与服务自动恢复尚未完成。Base 真人声音克隆作为独立实验保留，当前对话默认使用 CustomVoice / Vivian。此版本可作为后续 MVP 开发起点，尚未覆盖完整 PRD。
+## 开发与许可
 
-已知限制：蓝牙音频进程刚启动即被终止后，立即重建可能报告路由变化；等待几秒再 `/retry` 的复测已通过。具体结果和其余待测项见[版本收尾记录](tools/voice/README.md#版本收尾验证2026-10-12)。
-
+- [开发、构建、上游同步与回归](docs/development.md)
+- [贡献指南](CONTRIBUTING.md)
+- [Agent 适配](services/agent/README.md)、[TTS 配置](services/tts/README.md)
+- [Bot 能力与历史验证](docs/research/opennova-bot-spike.md)
 - [MVP PRD](docs/product/opennova-mvp-prd.md)
-- [开发部署方案](docs/research/opennova-mvp-development-deployment.md)
-- [语音链路设计](docs/research/opennova-voice-pipeline-design.md)
-- [完整对话使用说明](tools/voice/README.md)
+
+OpenNova 自有代码采用 [Apache-2.0](LICENSE)。引入组件保留各自许可：Harness 为 MIT，DeepSeek-Bot 为 Apache-2.0；详情见 [第三方声明](THIRD_PARTY_NOTICES.md)。本仓库是 OpenNova 的独立整合项目，不代表上游官方发行版。

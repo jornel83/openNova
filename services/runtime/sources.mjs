@@ -31,7 +31,7 @@ export function checkEngineSources(root=ROOT) {
 export function requireBuiltHarness(root=ROOT) {
   const sources=checkEngineSources(root);
   for(const entry of ['apps/cli/lib/bin.js','packages/sdk/client/lib/index.js','packages/llm/llm/lib/index.js']) {
-    if(!existsSync(join(sources.harnessRoot,entry)))throw Error('harness_build_missing: run pnpm setup and pnpm build in OpenNova');
+    if(!existsSync(join(sources.harnessRoot,entry)))throw Error('harness_build_missing: run pnpm run setup and pnpm run build in OpenNova');
   }
   return sources;
 }

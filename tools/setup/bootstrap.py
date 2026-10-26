@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare pinned macOS Agent dependencies without replacing existing checkouts."""
+"""Prepare the optional pinned ChatGPT adapter; Harness is included in OpenNova."""
 import argparse
 import json
 import os
@@ -48,27 +48,18 @@ def main():
             if not shutil.which(executable):
                 raise RuntimeError(f'Missing {executable}; see README installation prerequisites')
         version = run(['node', '--version'], capture=True).strip().lstrip('v')
-        major, minor, *_ = map(int, version.split('.'))
-        if not (major == 22 and minor >= 19 or major >= 24):
-            raise RuntimeError('Node 22.19+ (22.x) or 24+ required by the pinned Harness')
+        major = int(version.split('.')[0])
+        if major != 24:
+            raise RuntimeError('OpenNova requires Node 24')
         source = "import {loadSettings} from './services/agent/settings.mjs'; console.log(JSON.stringify(loadSettings()));"
         settings = json.loads(run(['node', '--input-type=module', '-e', source], cwd=ROOT, capture=True))
         versions = json.loads((ROOT / 'config/runtime-versions.json').read_text())
-        harness, siwc = Path(settings['harnessRoot']), Path(settings['siwcRoot'])
-        # Validate both before installing/building anything in existing checkouts.
-        for path, spec in ((harness, versions['harness']), (siwc, versions['siwc'])):
-            if path.exists():
-                ensure_repo(path, spec, install=False)
-        for name, path in (('harness', harness), ('siwc', siwc)):
-            ensure_repo(path, versions[name], install=args.install)
-        harness_files = ['packages/sdk/client/lib/index.js', 'packages/llm/llm/lib/index.js',
-                         'apps/cli/lib/bin.js']
-        if not all((harness / file).is_file() for file in harness_files):
-            if not args.install:
-                raise RuntimeError('Harness build missing; run --install')
-            pnpm = ['npx', '--yes', f"pnpm@{versions['harness']['pnpm']}"]
-            run([*pnpm, 'install', '--frozen-lockfile'], cwd=harness)
-            run([*pnpm, 'run', 'build'], cwd=harness)
+        siwc = Path(settings['siwcRoot'])
+        check = 'checkEngineSources' if args.install else 'requireBuiltHarness'
+        run(['node', '--input-type=module', '-e',
+             f"import {{{check}}} from './services/runtime/sources.mjs'; {check}();"], cwd=ROOT)
+        # Only the optional public SIWC dependency is an external source checkout.
+        ensure_repo(siwc, versions['siwc'], install=args.install)
         if not (siwc / 'packages/local/dist/index.js').is_file():
             if not args.install:
                 raise RuntimeError('SIWC build missing; run --install')
@@ -85,15 +76,15 @@ def main():
         if not os.access(helper, os.X_OK):
             raise RuntimeError('Keychain helper is not executable; existing file preserved')
         # Import artifacts, without authorizing or opening private credential storage.
-        for module in (harness / harness_files[0], siwc / 'packages/local/dist/index.js'):
+        for module in (siwc / 'packages/local/dist/index.js',):
             run(['node', '--input-type=module', '-e', f'await import({json.dumps(module.as_uri())});'])
         if args.web:
             from build_siwc_overlay import build_overlay
             overlay = build_overlay(siwc, check=not args.install)
             module = overlay / 'packages/local/dist/index.js'
             run(['node', '--input-type=module', '-e', f'await import({json.dumps(module.as_uri())});'])
-        print('Agent dependencies ready: pinned Harness + SIWC + existing Keychain helper.')
-        print('Next: configure local secrets/TTS; authorize; run conversation.py --check.')
+        print('ChatGPT adapter ready: pinned SIWC + existing Keychain helper; bundled Harness source verified.')
+        print('Next: pnpm run build; configure local secrets/TTS; authorize; run conversation.py --check.')
         return 0
     except (RuntimeError, OSError, subprocess.CalledProcessError, ValueError) as error:
         print(f'Environment setup failed: {error}', file=sys.stderr)

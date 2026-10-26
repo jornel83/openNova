@@ -1,6 +1,6 @@
 # OpenNova Engine Subtree Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deliver OpenNova with source-contained Harness/Bot and reproducible root commands.
 
@@ -34,11 +34,11 @@
 
 **Interfaces:** Produces `runtimeSources(root?)` and `checkEngineSources(root?)`, returning repository-local Harness/Bot paths and validated source metadata.
 
-- [ ] Write tests for source paths, missing source, non-Git export and legacy external configuration.
-- [ ] Run `node --test scripts/tests/sources.test.mjs` and observe missing interface failure.
-- [ ] Import Harness base and Bot subtree; apply two existing Harness fixes as separate commits.
-- [ ] Implement source paths/metadata checks and switch Agent/Bot settings to them.
-- [ ] Run source/settings tests; commit passing changes.
+- [x] Write tests for source paths, missing source, non-Git export and legacy external configuration.
+- [x] Run `node --test scripts/tests/sources.test.mjs` and observe missing interface failure.
+- [x] Import Harness base and Bot subtree; apply two existing Harness fixes as separate commits.
+- [x] Implement source paths/metadata checks and switch Agent/Bot settings to them.
+- [x] Run source/settings tests; commit passing changes.
 
 ### Task 2: Repository-local runtime and build integration
 
@@ -46,11 +46,11 @@
 
 **Interfaces:** Consumes source paths; produces setup/build/doctor commands and a built local engine that existing plugins can load.
 
-- [ ] Add failing tests for source-only setup without git, entry validation, explicit build dependency and unknown commands.
-- [ ] Replace external repository checkout/HEAD assumptions and generated Bot wrapper.
-- [ ] Declare esbuild; retain one Harness React instance; pin Node/pnpm and implement root orchestration.
-- [ ] Install locked dependencies and build the included Harness/Bot/web; verify focused tests.
-- [ ] Commit integration after real local tool contract tests pass.
+- [x] Add failing tests for source-only setup without git, entry validation, explicit build dependency and unknown commands.
+- [x] Replace external repository checkout/HEAD assumptions and generated Bot wrapper.
+- [x] Declare esbuild; retain one Harness React instance; pin Node/pnpm and implement root orchestration.
+- [x] Install locked dependencies and build the included Harness/Bot/web; verify focused tests.
+- [x] Commit integration after real local tool contract tests pass.
 
 ### Task 3: Offline verification and open-source delivery
 

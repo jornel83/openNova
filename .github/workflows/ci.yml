@@ -1,0 +1,53 @@
+name: OpenNova source distribution
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: macos-14
+    timeout-minutes: 40
+    env:
+      CI: 'true'
+      OPENNOVA_HARNESS_ROOT: /nonexistent/legacy-harness
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install system dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.28.5 --activate
+          brew install ffmpeg
+      - name: Export ordinary source without Git metadata
+        run: |
+          mkdir -p "$RUNNER_TEMP/opennova-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/opennova-source"
+          test ! -e "$RUNNER_TEMP/opennova-source/.git"
+      - name: Install locked dependencies
+        working-directory: ${{ runner.temp }}/opennova-source
+        run: pnpm run setup
+      - name: Build and diagnose
+        working-directory: ${{ runner.temp }}/opennova-source
+        run: |
+          pnpm run build
+          pnpm run doctor
+      - name: Offline product and upstream Bot regression
+        working-directory: ${{ runner.temp }}/opennova-source
+        run: |
+          pnpm test
+          pnpm run test:bot
+      - name: Optional ChatGPT adapter contracts (no authorization)
+        working-directory: ${{ runner.temp }}/opennova-source
+        env:
+          OPENNOVA_SIWC_ROOT: ${{ runner.temp }}/opennova-siwc
+          OPENNOVA_KEYCHAIN_HELPER: ${{ runner.temp }}/opennova-siwc-keychain
+        run: |
+          python3.11 tools/setup/bootstrap.py --install --web
+          pnpm run test:chatgpt

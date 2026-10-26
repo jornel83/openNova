@@ -1,0 +1,4 @@
+# The embedded Harness keeps its own workspace, lockfile and build policies.
+packages: []
+allowBuilds:
+  esbuild: true

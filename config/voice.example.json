@@ -1,6 +1,5 @@
 {
   "agent": {
-    "harness_root": "",
     "siwc_root": "",
     "keychain_helper": "",
     "siwc_storage": ""

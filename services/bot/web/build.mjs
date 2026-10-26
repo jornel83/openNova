@@ -1,15 +1,13 @@
 /** Bundle unchanged upstream UI components from the pinned local dependencies. */
 import {createRequire} from 'node:module';
-import {pathToFileURL} from 'node:url';
 import {dirname,join} from 'node:path';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {ROOT,botSettings} from '../settings.mjs';
 import {loadSettings} from '../../agent/settings.mjs';
+import {build} from 'esbuild';
 
 export async function buildWeb({plugin,harnessRoot,outdir}) {
   const require=createRequire(join(harnessRoot,'packages/client/ui-primitives/package.json'));
-  // This version is already installed by the pinned Harness pnpm lockfile.
-  const {build}=await import(pathToFileURL(join(harnessRoot,'node_modules/.pnpm/esbuild@0.28.2/node_modules/esbuild/lib/main.js')));
   await mkdir(join(outdir,'assets'),{recursive:true});
   await build({entryPoints:[join(ROOT,'services/bot/web/app.jsx')],outdir:join(outdir,'assets'),
     bundle:true,splitting:true,format:'esm',platform:'browser',target:['es2022','safari17'],jsx:'automatic',

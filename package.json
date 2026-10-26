@@ -1,0 +1,21 @@
+{
+  "name": "opennova",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "OpenNova voice and work assistant with bundled Harness and Bot source",
+  "packageManager": "pnpm@11.28.5",
+  "engines": {"node": ">=24 <25"},
+  "scripts": {
+    "setup": "node scripts/project.mjs setup",
+    "build": "node scripts/project.mjs build",
+    "test": "node scripts/test.mjs",
+    "test:bot": "node scripts/project.mjs test:bot",
+    "test:chatgpt": "node --test services/agent/tests/siwc-items.test.mjs",
+    "start": "node scripts/project.mjs start",
+    "start:voice": "node scripts/project.mjs start:voice",
+    "doctor": "node scripts/project.mjs doctor"
+  },
+  "devDependencies": {"esbuild": "0.28.2"}
+}

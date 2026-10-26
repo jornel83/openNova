@@ -8,14 +8,14 @@
 
 | 项目 | 位置 / 版本 |
 | --- | --- |
-| Harness | 相邻目录 `../deepseek-harness`；用户仓库 `git@github.com:jornel83/deepseek-harness.git`，锁定 `v0.2.1-alpha.2` / `d743267388641bc76f17c45ce8b4c231aed1d32c`，pnpm `11.28.5` |
-| 启动方式 | 官方 SDK 启动 `dsh --profile sdk-minimal`，加载本目录 `voice.patch.yml`；不修改上游源码 |
+| Harness | 仓库内 `engine/harness/`；版本和本地补丁见根目录 `upstream.lock.json`，pnpm `11.28.5` |
+| 启动方式 | 官方 SDK 启动 `dsh --profile sdk-minimal`，加载本目录 `voice.patch.yml`；通过 OpenNova 插件适配 |
 | 官方 DevKit | `~/.local/share/opennova/siwc-devkit`，提交 `0a36fefeb913055c8c7a1a29b63d82b96b2e841a`；`@siwc/local` 已构建 |
 | 凭据加密程序 | `~/.local/share/opennova/bin/siwc-keychain`；使用此前验证的 OpenNova Keychain 条目 `OpenNova.SIWC.Probe` |
 | 独立注册与授权 | `~/.config/opennova-siwc-probe/`，沿用本次用户授权的 OpenNova 注册；凭据加密保存 |
 | Harness 文字会话 | `~/.local/share/opennova/harness-home/sessions/`；不读取用户默认 Harness 配置 |
 
-配置可通过 `OPENNOVA_HARNESS_ROOT`、`OPENNOVA_SIWC_ROOT`、`OPENNOVA_SIWC_STORAGE`、`OPENNOVA_KEYCHAIN_HELPER` 指定。`config/secrets.local.json` 中的豆包密钥不参与模型授权。不得读取或复用 Codex 的登录文件，也不自动使用环境中的其他模型 API Key。
+模型适配配置可通过 `OPENNOVA_SIWC_ROOT`、`OPENNOVA_SIWC_STORAGE`、`OPENNOVA_KEYCHAIN_HELPER` 指定。`config/secrets.local.json` 中的豆包密钥不参与模型授权。不得读取或复用 Codex 的登录文件，也不自动使用环境中的其他模型 API Key。
 
 ```sh
 node services/agent/worker.mjs --check
@@ -38,7 +38,8 @@ node services/agent/worker.mjs --check
 ## 联网工具桥接（2026-10-13）
 
 ```sh
-python3.11 tools/setup/bootstrap.py --install --web
+pnpm run setup -- --chatgpt
+pnpm run build
 python3.11 tools/setup/bootstrap.py --check --web
 OPENNOVA_PROXY=http://127.0.0.1:7897 /opt/homebrew/opt/node@24/bin/node tools/agent/chat.mjs --web
 ```
@@ -89,6 +90,6 @@ JSONL ready 包含 `outputMode: incremental | settled-answer`。联网模式仅�
 
 ## 环境重建
 
-从仓库根目录运行 `python3.11 tools/setup/bootstrap.py --install`；`--check` 只检查依赖，不打开凭据。版本由 `config/runtime-versions.json` 固定，路径可在 Git 忽略的 `config/voice.local.json` 配置，详见[根目录说明](../../README.md)。Harness 源码从用户的 GitHub SSH 仓库获取，需要本机有相应访问权限。`keychain.swift` 已纳入源码；安装过程保留已有 helper 与授权数据。
+从仓库根目录运行 `pnpm run setup -- --chatgpt`、`pnpm run build`。Harness/Bot 源码随 OpenNova 分发，安装不再访问私人 SSH 仓库或相邻工程。`tools/setup/bootstrap.py` 只管理可选 SIWC 与 Keychain helper；精确版本由 `config/runtime-versions.json` 固定。已有 helper 与授权数据保留。
 
-已有 Harness 检出切换版本后，需使用新版本声明的 pnpm 安装锁定依赖并重新构建；bootstrap 只检查构建入口存在，不会按源码提交自动判定旧产物是否失效。本机 `origin` 指向用户仓库，`upstream` 保留官方仓库；旧提交由 `codex/baseline-0.1.6-alpha.2-20261012` 保留。回退代码时也必须重新安装与构建，不能混用不同版本的产物。
+`agent.harness_root` / 外部 `OPENNOVA_HARNESS_ROOT` 不再改变源码位置；SIWC 的机器路径仍可配置。默认 `pnpm test` 无需 SIWC，准备适配扩展后执行 `pnpm run test:chatgpt`。源码或补丁变化后需重建；构建摘要会检测陈旧产物。完整步骤见[开发说明](../../docs/development.md)。前面的日期段落记录历史验证，当前安装方式以本节和根 README 为准。

@@ -57,7 +57,7 @@ flowchart LR
 
 ## 启动与测试
 
-以下命令在 OpenNova 根目录执行，需已有 Node 24、已构建的固定版本 Harness，以及原 OpenNova 的 ChatGPT 授权。初次运行自动导出固定 Bot 依赖；首次下载需要访问 GitHub。无需再次提供密钥。
+以下命令在 OpenNova 根目录执行，需已有 Node 24、已构建的固定版本 Harness，以及原 OpenNova 的 ChatGPT 授权。Harness 和 Bot 已随仓库源码分发；先执行 `pnpm run setup` 与 `pnpm run build`。当前安装流程见[开发说明](../development.md)。
 
 ### 1. 启动宿主
 
@@ -78,7 +78,7 @@ OPENNOVA_PROXY=http://127.0.0.1:7897 ./tools/bot/run.command
 
 ### 2. 网页与文字验证
 
-宿主启动后，打开 **http://127.0.0.1:18560/** 即可输入文本；启动脚本会自动构建网页资源。纯文字使用不依赖麦克风、ASR 或 Studio TTS。
+宿主启动后，打开 **http://127.0.0.1:18560/** 即可输入文本；网页资源由 `pnpm run build` 显式构建，启动时检查产物。纯文字使用不依赖麦克风、ASR 或 Studio TTS。
 
 - 网页与 `--bot` 语音、文字终端共用单个 Bot 的上下文、请求和操作记录。语音产生的对话也会显示在网页中。
 - 输入完成按 Enter 发送，Shift + Enter 换行；回复过程中可点击“停止回复”。目前显示处理状态，完整回复完成后呈现文本。
