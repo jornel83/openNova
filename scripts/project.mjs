@@ -33,6 +33,12 @@ export function commandPlan(command,args=[],root=ROOT) {
   return [step(process.execPath,[join(root,'tools/voice/start.mjs'),...clean])];
 }
 
+export function requiresBuild(command,options) {
+  if(options.some(option=>['--help','-h'].includes(option)))return false;
+  if(command==='start')return !options.some(option=>['--check','--stop'].includes(option));
+  return command==='start:voice'&&!options.includes('--list-devices');
+}
+
 export function doctor(root=ROOT) {
   const sources=checkEngineSources(root);
   return {sources:true,node:process.versions.node,requiredNodeMajor:24,
@@ -73,7 +79,7 @@ export async function main(args=process.argv.slice(2)) {
     return;
   }
   const steps=commandPlan(command,options);checkEngineSources();
-  if(['start','start:voice'].includes(command)&&!options.includes('--help')&&!options.includes('--list-devices')&&!checkBuild().ready)throw Error('build_missing_or_stale: run pnpm run build');
+  if(requiresBuild(command,options)&&!checkBuild().ready)throw Error('build_missing_or_stale: run pnpm run build');
   await executeSteps(steps);
   if(command==='build'){recordBuild();console.log('OpenNova build ready.');}
 }

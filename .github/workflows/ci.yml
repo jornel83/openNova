@@ -27,24 +27,24 @@ jobs:
           brew install ffmpeg
       - name: Export ordinary source without Git metadata
         run: |
-          mkdir -p "$RUNNER_TEMP/opennova-source"
-          git archive HEAD | tar -x -C "$RUNNER_TEMP/opennova-source"
-          test ! -e "$RUNNER_TEMP/opennova-source/.git"
+          mkdir -p "$RUNNER_TEMP/opennova source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/opennova source"
+          test ! -e "$RUNNER_TEMP/opennova source/.git"
       - name: Install locked dependencies
-        working-directory: ${{ runner.temp }}/opennova-source
+        working-directory: ${{ runner.temp }}/opennova source
         run: pnpm run setup
       - name: Build and diagnose
-        working-directory: ${{ runner.temp }}/opennova-source
+        working-directory: ${{ runner.temp }}/opennova source
         run: |
           pnpm run build
           pnpm run doctor
       - name: Offline product and upstream Bot regression
-        working-directory: ${{ runner.temp }}/opennova-source
+        working-directory: ${{ runner.temp }}/opennova source
         run: |
           pnpm test
           pnpm run test:bot
       - name: Optional ChatGPT adapter contracts (no authorization)
-        working-directory: ${{ runner.temp }}/opennova-source
+        working-directory: ${{ runner.temp }}/opennova source
         env:
           OPENNOVA_SIWC_ROOT: ${{ runner.temp }}/opennova-siwc
           OPENNOVA_KEYCHAIN_HELPER: ${{ runner.temp }}/opennova-siwc-keychain

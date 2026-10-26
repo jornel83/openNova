@@ -12,6 +12,7 @@ import {runtimePatch} from './configuration.mjs';
 process.umask(0o077);
 const b=botSettings(),s=loadSettings();
 const options=process.argv.slice(2);
+if(options.some(x=>['--help','-h'].includes(x))){console.log('OpenNova Bot: pnpm start [-- --check | --stop]');process.exit(0);}
 if(options.some(x=>!['--check','--stop'].includes(x)))throw Error('usage: run.command [--check | --stop]');
 if(options.includes('--check')){
   try{console.log(JSON.stringify(await api('/health'),null,2));}catch{console.error('Bot 宿主尚未启动。');process.exitCode=1;}

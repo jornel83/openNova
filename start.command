@@ -16,4 +16,4 @@ if [[ ! -x "$OPENNOVA_START_NODE" ]]; then
   exit 1
 fi
 export OPENNOVA_NODE="$OPENNOVA_START_NODE"
-exec "$OPENNOVA_START_NODE" "$OPENNOVA_START_ROOT/tools/voice/start.mjs" "$@"
+exec "$OPENNOVA_START_NODE" "$OPENNOVA_START_ROOT/scripts/project.mjs" start:voice "$@"

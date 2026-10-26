@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {ROOT,requireBuiltHarness} from '../../services/runtime/sources.mjs';
-import {commandPlan,doctor} from '../project.mjs';
+import {commandPlan,doctor,requiresBuild} from '../project.mjs';
 import {recordBuild,checkBuild,buildArtifacts} from '../build-record.mjs';
 
 function fixture(t) {
@@ -65,4 +65,14 @@ test('build manifest covers secondary runtime modules and web chunks',t=>{
   assert.ok(buildArtifacts(root).includes(chunk));
   recordBuild(root,[chunk]);rmSync(join(root,chunk));
   assert.equal(checkBuild(root).ready,false);
+});
+
+test('stop, status and help remain available when a build is stale',()=>{
+  assert.equal(requiresBuild('start',[]),true);
+  assert.equal(requiresBuild('start',['--stop']),false);
+  assert.equal(requiresBuild('start',['--check']),false);
+  assert.equal(requiresBuild('start',['--help']),false);
+  assert.equal(requiresBuild('start:voice',['-h']),false);
+  assert.equal(requiresBuild('start:voice',['--list-devices']),false);
+  assert.equal(requiresBuild('start:voice',['--check']),true);
 });
