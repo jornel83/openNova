@@ -68,3 +68,5 @@ git subtree pull --prefix=engine/bot https://github.com/Fei2411/DeepSeek-Bot.git
 ## 本次验证边界
 
 已在 macOS/Apple Silicon、Node 24.14.1 环境进行整合；仓库内 Harness/Bot 的完整构建和本地模拟模型测试覆盖加载、数据持久化与取消。CI 配置用于后续重复验证，其远端运行结果以实际 CI 为准。Linux/Windows 产品入口、真实云端调用和目标设备麦克风效果不在本次自动验证范围内。
+
+本次整合的具体命令范围、计数和源码导出结果见[整合验证记录](research/opennova-engine-subtree-verification.md)。

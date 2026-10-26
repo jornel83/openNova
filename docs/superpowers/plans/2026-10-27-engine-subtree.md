@@ -58,8 +58,8 @@
 
 **Interfaces:** Root test command runs Node/Python suites; CI and contributors use the same setup/build/test commands.
 
-- [ ] Add tests that run command help/doctor in an isolated source copy, with hostile legacy path configuration and no .git.
-- [ ] Implement offline runner and clean-source build smoke; document optional SIWC setup and paid live tests.
-- [ ] Verify both subtree imports, clean-source dependency installation/build, original regressions and selected upstream Bot contracts.
-- [ ] Commit delivery changes and request a fresh whole-branch review; fix important findings with regression tests.
-- [ ] Record commands, outcomes, preserved original checkout and remaining platform/live-service limits.
+- [x] Add tests that run command help/doctor in an isolated source copy, with hostile legacy path configuration and no .git.
+- [x] Implement offline runner and clean-source build smoke; document optional SIWC setup and paid live tests.
+- [x] Verify both subtree imports, clean-source dependency installation/build, original regressions and selected upstream Bot contracts.
+- [x] Commit delivery changes and request a fresh whole-branch review; fix important findings with regression tests.
+- [x] Record commands, outcomes, preserved original checkout and remaining platform/live-service limits.
