@@ -4,6 +4,34 @@ OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI �
 
 当前开发基线为 **持续语音 Demo（2026-10-12）**：本地 VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Qwen3-TTS Vivian，采用 1.5 倍保调语速。持续模式已实现边听边说、增量分句合成、候选插话暂停与确认打断，以及输入 / 输出设备选择；原轮流模式保留。用户已确认原有完整对话可运行，持续模式的外放回声和插话听感仍需现场验证。
 
+2026-10-14 新增 **DeepSeek-Bot 小范围接入实验**：单 Bot 持久会话、文件和记忆直接执行、受控任务以及可选语音 `--bot`。用户已通过三轮真人语音测试，验证上下文改口和 Vivian 播放。现已接入复用原生聊天组件的网页入口，支持文本对话、操作记录及语音共享上下文；已接入 OpenNova 真实工程的目录浏览、代码搜索、文件读写和 Shell/测试执行，均无需二次确认；操作记录展示文件差异、命令输出与退出码。启动及验证边界见[接入实验说明](docs/research/opennova-bot-spike.md)；实际部署、模式差异与后续缺口见 [Demo 技术架构与功能进展](docs/research/opennova-demo-architecture-status.md)。
+
+启动 Bot 后打开 [OpenNova 网页聊天](http://127.0.0.1:18560/)，纯文字无需启动 TTS：
+
+```sh
+OPENNOVA_PROXY=http://127.0.0.1:7897 ./tools/bot/run.command
+```
+
+完整语音现在可以一键启动，无需分别打开 Bot、SSH 和语音终端：
+
+```sh
+# 系统默认输入 / 输出
+./start.command
+
+# 显式选择蓝牙设备；代理地址按实际环境填写
+./start.command --proxy http://127.0.0.1:7897 --device 'SRS-XB100' --output-device 'SRS-XB100'
+
+# 办公室：使用豆包云端 TTS，跳过 Studio / SSH
+./start.command --tts-provider doubao --device 'MacBook Air麦克风' --output-device '外置耳机'
+
+# 启动缺失服务并检查依赖，不打开麦克风
+./start.command --check --device 'MacBook Air麦克风'
+```
+
+脚本检查并复用 Bot，经 `agent-control` 按需启动 Studio 已安装的 TTS，建立 / 复用 Air `127.0.0.1:18000` 到 Studio `127.0.0.1:8000` 的 SSH 转发，再进入共享 Bot 的持续语音。`--list-devices` 只列设备；`--help` 查看参数。退出后 Bot 和远端 TTS 保留，仅关闭本次新建的转发。首次依赖安装、模型下载、授权和 SSH 免密连接仍按下文完成；[详细启动说明](tools/voice/README.md#一键启动共享-bot-语音)。
+
+2026-10-15 新增可选豆包语音合成 2.0：`--tts-provider doubao`（别名 `cloud`），默认音色为豆包 VV，使用 1 倍原速。该模式直连豆包，不访问 Studio；GPT 的代理配置照常使用。已有 `doubao.api_key` 可复用，但需要在同一应用单独开通语音合成模型 2.0。启动 / `--check` 会合成一次“你好。”验证权限，丢弃音频，产生少量计费用量。切回家中 Vivian 使用 `--tts-provider studio`。配置与验证见[云端 TTS 说明](services/tts/README.md#豆包云端-tts办公室模式)。
+
 ## 工程结构
 
 2026-10-13 新增可选联网模式 `--web`：Harness 原生 `web_search` / `web_fetch` → GPT 工具回传 → 带来源的完整答案 → Vivian。搜索后端可选 Exa 或 DeepSeek；DeepSeek 实际搜索、GPT 来源答复与同会话追问已通过文字验证。网页读取与语音文件链路已有验证记录，搜索后的现场听感仍待验收。不传 `--web` 继续使用原增量语音模式。安装、命令和验收边界见[联网版验收记录](docs/research/opennova-web-search-verification.md)。
@@ -13,7 +41,8 @@ OpenNova 是面向工作协同、日常陪伴与随时交流的软硬一体 AI �
 | `tools/voice/` | 完整对话入口、收音分轮、Agent 进程管理与播放 |
 | `tools/asr/` | Silero VAD、豆包 WebSocket 协议、独立 ASR 测试 |
 | `services/agent/` | Harness 桥接、官方 ChatGPT 授权、模型适配与 Keychain helper 源码 |
-| `services/tts/` | Studio MLX 推理环境、固定模型下载、Vivian 请求与变速处理 |
+| `services/bot/`、`tools/bot/` | 持续 Bot 宿主、文件与记忆执行、持久请求与计时任务、网页和终端文字客户端 |
+| `services/tts/` | Studio MLX / Vivian、豆包云端 TTS 适配、模型下载与变速处理 |
 | `tools/setup/` | 固定版本的 Agent 依赖安装与环境检查 |
 | `config/` | 配置模板与上游版本清单；真实配置使用 `.local.json` |
 | `docs/product/`、`docs/research/` | PRD、产品架构、技术选型和部署说明 |
@@ -44,6 +73,8 @@ cp -n config/voice.example.json config/voice.local.json
 | `agent.siwc_storage` | `~/.config/opennova-siwc-probe`；保留已有独立授权 | `OPENNOVA_SIWC_STORAGE` |
 | `tts.data_dir` | `~/AgentWorkstation`；**推理服务器上的绝对路径** | `OPENNOVA_TTS_DATA_DIR` |
 | `tts.url` | `http://127.0.0.1:18000`；Air 的转发地址 | `OPENNOVA_TTS_URL` |
+| `tts.provider` | `studio`；选 `doubao` 使用云端 | `OPENNOVA_TTS_PROVIDER` |
+| `tts.doubao_voice` | `zh_female_vv_uranus_bigtts`；豆包 VV | `OPENNOVA_DOUBAO_TTS_VOICE` |
 
 配置留空使用默认值；路径请用绝对路径。`OPENNOVA_CONFIG` 可指定其他非敏感配置文件。在 Air 上，`tts.data_dir` 必须填写 Studio 模型目录的根路径。本机已保存当前 Studio 路径，原启动命令可继续使用。Studio 可使用其自身默认主目录。
 

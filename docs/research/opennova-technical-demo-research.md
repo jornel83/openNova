@@ -1,5 +1,9 @@
 # OpenNova 技术 Demo 预研方案
 
+实施策略更新（2026-10-14）：按用户决定，当前 Bot 已接入工具直接执行，文件与记忆无需二次确认，网页展示操作结果与差异。下文确认流程属于早期方案，当前行为以 [Demo 技术架构与功能进展](opennova-demo-architecture-status.md) 为准。
+
+实施更新（2026-10-14）：本文保留最初预研范围与规划，最新实现见 [Demo 技术架构与功能进展](opennova-demo-architecture-status.md)。当前 Agent/Bot 运行在 Air，Studio 使用 CustomVoice / Vivian 推理，基本真人语音测试已通过；下文 Base 克隆路线及 Studio Agent 部署不代表当前运行配置。
+
 日期：2026-10-11。阶段：Agent Harness 底座、主 LLM 与本地克隆 TTS 首选已确定，Demo 与本地 TTS 专项待实施验证。
 
 基于 [MVP PRD](../product/opennova-mvp-prd.md) 第 4 章产品架构，首先构建一个可语音协作开发的桌面助手，验证自然交流、工具执行和上下文接续；同时开展水滴硬件的声学、空间与功耗预研，为第 5 章硬件定义提供依据。

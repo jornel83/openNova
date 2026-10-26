@@ -1,0 +1,172 @@
+<div id="nova-deep-space-ring" aria-label="OpenNova 深空工作台 · 环形 Nova">
+  <section aria-label="深空工作台设计">
+    <div class="nova-design nova-space" data-design="space" aria-label="深空工作台 · 环形 Nova">
+      <div class="nova-desktop">
+        <section class="nova-window nova-work" aria-label="共享工作窗口">
+          <div class="nova-titlebar"><span class="nova-traffic" aria-hidden="true"><b></b><b></b><b></b></span><span>OpenNova · 共享工作窗口</span><span class="nova-title-end" aria-hidden="true">⌘</span></div>
+          <header class="nova-work-head"><div class="nova-brand"><span class="nova-mark" aria-hidden="true"></span><span>OpenNova<span class="nova-brand-sub">共享工作区</span></span></div><span class="nova-object-kind"><i data-lucide="file-text" aria-hidden="true"></i> 讨论稿</span></header>
+          <div class="nova-objectbar"><span><i data-lucide="file-text" aria-hidden="true"></i> voice-plan.md</span><button class="nova-quiet nova-compare cursor-interaction" type="button" aria-pressed="false"><i data-lucide="columns-2" aria-hidden="true"></i> 查看对比</button></div>
+          <div class="nova-work-content">
+            <div class="nova-doc-heading"><span class="nova-eyebrow">VOICE INTERACTION</span><h2>让对话自然接续。</h2><p>语音交互方案 <span>／</span> 插话体验优化</p></div>
+            <div class="nova-flow-area" aria-label="语音链路示意">
+              <div class="nova-flow-caption"><span>语音链路</span><span class="nova-flow-tag">INPUT → RESPONSE</span></div>
+              <div class="nova-flow">
+                <button type="button" class="nova-node cursor-interaction" data-node="VAD" aria-pressed="true"><span class="nova-node-symbol"><i data-lucide="audio-lines" aria-hidden="true"></i></span><strong>VAD</strong><small>本地人声检测</small></button>
+                <span class="nova-connector" aria-hidden="true"><i data-lucide="arrow-right"></i></span>
+                <button type="button" class="nova-node cursor-interaction" data-node="ASR" aria-pressed="false"><span class="nova-node-symbol"><i data-lucide="scan-text" aria-hidden="true"></i></span><strong>ASR</strong><small>语音识别</small></button>
+                <span class="nova-connector" aria-hidden="true"><i data-lucide="arrow-right"></i></span>
+                <button type="button" class="nova-node cursor-interaction" data-node="Agent" aria-pressed="false"><span class="nova-node-symbol"><i data-lucide="orbit" aria-hidden="true"></i></span><strong>Agent</strong><small>理解与执行</small></button>
+                <span class="nova-connector" aria-hidden="true"><i data-lucide="arrow-right"></i></span>
+                <button type="button" class="nova-node cursor-interaction" data-node="TTS" aria-pressed="false"><span class="nova-node-symbol"><i data-lucide="volume-2" aria-hidden="true"></i></span><strong>TTS</strong><small>声音回应</small></button>
+              </div>
+            </div>
+            <div class="nova-document">
+              <div class="nova-section-title"><span class="nova-section-number">01</span><h3>交互目标</h3></div>
+              <p>让 Nova 听见你的接话，也能完整说完一句话。</p>
+              <button type="button" class="nova-excerpt cursor-interaction" aria-pressed="false"><span class="nova-excerpt-label"><i data-lucide="text-cursor-input" aria-hidden="true"></i> 插话确认<span class="nova-excerpt-action">选中讨论</span></span><span class="nova-excerpt-text">检测到候选人声后暂停播报，识别出有效文字后，取消上一段回复。</span></button>
+              <div class="nova-note"><i data-lucide="corner-down-right" aria-hidden="true"></i><span>讨论重点：怎样减少噪音触发，同时保留接话的及时性？</span></div>
+            </div>
+            <div class="nova-comparison" hidden><div><span>当前方案</span><h3>检测到人声就暂停</h3><p>响应直接，但短促噪音也可能打断播报。</p></div><div><span>调整方向</span><h3>先筛选，再确认</h3><p>先过滤短促噪音，再结合有效识别结果判断插话。</p></div></div>
+          </div>
+          <footer class="nova-work-foot"><span><i data-lucide="link-2" aria-hidden="true"></i> 与 Nova 共享当前内容</span><span>设计草图</span></footer>
+        </section>
+        <aside class="nova-window nova-chat" aria-label="对话窗口">
+          <div class="nova-titlebar"><span class="nova-traffic" aria-hidden="true"><b></b><b></b><b></b></span><span>OpenNova · 对话窗口</span><span class="nova-title-end" aria-hidden="true">⌘</span></div>
+          <header class="nova-chat-head"><div class="nova-avatar" aria-hidden="true"><span></span></div><div><h2>Nova</h2><p>一起把想法变成现实</p></div><span class="nova-chat-indicator" aria-hidden="true"></span></header>
+          <div class="nova-messages" aria-live="polite"><div class="nova-user-message"><span class="nova-speaker">你</span><p>我们看看插话策略，减少噪音导致的误打断。</p></div><div class="nova-assistant-message"><span class="nova-speaker"><i data-lucide="sparkles" aria-hidden="true"></i> NOVA</span><p class="nova-answer">我已打开语音方案。可以先从人声检测这一段看起，再一起比较两种处理方式。</p><button type="button" class="nova-work-link cursor-interaction"><i data-lucide="arrow-up-left" aria-hidden="true"></i><span>语音交互方案</span><i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div></div>
+          <div class="nova-chat-bottom">
+            <button type="button" class="nova-suggestion cursor-interaction">对比两种处理方式 <i data-lucide="arrow-up-right" aria-hidden="true"></i></button>
+            <div class="nova-compose-box"><div class="nova-context"><i data-lucide="link-2" aria-hidden="true"></i><span>工作窗口 · 语音交互方案</span></div><div class="nova-form"><textarea rows="2" aria-label="给 Nova 的消息" placeholder="继续说，或输入你的想法…"></textarea><div class="nova-input-actions"><span>共享当前讨论</span><button type="button" class="nova-send cursor-interaction" aria-label="发送消息"><i data-lucide="arrow-up" aria-hidden="true"></i></button></div></div></div>
+            <div class="nova-voice"><button type="button" class="nova-mic cursor-interaction" aria-label="模拟开启语音" aria-pressed="false"><i data-lucide="mic" aria-hidden="true"></i></button><div class="nova-voice-copy"><span class="nova-voice-label">语音待机</span><small>点击体验语音状态</small></div><div class="nova-wave" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+            <div class="nova-demo-note">交互演示 · 未连接麦克风与 Agent</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+</div>
+<style>
+#nova-deep-space-ring .nova-design{--nv-bg:light-dark(#101a27,#0b1420);--nv-pane:light-dark(#15202e,#111c2b);--nv-raised:light-dark(#1b2a3b,#19283a);--nv-text:light-dark(#e9f1fa,#edf5ff);--nv-muted:light-dark(#9bafc5,#9cafc4);--nv-faint:light-dark(#2b3d50,#26384d);--nv-line:light-dark(#2a3a4d,#26374a);--nv-accent:light-dark(#84deee,#91e7f4);--nv-accent-ink:light-dark(#0c2635,#0b2735);--nv-soft:light-dark(#163847,#153441);--nv-paper:light-dark(#142130,#101d2b);--nv-shadow:light-dark(#06101e28,#00000045);color:var(--nv-text);font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.65;font-weight:400;min-width:0;padding:14px 6px 22px}
+#nova-deep-space-ring .nova-design *{box-sizing:border-box}
+#nova-deep-space-ring .nova-design [hidden]{display:none!important}
+#nova-deep-space-ring .nova-design h2,#nova-deep-space-ring .nova-design h3,#nova-deep-space-ring .nova-design p{margin:0}
+#nova-deep-space-ring .nova-design :where(button,textarea){font:inherit}
+#nova-deep-space-ring .nova-design :where(button){color:inherit}
+#nova-deep-space-ring .nova-design button:disabled{opacity:.5}
+#nova-deep-space-ring .nova-design svg{width:15px;height:15px;flex-shrink:0;stroke-width:1.7;vertical-align:middle}
+#nova-deep-space-ring .nova-desktop{display:grid;grid-template-columns:minmax(0,1fr) 304px;gap:20px;align-items:stretch;min-height:718px}
+#nova-deep-space-ring .nova-window{display:flex;flex-direction:column;min-width:0;min-height:718px;border:1px solid var(--nv-line);border-radius:16px;background:var(--nv-bg);box-shadow:0 14px 36px var(--nv-shadow);overflow:hidden;position:relative}
+#nova-deep-space-ring .nova-titlebar{height:34px;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--nv-pane);border-bottom:1px solid var(--nv-line);font-size:11px;color:var(--nv-muted);flex-shrink:0}
+#nova-deep-space-ring .nova-titlebar>span:nth-child(2){flex:1;text-align:center;font-size:11px;letter-spacing:.02em}
+#nova-deep-space-ring .nova-traffic{display:flex;gap:5px;width:40px}
+#nova-deep-space-ring .nova-traffic b{width:7px;height:7px;border:1px solid var(--nv-muted);opacity:.65;border-radius:50%}
+#nova-deep-space-ring .nova-title-end{width:20px;text-align:right;opacity:.7}
+#nova-deep-space-ring .nova-work-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:19px 23px 18px}
+#nova-deep-space-ring .nova-brand{display:flex;align-items:center;gap:11px;font-size:15px;font-weight:500;letter-spacing:.01em}
+#nova-deep-space-ring .nova-brand-sub{color:var(--nv-muted);font-weight:400;font-size:11px;margin-left:11px;padding-left:11px;border-left:1px solid var(--nv-line)}
+#nova-deep-space-ring .nova-mark{width:20px;height:20px;border:1px solid var(--nv-accent);border-radius:50%;position:relative;box-shadow:0 0 16px color-mix(in srgb,var(--nv-accent) 17%,transparent)}
+#nova-deep-space-ring .nova-mark:after{content:"";position:absolute;inset:5px;border:1px solid var(--nv-accent);border-radius:50%}
+#nova-deep-space-ring .nova-object-kind{display:flex;align-items:center;gap:5px;color:var(--nv-muted);font-size:11px;white-space:nowrap}
+#nova-deep-space-ring .nova-objectbar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 23px 13px;border-bottom:1px solid var(--nv-line);font-size:11px;color:var(--nv-muted)}
+#nova-deep-space-ring .nova-objectbar>span{display:flex;gap:6px;align-items:center;font-family:"SFMono-Regular",Consolas,monospace}
+#nova-deep-space-ring .nova-quiet{border:0;background:transparent;color:var(--nv-muted);padding:3px 0;display:flex;align-items:center;gap:5px;font-size:11px}
+#nova-deep-space-ring .nova-quiet[aria-pressed="true"]{color:var(--nv-accent)}
+#nova-deep-space-ring .nova-work-content{padding:29px 31px 20px;flex:1;display:flex;flex-direction:column;gap:26px;position:relative}
+#nova-deep-space-ring .nova-eyebrow{display:block;font-family:"SFMono-Regular",Consolas,monospace;font-size:11px;letter-spacing:.14em;color:var(--nv-accent);margin-bottom:9px}
+#nova-deep-space-ring .nova-doc-heading h2{font-size:27px;font-weight:500;line-height:1.4;letter-spacing:-.02em}
+#nova-deep-space-ring .nova-doc-heading p{font-size:12px;color:var(--nv-muted);margin-top:8px}
+#nova-deep-space-ring .nova-doc-heading p>span{padding:0 5px;color:var(--nv-faint)}
+#nova-deep-space-ring .nova-flow-area{position:relative}
+#nova-deep-space-ring .nova-flow-caption{display:flex;justify-content:space-between;align-items:center;color:var(--nv-muted);font-size:11px;margin-bottom:12px}
+#nova-deep-space-ring .nova-flow-tag{font-family:"SFMono-Regular",Consolas,monospace;font-size:11px;letter-spacing:.04em}
+#nova-deep-space-ring .nova-flow{display:grid;grid-template-columns:1fr 16px 1fr 16px 1fr 16px 1fr;gap:5px;align-items:center}
+#nova-deep-space-ring .nova-node{border:1px solid var(--nv-line);border-radius:10px;padding:12px 4px 11px;display:flex;align-items:center;flex-direction:column;background:var(--nv-paper);min-width:0;gap:3px}
+#nova-deep-space-ring .nova-node[aria-pressed="true"]{border-color:var(--nv-accent);background:var(--nv-soft)}
+#nova-deep-space-ring .nova-node-symbol{color:var(--nv-muted);height:25px;display:flex;align-items:center}
+#nova-deep-space-ring .nova-node[aria-pressed="true"] .nova-node-symbol{color:var(--nv-accent)}
+#nova-deep-space-ring .nova-node-symbol svg{width:19px;height:19px}
+#nova-deep-space-ring .nova-node strong{font-family:"SFMono-Regular",Consolas,monospace;font-size:13px;font-weight:500;letter-spacing:.02em}
+#nova-deep-space-ring .nova-node small{font-size:11px;color:var(--nv-muted);white-space:nowrap}
+#nova-deep-space-ring .nova-connector{display:flex;color:var(--nv-muted);justify-content:center}
+#nova-deep-space-ring .nova-section-title{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+#nova-deep-space-ring .nova-section-number{font-family:"SFMono-Regular",Consolas,monospace;color:var(--nv-accent);font-size:11px}
+#nova-deep-space-ring .nova-section-title h3{font-size:13px;font-weight:500}
+#nova-deep-space-ring .nova-document>p{color:var(--nv-muted);font-size:12px;margin-bottom:16px}
+#nova-deep-space-ring .nova-excerpt{display:block;width:100%;text-align:left;padding:13px 14px;border:1px solid var(--nv-line);border-radius:8px;background:var(--nv-pane);font-size:12px;line-height:1.8}
+#nova-deep-space-ring .nova-excerpt-label{display:flex;gap:6px;align-items:center;color:var(--nv-muted);font-size:11px;margin-bottom:7px}
+#nova-deep-space-ring .nova-excerpt-action{margin-left:auto;color:var(--nv-accent)}
+#nova-deep-space-ring .nova-excerpt[aria-pressed="true"]{border-color:var(--nv-accent);background:var(--nv-soft)}
+#nova-deep-space-ring .nova-note{display:flex;align-items:flex-start;gap:7px;color:var(--nv-muted);font-size:11px;margin-top:13px}
+#nova-deep-space-ring .nova-note svg{margin-top:2px}
+#nova-deep-space-ring .nova-work-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid var(--nv-line);padding:10px 23px;font-size:11px;color:var(--nv-muted);background:var(--nv-bg)}
+#nova-deep-space-ring .nova-work-foot>span:first-child{display:flex;align-items:center;gap:6px}
+#nova-deep-space-ring .nova-chat-head{display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:10px;margin:0 20px;padding:22px 0 18px;border-bottom:1px solid var(--nv-line)}
+#nova-deep-space-ring .nova-chat-head h2{font-size:15px;font-weight:500;line-height:1.3;letter-spacing:.16em;text-indent:.16em;text-transform:uppercase}
+#nova-deep-space-ring .nova-chat-head p{font-size:11px;color:var(--nv-muted);margin-top:5px}
+#nova-deep-space-ring .nova-avatar{width:72px;height:72px;flex-shrink:0;border:1px solid var(--nv-accent);border-radius:50%;display:grid;place-items:center;background:var(--nv-bg);box-shadow:0 0 26px color-mix(in srgb,var(--nv-accent) 12%,transparent);position:relative;transition:box-shadow .25s}
+#nova-deep-space-ring .nova-avatar:before{content:"";position:absolute;inset:7px;border:1px dashed color-mix(in srgb,var(--nv-accent) 32%,var(--nv-line));border-radius:50%;transform:rotate(30deg);transition:transform .3s,border-color .25s}
+#nova-deep-space-ring .nova-avatar span{display:block;width:32px;height:32px;border-radius:50%;border:1px solid var(--nv-accent);box-shadow:inset 0 0 17px color-mix(in srgb,var(--nv-accent) 23%,transparent);transition:transform .25s,box-shadow .25s}
+#nova-deep-space-ring .nova-chat.is-listening .nova-avatar{box-shadow:0 0 32px color-mix(in srgb,var(--nv-accent) 24%,transparent)}
+#nova-deep-space-ring .nova-chat.is-listening .nova-avatar:before{transform:rotate(60deg);border-color:var(--nv-accent)}
+#nova-deep-space-ring .nova-chat.is-listening .nova-avatar span{transform:scale(1.12);box-shadow:inset 0 0 21px color-mix(in srgb,var(--nv-accent) 42%,transparent)}
+#nova-deep-space-ring .nova-chat-indicator{display:none}
+#nova-deep-space-ring .nova-messages{padding:24px 19px 18px;display:flex;flex-direction:column;gap:23px;flex:1}
+#nova-deep-space-ring .nova-speaker{display:flex;align-items:center;gap:5px;font-size:11px;letter-spacing:.08em;color:var(--nv-muted);margin-bottom:8px}
+#nova-deep-space-ring .nova-user-message{align-self:flex-end;max-width:94%;border:1px solid var(--nv-line);background:var(--nv-raised);border-radius:13px 13px 3px 13px;padding:12px 14px;font-size:12px;line-height:1.85}
+#nova-deep-space-ring .nova-user-message .nova-speaker{display:none}
+#nova-deep-space-ring .nova-assistant-message{font-size:12px;line-height:1.95}
+#nova-deep-space-ring .nova-assistant-message .nova-speaker{color:var(--nv-accent)}
+#nova-deep-space-ring .nova-work-link{display:flex;align-items:center;gap:7px;border:1px solid var(--nv-line);border-radius:7px;background:var(--nv-pane);font-size:11px;margin-top:15px;padding:9px 10px;max-width:100%}
+#nova-deep-space-ring .nova-work-link svg:last-child{color:var(--nv-muted);margin-left:15px;width:12px;height:12px}
+#nova-deep-space-ring .nova-chat-bottom{padding:0 16px 10px}
+#nova-deep-space-ring .nova-suggestion{display:flex;align-items:center;gap:8px;color:var(--nv-muted);background:transparent;border:0;font-size:11px;padding:7px 2px;margin-bottom:11px}
+#nova-deep-space-ring .nova-suggestion svg{width:12px;height:12px}
+#nova-deep-space-ring .nova-compose-box{border:1px solid var(--nv-line);border-radius:11px;background:var(--nv-pane);padding:10px 11px 8px}
+#nova-deep-space-ring .nova-context{display:flex;gap:5px;align-items:flex-start;font-size:11px;color:var(--nv-accent);padding:0 0 10px;line-height:1.5}
+#nova-deep-space-ring .nova-context svg{width:12px;height:12px;margin-top:2px}
+#nova-deep-space-ring .nova-form textarea{display:block;resize:vertical;min-height:52px;max-height:110px;line-height:1.6;width:100%;padding:0;border:0;background:transparent;color:var(--nv-text);font-size:12px;border-radius:3px}
+#nova-deep-space-ring .nova-form textarea::placeholder{color:var(--nv-muted);opacity:1}
+#nova-deep-space-ring .nova-input-actions{display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:11px;color:var(--nv-muted);margin-top:5px}
+#nova-deep-space-ring .nova-send{width:29px;height:29px;display:grid;place-items:center;border:0;border-radius:50%;background:var(--nv-accent);color:var(--nv-accent-ink)}
+#nova-deep-space-ring .nova-voice{display:flex;align-items:center;gap:10px;padding:15px 1px 10px}
+#nova-deep-space-ring .nova-mic{width:33px;height:33px;border:1px solid var(--nv-line);border-radius:50%;display:grid;place-items:center;background:var(--nv-pane)}
+#nova-deep-space-ring .nova-mic[aria-pressed="true"]{background:var(--nv-accent);color:var(--nv-accent-ink);border-color:var(--nv-accent)}
+#nova-deep-space-ring .nova-voice-copy{display:flex;flex-direction:column;font-size:11px;line-height:1.5}
+#nova-deep-space-ring .nova-voice-copy small{font-size:11px;color:var(--nv-muted)}
+#nova-deep-space-ring .nova-wave{display:flex;gap:3px;align-items:center;justify-content:center;height:29px;margin-left:auto;padding:0 4px;color:var(--nv-muted)}
+#nova-deep-space-ring .nova-wave b{display:block;width:2px;height:4px;border-radius:2px;background:currentColor;transition:height .2s}
+#nova-deep-space-ring .nova-wave b:nth-child(3n){height:10px}
+#nova-deep-space-ring .nova-wave b:nth-child(4n){height:17px}
+#nova-deep-space-ring .nova-chat.is-listening .nova-wave{color:var(--nv-accent)}
+#nova-deep-space-ring .nova-chat.is-listening .nova-wave b:nth-child(2n){height:23px}
+#nova-deep-space-ring .nova-chat.is-listening .nova-wave b:nth-child(3n){height:15px}
+#nova-deep-space-ring .nova-demo-note{font-size:11px;line-height:1.6;color:var(--nv-muted);text-align:center}
+#nova-deep-space-ring .nova-comparison{display:grid;grid-template-columns:1fr 1fr;gap:15px;font-size:12px}
+#nova-deep-space-ring .nova-comparison[hidden],#nova-deep-space-ring .nova-document[hidden]{display:none}
+#nova-deep-space-ring .nova-comparison>div{border-top:1px solid var(--nv-line);padding-top:12px}
+#nova-deep-space-ring .nova-comparison>div:last-child{border-color:var(--nv-accent)}
+#nova-deep-space-ring .nova-comparison span{font-size:11px;color:var(--nv-muted)}
+#nova-deep-space-ring .nova-comparison h3{font-size:13px;font-weight:500;margin:7px 0}
+#nova-deep-space-ring .nova-comparison p{color:var(--nv-muted);font-size:12px;line-height:1.9}
+
+@media(max-width:900px){#nova-deep-space-ring .nova-desktop{grid-template-columns:minmax(0,1fr) 284px;gap:15px}#nova-deep-space-ring .nova-work-content{padding:25px 21px 20px}#nova-deep-space-ring .nova-brand-sub{display:none}#nova-deep-space-ring .nova-lab .nova-work-content{margin:20px 16px;padding:23px 18px 19px}#nova-deep-space-ring .nova-flow-tag{display:none}#nova-deep-space-ring .nova-hud .nova-work-content{padding-left:20px;padding-right:20px}#nova-deep-space-ring .nova-flow{gap:3px;grid-template-columns:1fr 10px 1fr 10px 1fr 10px 1fr}#nova-deep-space-ring .nova-node small{white-space:normal;text-align:center;line-height:1.5;min-height:33px}#nova-deep-space-ring .nova-connector svg{width:11px;height:11px}}
+@media(max-width:700px){#nova-deep-space-ring .nova-design{padding:10px 2px 15px}#nova-deep-space-ring .nova-desktop{grid-template-columns:1fr;gap:20px;min-height:1460px;align-items:stretch}#nova-deep-space-ring .nova-window{min-height:720px}#nova-deep-space-ring .nova-chat{min-height:720px}#nova-deep-space-ring .nova-work-head{padding:17px 18px}#nova-deep-space-ring .nova-objectbar{padding-left:18px;padding-right:18px}#nova-deep-space-ring .nova-work-content{padding:25px 20px 21px;gap:23px}#nova-deep-space-ring .nova-node small{white-space:normal;min-height:0}#nova-deep-space-ring .nova-flow{gap:3px;grid-template-columns:1fr 10px 1fr 10px 1fr 10px 1fr}#nova-deep-space-ring .nova-doc-heading h2{font-size:25px}#nova-deep-space-ring .nova-work-foot{padding-left:18px;padding-right:18px}#nova-deep-space-ring .nova-flow-caption{margin-bottom:13px}#nova-deep-space-ring .nova-chat-head{padding-top:23px;padding-bottom:23px}#nova-deep-space-ring .nova-messages{padding-top:24px}#nova-deep-space-ring .nova-lab .nova-work-content{margin:18px 14px;padding:22px 17px 18px}#nova-deep-space-ring .nova-lab .nova-doc-heading h2{font-size:23px}#nova-deep-space-ring .nova-lab .nova-flow{gap:2px;grid-template-columns:1fr 9px 1fr 9px 1fr 9px 1fr}#nova-deep-space-ring .nova-lab .nova-node small{min-height:32px}#nova-deep-space-ring .nova-hud .nova-flow{min-height:143px}#nova-deep-space-ring .nova-chat-bottom{padding-bottom:13px}#nova-deep-space-ring .nova-form textarea{font-size:16px}}
+@media(pointer:coarse){#nova-deep-space-ring .nova-mic,#nova-deep-space-ring .nova-send{width:44px;height:44px}#nova-deep-space-ring .nova-quiet,#nova-deep-space-ring .nova-suggestion,#nova-deep-space-ring .nova-work-link{min-height:44px}#nova-deep-space-ring .nova-form textarea{font-size:16px}}
+@media(prefers-reduced-motion:reduce){#nova-deep-space-ring .nova-wave b,#nova-deep-space-ring .nova-avatar,#nova-deep-space-ring .nova-avatar:before,#nova-deep-space-ring .nova-avatar span{transition:none}}
+</style>
+<script>
+(()=>{
+  const root=document.getElementById('nova-deep-space-ring');
+  const designs=Array.from(root.querySelectorAll('.nova-design'));
+  const defaults={selected:false,compare:false,node:'VAD',listening:false,user:'我们看看插话策略，减少噪音导致的误打断。',answer:'我已打开语音方案。可以先从人声检测这一段看起，再一起比较两种处理方式。'};
+  const state={space:{...defaults}};
+  const details={VAD:'VAD 负责识别人声的起止。我们可以先检查短促噪音的过滤方式，再评估插话时机。',ASR:'ASR 把语音转成文字。可以结合识别结果，确认这次声音是否是有效发言。',Agent:'Agent 根据当前讨论和上下文处理请求，并将工作成果展示在共享窗口。',TTS:'TTS 把回复变成语音。插话确认后停止旧回复，未确认时继续原来的播报。'};
+  function restore(saved){const s=saved?.privateContent;if(s?.version===1&&s.designs){for(const type of Object.keys(state)){if(s.designs[type])state[type]={...defaults,...s.designs[type]};}}}
+  restore(window.openai?.widgetState);
+  function save(type){window.openai?.setWidgetState?.({modelContent:{design:type,selectedNode:state[type].node,selectedExcerpt:state[type].selected,comparisonOpen:state[type].compare},privateContent:{version:1,designs:state}})?.catch(()=>{});}
+  function render(design){const s=state[design.dataset.design];design.querySelector('.nova-answer').textContent=s.answer;design.querySelector('.nova-user-message p').textContent=s.user;design.querySelector('.nova-excerpt').setAttribute('aria-pressed',String(s.selected));design.querySelector('.nova-excerpt-action').textContent=s.selected?'已引用':'选中讨论';design.querySelector('.nova-context span').textContent=s.selected?'引用 · 插话确认':'工作窗口 · '+(s.compare?'两种处理方式':'语音交互方案');design.querySelector('.nova-document').hidden=s.compare;design.querySelector('.nova-comparison').hidden=!s.compare;design.querySelector('.nova-compare').setAttribute('aria-pressed',String(s.compare));design.querySelector('.nova-compare').lastChild.textContent=s.compare?' 返回原稿':' 查看对比';for(const node of design.querySelectorAll('.nova-node'))node.setAttribute('aria-pressed',String(node.dataset.node===s.node));design.querySelector('.nova-chat').classList.toggle('is-listening',s.listening);design.querySelector('.nova-mic').setAttribute('aria-pressed',String(s.listening));design.querySelector('.nova-mic').setAttribute('aria-label',s.listening?'模拟关闭语音':'模拟开启语音');design.querySelector('.nova-voice-label').textContent=s.listening?'正在聆听 · 演示':'语音待机';design.querySelector('.nova-voice-copy small').textContent=s.listening?'没有启用真实麦克风':'点击体验语音状态';}
+  for(const design of designs){const type=design.dataset.design;const update=(action)=>{action(state[type]);render(design);save(type);};design.querySelector('.nova-excerpt').addEventListener('click',()=>update(s=>{s.selected=!s.selected;s.answer=s.selected?'我们正在讨论“插话确认”这一段。这里的关键是先暂停、再判断：短促噪音也会造成可感知的停顿，可以进一步比较暂停时机。':defaults.answer;}));for(const node of design.querySelectorAll('.nova-node'))node.addEventListener('click',()=>update(s=>{s.node=node.dataset.node;s.answer=details[s.node];}));design.querySelector('.nova-compare').addEventListener('click',()=>update(s=>{s.compare=!s.compare;}));design.querySelector('.nova-suggestion').addEventListener('click',()=>update(s=>{s.compare=true;s.selected=false;s.user='对比两种处理方式。';s.answer='左侧已展开对比。可以先筛选短促噪音，再结合有效文字确认插话，减少播报被反复暂停。';}));design.querySelector('.nova-work-link').addEventListener('click',()=>update(s=>{s.compare=false;}));design.querySelector('.nova-mic').addEventListener('click',()=>update(s=>{s.listening=!s.listening;}));design.querySelector('.nova-send').addEventListener('click',()=>{const input=design.querySelector('textarea');const text=input.value.trim();if(!text)return;update(s=>{s.user=text.slice(0,300);if(/对比|比较/.test(text)){s.compare=true;s.answer='已在共享工作区展开两种处理方式，接下来可以讨论它们对插话速度和误触发的影响。';}else{s.answer=s.selected?'已关联选中的“插话确认”段落。这是界面演示，正式接入后，Nova 会结合这段内容继续与你讨论。':'收到。这是界面演示，正式接入后，Nova 会结合左侧工作内容继续讨论。';}});input.value='';});render(design);if(globalThis.Tweak){const style={spacing:20};const tweak=new Tweak({container:design,onChange:()=>{design.querySelector('.nova-desktop').style.gap=style.spacing+'px';}});tweak.addSlider(style,'spacing',{label:'窗口间距',min:12,max:32,step:2,unit:'px'});}}
+  window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState){restore(event.detail.globals.widgetState);designs.forEach(render);}});
+  if(globalThis.lucide)lucide.createIcons();
+})();
+</script>

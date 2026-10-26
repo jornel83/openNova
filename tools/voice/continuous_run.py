@@ -1,15 +1,18 @@
 """CLI wiring for continuous capture and for real-service file validation."""
 import asyncio
 from contextlib import suppress
+from functools import partial
 import json
 import time
 from audio_bridge import NativeAudio, check_native
 from continuous import Conversation
 from controls import read_controls, HELP
 from stream_agent import StreamingAgent
+from bot_agent import BotAgent
 from turns import TurnCapture
 from doubao_asr import recognize, load_pcm, file_chunks, safe_message
 from vad import SileroOnnx
+from tts_stream import synthesize
 
 
 class FileAudio:
@@ -30,7 +33,8 @@ class FileAudio:
 
 
 async def run(args, key):
-    from conversation import preflight
+    from conversation import preflight, check_cloud_tts, tts_options, default_speed
+    provider, voice = tts_options(args)
     if args.audio and not args.no_play:
         raise ValueError('连续模式的文件验证需要 --no-play；现场播报请使用麦克风。')
     if args.no_play and not args.audio:
@@ -39,14 +43,15 @@ async def run(args, key):
         # This mode stores metrics/text only, never microphone PCM.
         print('本次仅保存文字和时序报告，不保存原始收音。',flush=True)
     agent_options = {'web': True} if getattr(args,'web',False) else {}
-    agent = StreamingAgent(**agent_options)
+    agent_factory = BotAgent if getattr(args,'bot',False) else StreamingAgent
+    agent = agent_factory(**agent_options)
     audio = FileAudio() if args.audio else NativeAudio(device=args.device, output_device=args.output_device)
     owned_audio = {audio}
     owned_agents = {agent}
     tasks = set()
     controller = capture = None
     report = {'mode':'continuous_file' if args.audio else 'continuous_microphone',
-              'model':'gpt-6.1-sol','voice':'Vivian','speed':1.5,'success':False,
+              'model':'gpt-6.1-sol','tts_provider':provider,'voice':voice,'speed':default_speed(provider),'success':False,
               'acoustic_validation':False,'tts_server_cancellation_verified':False,'turns':[]}
     events = asyncio.Queue(maxsize=256)
     def log(text): print(safe_message(text,key),flush=True)
@@ -82,11 +87,11 @@ async def run(args, key):
         new_agent = None
         published = False
         try:
-            if agent.error is not None or agent.process.returncode is not None:
+            if agent.error is not None or (agent.process is not None and agent.process.returncode is not None):
                 await controller.wait_idle()
                 await agent.close()
                 owned_agents.discard(agent)
-                new_agent = StreamingAgent(**agent_options)
+                new_agent = agent_factory(**agent_options)
                 owned_agents.add(new_agent)
                 await new_agent.start()
             info = await new.start()
@@ -102,20 +107,23 @@ async def run(args, key):
                     await new_agent.close()
                     owned_agents.discard(new_agent)
     try:
-        log('正在检查流式 Agent、Vivian 和原生音频……')
+        log(f'正在检查流式 Agent、TTS（{provider} / {voice}）和原生音频……')
         if not args.audio:
             info = await check_native(device=args.device, output_device=args.output_device)
             report['audio_check'] = info
             log(f"设备选择：{info['input']} → {info['output']}")
         await asyncio.to_thread(preflight,args)
+        await check_cloud_tts(args)
         ready = await agent.start()
         report['session_id'] = ready['sessionId']
         report['output_mode'] = ready.get('outputMode','incremental')
         detector = SileroOnnx()
         if args.check:
-            log('检查通过：流式 Agent、VAD、Vivian 及音频桥已就绪；未开启麦克风，AEC 听感尚未验证。')
+            log('检查通过：流式 Agent、VAD、TTS 及音频桥已就绪；未开启麦克风，AEC 听感尚未验证。')
             return
         controller = Conversation(agent,audio,args.tts_url,log=log,
+            tts_speed=default_speed(provider),
+            synthesize=partial(synthesize,provider=provider,voice=voice),
             render_text=lambda text: print(safe_message(text,key),end='',flush=True))
         capture = TurnCapture(detector,asr,emit,silence_ms=args.silence_ms,extended_ms=args.extended_silence_ms)
         controller.reset_input = capture.reset
@@ -137,6 +145,9 @@ async def run(args, key):
         report['audio_ready'] = info
         log(f"音频已就绪：{info['input']} → {info['output']}；Voice Processing 已开启，现场效果待验证。")
         log(HELP)
+        log('插话过滤已启用：持续人声与转写联合确认，未确认的暂停会自动恢复。')
+        if getattr(args,'bot',False):
+            log('Bot：文件和记忆直接执行，无需确认。/operations 查看操作记录 · /tasks 查询任务 · /cancel-task 编号 取消任务 · /memory 查看记忆 · /result 查询上一请求。')
         log('正在聆听。')
         commands = asyncio.Queue(maxsize=16)
         control_reader = asyncio.create_task(read_controls(commands)); tasks.add(control_reader)
@@ -145,7 +156,13 @@ async def run(args, key):
         command_wait = asyncio.create_task(commands.get()); tasks.add(command_wait)
         retry = None
         while not controller.quit:
-            done,_ = await asyncio.wait([event_wait,command_wait,control_reader],return_when=asyncio.FIRST_COMPLETED)
+            done,_ = await asyncio.wait([event_wait,command_wait,control_reader],
+                timeout=.1 if controller.paused_at is not None else None,
+                return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                # Wall-clock watchdog, independent of incoming microphone/ASR events.
+                try: await controller.handle({'type':'tick','epoch':controller.epoch,'time':time.monotonic()})
+                except Exception as error: await audio_failure(str(error))
             if command_wait in done:
                 command = command_wait.result()
                 if command == '/retry':
@@ -158,8 +175,13 @@ async def run(args, key):
                         owned_audio.discard(controller.audio)
                         retry = asyncio.create_task(new_audio()); tasks.add(retry)
                 else:
-                    try: await controller.control(command)
-                    except Exception as error: await audio_failure(str(error))
+                    try:
+                        result = await agent.control(command) if getattr(args,'bot',False) else None
+                        if result is not None: log(json.dumps(result,ensure_ascii=False,indent=2))
+                        else: await controller.control(command)
+                    except Exception as error:
+                        if getattr(args,'bot',False): log('操作失败：'+str(error))
+                        else: await audio_failure(str(error))
                 tasks.discard(command_wait)
                 command_wait = asyncio.create_task(commands.get()); tasks.add(command_wait)
             if event_wait in done:

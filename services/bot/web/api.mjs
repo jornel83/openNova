@@ -1,0 +1,24 @@
+export const labels={bot_busy:'OpenNova 正在处理另一条消息，请稍后再试。',file_conflict:'文件已被其他操作修改。请让 OpenNova 重新读取并提出修改。',
+  approval_not_pending:'这项修改已经处理，请查看最新状态。',unknown_id:'没有找到这条记录。',host_stopping:'服务正在停止，请重新启动 Bot。',
+  memory_match_changed:'原记忆已经变化，请重新提出修改。',invalid_request:'消息不能为空，且不能超过 8000 个字符。',
+  cancelled:'回复已停止。',interrupted:'服务曾重启，这条回复未完成。',agent_timeout:'本轮回复超时，请重试。'};
+export const errorText=error=>labels[error?.code||error?.message]||'操作未完成：'+(error?.message||'请检查 Bot 服务后重试。');
+
+export class WebApi {
+  constructor(base=''){this.base=base;}
+  async session(){
+    const response=await fetch(this.base+'/web/session',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-OpenNova-Web':'1'},body:'{}',signal:AbortSignal.timeout(15000)});
+    if(!response.ok)throw Error('无法连接网页会话，请使用启动脚本显示的本机地址。');
+    this.csrf=(await response.json()).csrf;
+  }
+  async call(name,body={},retry=true){
+    if(!this.csrf)await this.session();
+    let response;
+    try{response=await fetch(this.base+'/web/api/'+name,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-OpenNova-Web':'1','X-OpenNova-CSRF':this.csrf},body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});}
+    catch{throw Object.assign(Error('连接中断，请检查 Bot 服务；重新连接后可以继续查看结果。'),{code:'network'});}
+    if(response.status===401&&retry){await this.session();return this.call(name,body,false);}
+    const value=await response.json();
+    if(!response.ok)throw Object.assign(Error(value.error||'请求失败'),{code:value.error||'request_failed'});
+    return value;
+  }
+}

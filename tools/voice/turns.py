@@ -7,6 +7,7 @@ import sys
 import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'asr'))
 from vad import SpeechGate, FRAME_BYTES, packet_stream
+from barge_in import AcousticEvidence, FAST_MS, PAUSE_MS
 
 
 def silence_for(text, normal, extended):
@@ -29,10 +30,13 @@ class TurnCapture:
         self.zero_warned = False
         self.discarding = False
         self.discard_quiet = 0
+        self.acoustics = AcousticEvidence()
+        self.measurement = {'strong_ms':0}
 
     def event(self, kind, turn, **fields):
         if turn['epoch'] == self.epoch:
-            self.emit({'type':kind,'id':turn['id'],'epoch':self.epoch,'time':time.monotonic(), **fields})
+            self.emit({'type':kind,'id':turn['id'],'epoch':self.epoch,'time':time.monotonic(),
+                       'acoustic':dict(turn['acoustic']), **fields})
 
     def reset(self, epoch):
         self.epoch = epoch
@@ -43,6 +47,8 @@ class TurnCapture:
         self.zero_warned = False
         self.discarding = False
         self.discard_quiet = 0
+        self.acoustics = AcousticEvidence()
+        self.measurement = {'strong_ms':0}
         if hasattr(self.detector, 'reset'): self.detector.reset()
         for task in self.tasks: task.cancel()
 
@@ -59,12 +65,20 @@ class TurnCapture:
             del self.pending[:FRAME_BYTES]
             try:
                 probability = self.detector(frame)
+                self.measurement = self.acoustics.measure(frame, probability)
                 if self.discarding:
                     self.discard_quiet = self.discard_quiet+1 if probability < self.gate.end_threshold else 0
                     if self.discard_quiet >= math.ceil(self.normal/32):
                         self.discarding = False
                         self.discard_quiet = 0
                     continue
+                if self.current:
+                    previous = self.current['acoustic']['strong_ms']
+                    self.current['acoustic'] = {**self.measurement,
+                        'strong_ms':max(previous,self.measurement['strong_ms'])}
+                    if any(previous < boundary <= self.measurement['strong_ms']
+                           for boundary in (FAST_MS, PAUSE_MS)):
+                        self.event('evidence', self.current)
                 self.handle(self.gate.push(frame, probability))
             except (ValueError, asyncio.QueueFull) as error:
                 if self.current:
@@ -86,7 +100,7 @@ class TurnCapture:
                     raise ValueError('ASR turn capacity')
                 self.counter += 1
                 turn = {'id':self.counter,'epoch':self.epoch,'queue':asyncio.Queue(maxsize=100),
-                        'invalid':False,'text':''}
+                        'invalid':False,'text':'','acoustic':dict(self.measurement)}
                 self.current = turn
                 self.gate.silence = math.ceil(self.normal/32)
                 self.event('start', turn)

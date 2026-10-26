@@ -1,0 +1,5 @@
+{
+  "action": "submit",
+  "config_path": "generation.json",
+  "output_dir": "../../../output/video-production/example-shot-01"
+}

@@ -52,6 +52,7 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(.01)
         generation=self.controller.generation
         await self.event('start',2)
+        await self.event('evidence',2,acoustic={'strong_ms':320})
         await self.event('failed',2,error='empty')
         self.assertIn('pause', self.audio.calls)
         self.assertIn('resume', self.audio.calls)
@@ -78,11 +79,11 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(.01)
         old=self.controller.generation
         await self.event('start',2)
-        await self.event('partial',2,text='等一下')
+        await self.event('partial',2,text='等一下',acoustic={'strong_ms':96})
         self.assertGreater(self.controller.generation,old)
         self.agent.hold=False
         await self.event('end',2)
-        await self.event('final',2,text='请简短些')
+        await self.event('final',2,text='请简短些',acoustic={'strong_ms':320})
         await self.settle()
         self.assertEqual(self.agent.cancelled,1)
         self.assertIn('请简短些',self.agent.prompts[-1])

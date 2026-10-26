@@ -4,6 +4,7 @@ from contextlib import aclosing
 import time
 from segments import SentenceBuffer
 from tts_stream import synthesize as synthesize_pcm
+from barge_in import BargeInCandidate, PAUSE_TIMEOUT
 
 
 def effective(text):
@@ -11,8 +12,9 @@ def effective(text):
 
 
 class Conversation:
-    def __init__(self, agent, audio, tts_url, *, synthesize=synthesize_pcm, log=print, reset_input=None, render_text=None):
+    def __init__(self, agent, audio, tts_url, *, synthesize=synthesize_pcm, log=print, reset_input=None, render_text=None, tts_speed=1.5):
         self.agent, self.audio, self.tts_url = agent, audio, tts_url
+        self.tts_speed = tts_speed
         self.synthesize, self.log, self.reset_input = synthesize, log, reset_input
         self.render_text = render_text or log
         self.active, self.muted, self.quit = True, False, False
@@ -27,8 +29,10 @@ class Conversation:
         self.interrupted = False
         self.unsubmitted = ''
         self.notice_delay = 2.0
+        self.paused_at = None
 
     async def invalidate(self, reason):
+        self.paused_at = None
         self.generation += 1
         response, record = self.response, self.response_record
         self.response = self.response_record = None
@@ -43,49 +47,86 @@ class Conversation:
         await self.audio.clear(self.generation)
         if record: record['local_clear_ack_at'] = time.monotonic()
 
+    def trace_candidate(self, turn, action):
+        record = turn.get('record')
+        if record is not None:
+            trace = record.setdefault('barge_in', [])
+            if len(trace) < 50:
+                trace.append({'at':time.monotonic(),'action':action,
+                              **turn['candidate'].acoustic})
+
+    async def resume_candidate(self, reason):
+        if self.paused_at is None: return
+        self.paused_at = None
+        for turn in self.inputs.values():
+            if turn.get('candidate'):
+                turn['candidate'].pause_expired = True
+                self.trace_candidate(turn, reason)
+        if self.response and not self.response.done():
+            await self.audio.resume()
+            self.log('未确认有效插话，恢复播报。')
+
     async def handle(self, event):
         if event.get('epoch') != self.epoch or self.muted or not self.active: return
         kind = event['type']
+        now = event.get('time', time.monotonic())
+        if self.paused_at is not None and now-self.paused_at >= PAUSE_TIMEOUT:
+            await self.resume_candidate('confirmation_timeout')
+        if kind == 'tick': return
         if kind == 'zero_input':
             self.log('连续 5 秒为全零信号，请检查麦克风、合盖状态和权限。')
             return
         if kind == 'notice': self.log(event['text']); return
         ident = event['id']
         if kind == 'start':
-            self.inputs[ident] = {'final':None,'finished':False,'confirmed':False,'text':''}
-            if self.response and not self.response.done():
-                if self.response_record:
-                    self.response_record['candidate_started_at'] = event.get('time',time.monotonic())
-                await self.audio.pause()
-                if self.response_record:
-                    self.response_record['pause_ack_at'] = time.monotonic()
-                self.log('检测到人声，已暂停播报，正在确认。')
+            guarded = bool(self.response and not self.response.done())
+            self.inputs[ident] = {'final':None,'finished':False,'confirmed':False,'text':'',
+                'candidate':BargeInCandidate() if guarded else None,
+                'generation':self.generation,'record':self.response_record if guarded else None}
+            if guarded:
+                self.inputs[ident]['candidate'].update({**event,'time':now})
+                self.trace_candidate(self.inputs[ident], 'candidate')
             return
         turn = self.inputs.get(ident)
         if turn is None: return
+        candidate = turn['candidate']
+        accepted = candidate.update({**event,'time':now}) if candidate else effective(event.get('text',''))
         if kind in ('partial','final'):
             turn['text'] = event.get('text','')  # ASR full-result revisions replace, never append.
-            if effective(turn['text']) and not turn['confirmed']:
+            if accepted and not turn['confirmed']:
                 turn['confirmed'] = True
-                if self.response and not self.response.done():
+                if candidate: self.trace_candidate(turn, 'confirmed')
+                if self.response and not self.response.done() and turn['generation']==self.generation:
                     await self.invalidate('speech')
                     self.log('已打断上一段回复，继续听你说。')
+        if (candidate and not turn['confirmed'] and kind in ('evidence','partial')
+                and candidate.can_pause and self.response and not self.response.done()
+                and turn['generation']==self.generation and self.paused_at is None):
+            await self.audio.pause()
+            self.paused_at = time.monotonic()
+            self.trace_candidate(turn, 'paused')
+            self.log('检测到持续人声，暂缓播报，正在确认插话。')
         if kind == 'final':
-            turn.update(finished=True, final=turn['text'] if effective(turn['text']) else None)
+            # Once interruption was confirmed, keep ASR revisions of that utterance.
+            keep = effective(turn['text']) and (accepted or turn['confirmed'])
+            turn.update(finished=True, final=turn['text'] if keep else None)
+            if candidate and not keep: self.trace_candidate(turn, 'filtered_final')
         elif kind == 'failed':
             turn.update(finished=True, final=None)
-            self.log(event.get('error','本轮识别未完成，请重新说话。'))
+            if candidate: self.trace_candidate(turn, 'asr_failed')
+            if not candidate or turn['confirmed']:
+                self.log(event.get('error','本轮识别未完成，请重新说话。'))
         elif kind == 'end':
             turn['ended_at'] = event.get('time', time.monotonic())
         if self.inputs and all(turn['finished'] for turn in self.inputs.values()):
             texts = [turn['final'] for _,turn in sorted(self.inputs.items()) if turn['final']]
             ended = max((turn.get('ended_at',time.monotonic()) for turn in self.inputs.values()))
-            self.inputs.clear()
             if texts:
+                self.inputs.clear()
                 await self.ask('\n'.join(texts), ended)
-            elif self.response and not self.response.done():
-                await self.audio.resume()
-                self.log('未确认有效发言，恢复上一段播报。')
+            else:
+                await self.resume_candidate('unconfirmed')
+                self.inputs.clear()
 
     async def ask(self, text, ended_at=None):
         await self.invalidate('replacement')
@@ -194,7 +235,7 @@ class Conversation:
             segment = {'id':seq,'text':part,'kind':'status' if notice else 'answer','requested_at':time.monotonic()}
             record['segments'].append(segment)
             pending = b''
-            async with aclosing(self.synthesize(part,self.tts_url,speed=1.5,metrics=segment)) as stream:
+            async with aclosing(self.synthesize(part,self.tts_url,speed=self.tts_speed,metrics=segment)) as stream:
                 async for pcm in stream:
                     if generation != self.generation: return
                     if notice and answer_ready.is_set() and 'notice_first_pcm_at' not in record: return
@@ -277,6 +318,7 @@ class Conversation:
             self.unsubmitted = ''
             self.log('已停止当前回复，继续聆听。')
         elif command in ('/mute','/unmute','/end','/start'):
+            self.paused_at = None
             self.epoch += 1
             self.inputs.clear()
             if self.reset_input: self.reset_input(self.epoch)

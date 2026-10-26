@@ -17,6 +17,35 @@
 - [已选样音](../../output/tts/female-voice-auditions/vivian.wav)与[完整生成参数](../../output/tts/female-voice-auditions/manifest.json)：24kHz 单声道，12.24 秒；此次使用非流式合成，不能作为 Vivian 首包延迟基线。
 - 实时请求采用同一音色、语气指令与采样参数：`temperature=0.9`、`top_p=1.0`、`top_k=50`、`repetition_penalty=1.05`；`stream=true`、`streaming_interval=0.32`、`max_tokens=1200`。完整请求随输出 JSON 保存。随机生成与流式解码不保证和原试听 WAV 逐样本相同。
 
+## 豆包云端 TTS（办公室模式）
+
+2026-10-15 新增豆包语音合成 2.0 后端。Air 将每个已完成的文本分段发送到官方 `POST https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse`，使用 `X-Api-Key`、资源 `seed-tts-2.0`，解析 SSE 中的 Base64 PCM，统一为现有播放链路的 **24kHz / 单声道 / signed 16-bit**。豆包服务端与 Air 播放均使用 1 倍原速，音频不做额外加速；Studio Vivian 仍使用此前选定的 1.5 倍速。
+
+默认音色为 `zh_female_vv_uranus_bigtts`（豆包 VV 女声），与本地 Vivian 是不同的声音，需要实际试听选择。TTS 请求绕过 GPT 使用的 HTTP 代理；操作系统级 VPN / TUN 路由仍由系统决定。云端模式不连接 Studio、不建立 SSH 转发，也不要求 Studio 在线。
+
+在豆包语音控制台**同一应用**开通「语音合成模型 2.0」后，可复用现有 `config/secrets.local.json` 的 `doubao.api_key`。可选专用 Key 的优先级为 `DOUBAO_TTS_API_KEY` → `doubao.tts_api_key` → `doubao.api_key`。密钥不会放进启动参数或输出报告；本机文件仍被 Git 忽略。
+
+```sh
+# 仅验证 TTS：短句真实合成，不需要 Bot、Studio、麦克风或扬声器
+python3.11 services/tts/doubao.py
+
+# 完整共享 Bot 对话
+./start.command --tts-provider doubao --device 'MacBook Air麦克风' --output-device '外置耳机'
+
+# 回家使用本地 Vivian
+./start.command --tts-provider studio
+```
+
+若希望双击启动时默认云端，在已有 `config/voice.local.json` 的 `tts` 对象中加入 `"provider": "doubao"`，可选 `"doubao_voice": "zh_female_vv_uranus_bigtts"`；保留已有其他配置。命令行 > 环境变量 `OPENNOVA_TTS_PROVIDER` / `OPENNOVA_DOUBAO_TTS_VOICE` > 本机配置。`--tts-provider cloud` 是豆包别名；暂不自动判断家庭网络或故障切换。
+
+每次豆包模式启动，包括 `--check`，都会合成“你好。”验证权限和完整性，丢弃音频，产生少量计费用量。HTTP 200 不代表合成成功：必须收到非空 PCM 和 `20000000` 完成码；权限错误、截断或超时明确失败。插话取消复用现有工作进程清理，关闭客户端 HTTP 流；未验证云端计算 / 计费何时停止，不承诺取消即免计费。
+
+实测（2026-10-15）：首次调用返回 `45000030` / `requested resource not granted`；用户在同一应用开通 TTS 后，使用原 Key 合成成功。VV / 1.5 倍速生成 4.267 秒音频，首 PCM 0.646 秒、首段变速后可播放 PCM 0.751 秒、总接收和处理 1.650 秒。这是当前 Air 网络下单次请求，未开启扬声器，不是实际首声或 P95。
+
+样音：[豆包 VV](../../output/tts/doubao-vv-cloud-1792033866573916000.wav)，[测量记录](../../output/tts/doubao-vv-cloud-1792033866573916000.json)；两者仅保存在本机。真实一键 `--tts-provider doubao --check --device 'MacBook Air麦克风'` 已通过 Bot、VAD、音频设备与云端 TTS 预检，未连接 Studio / SSH，未开启麦克风。离线回归覆盖 SSE 分包、完整性、权限错误、云端跳过 SSH、子进程变速以及预检 / 播报取消；公司网络下的连续真人对话听感仍待测试。
+
+官方协议与鉴权依据：[HTTP SSE 流式合成](https://docs.volcengine.com/docs/DoubaoVoice/HTTPChunkedSSEUnidirectionalStreaming-V3?lang=zh)、[API Key 使用说明](https://docs.volcengine.com/docs/DoubaoVoice/APIKeyUsage?lang=zh)。
+
 ## 部署位置与版本
 
 - SSH 主机：`agent-control`（Mac Studio）；工程：`/Users/nova/Documents/project/openNova/services/tts`。
@@ -28,6 +57,8 @@
 - 日志：`~/AgentWorkstation/logs/opennova/tts/`。当前开发进程信息记录在 `dev-service.json`，日志尚未配置轮转。
 
 ## 安装与启动
+
+已完成首次部署后，可在 Air 项目根目录执行 `./start.command`：自动检查 / 启动 Studio TTS、建立 SSH 转发并启动 Bot 语音，不必再分别开终端。支持 `--device`、`--output-device` 和不收音的 `--check`，详见[一键启动](../../tools/voice/README.md#一键启动共享-bot-语音)。下列命令保留用于首次安装和单独调试。
 
 在 Studio 工程目录：
 

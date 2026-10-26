@@ -1,0 +1,48 @@
+{
+  "action": "edit",
+  "dry_run": true,
+  "config": {
+    "clips": [
+      {
+        "path": "../../../output/color-film-references/shot-01-video/shot-01-opening.mp4",
+        "duration": 8
+      },
+      {
+        "path": "../../../output/color-film-references/shot-02-video/shot-02-cinnabar.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-03-video/shot-03-celadon.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-04-video/shot-04-pine.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-05-video/shot-05-moon.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-06-video/shot-06-ochre.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-07-video/shot-07-gamboge.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-08-video/shot-08-ink.mp4",
+        "duration": 10
+      },
+      {
+        "path": "../../../output/color-film-references/shot-09-video/shot-09-ending.mp4",
+        "duration": 8
+      }
+    ],
+    "output": "../../../output/video-production/nine-shots.mp4",
+    "width": 720,
+    "height": 1280,
+    "fps": 24
+  }
+}

@@ -1,5 +1,7 @@
 # OpenNova 整体语音链路技术方案
 
+实施更新（2026-10-14）：当前已新增 Air 上的持续 Bot、直接执行的记忆与文件修改（无需二次确认），用户基本真人语音测试通过；Studio 仍只运行 TTS。实际架构和待实现能力见 [Demo 技术架构与功能进展](opennova-demo-architecture-status.md)。下文日期与架构保留当时的验证记录和目标设计。
+
 日期：2026-10-12。状态：豆包 ASR 真人试音通过；VAD 与 Studio Vivian 已部署；独立 ChatGPT 授权、DeepSeek Harness / GPT-6.1 Sol 两轮会话和完整语音文件输入闭环已通过。真人连续交流与播放中插话仍待验证。当前可运行入口见 [语音对话 Demo](../../tools/voice/README.md)，使用 Vivian 1.5 倍速。
 
 OpenNova 的语音部署方向为本地音频处理、云端 ASR、Studio 常驻 Agent 服务，以及本地 TTS，支持工作协同与日常陪伴。语音交流按 ASR 输入、Agent 业务、TTS 输出三条链路组织，由会话管理协调轮次、播放与任务。本文细化 [MVP PRD](../product/opennova-mvp-prd.md) 第 4 章，并作为 [技术 Demo 预研方案](opennova-technical-demo-research.md) 的语音专项设计。
@@ -8,7 +10,7 @@ OpenNova 的语音部署方向为本地音频处理、云端 ASR、Studio 常驻
 
 本地 TTS 已部署在 Mac Studio，使用 MLX-Audio；Spark 留作后续训练与实验，不作为实时语音链路依赖。实施顺序见 [MVP 开发环境部署方案](opennova-mvp-development-deployment.md)。当前终端 Demo 在 Air 运行原生 Voice Processing、VAD、ASR 适配与 Harness，复用本机独立授权，Studio 合成 Vivian。`--continuous` 模式持续拾音并支持增量播报、候选暂停、确认插话后取消旧输出，以及内置 / 蓝牙设备选择；无此参数时保留原轮流模式。原生启动、PCM 采集与静音播放已通过，AEC 声学效果、真人插话完整性和 Studio GPU 停算仍待验证。
 
-**下文架构与模块职责描述目标链路，不代表全部已部署。** Studio 常驻会话服务、工作任务、长期记忆和多设备接入仍待实现；当前代码边界与运行命令以 [语音对话 Demo](../../tools/voice/README.md) 为准。
+**下文架构与模块职责描述目标链路，不代表全部已部署。** Studio 常驻会话服务、真实工作任务和多设备接入仍待实现；Air 上的 Bot 实验已增加基础持续记忆与计时任务。当前代码边界与运行命令以 [语音对话 Demo](../../tools/voice/README.md) 和 [Bot 接入实验](opennova-bot-spike.md) 为准。
 
 ## 1 部署与模块职责
 

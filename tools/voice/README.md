@@ -1,5 +1,61 @@
 # OpenNova 语音对话 Demo
 
+## 一键启动共享 Bot 语音
+
+2026-10-14 新增根目录 `start.command`，推荐用于当前 DeepSeek-Bot 版本。它自动使用 `--bot`，与网页共享上下文、工程文件和 Shell 能力；下文原有 `run-continuous.command` 仍是手动入口。
+
+```sh
+# 在项目根目录运行；省略设备参数则使用系统默认输入 / 输出
+./start.command
+
+# 内置麦克风 + 有线耳机
+./start.command --device 'MacBook Air麦克风' --output-device '外置耳机'
+
+# 蓝牙麦克风 + 音响
+./start.command --device 'SRS-XB100' --output-device 'SRS-XB100'
+
+# 可选：云端 GPT 代理；SSH 到 Studio 不使用此 HTTP 代理
+./start.command --proxy http://127.0.0.1:7897 --device 'MacBook Air麦克风'
+
+./start.command --list-devices
+./start.command --check --device 'MacBook Air麦克风'
+
+# 办公室云端 TTS，无需 Studio 在线；GPT 代理仍按自己的网络选择
+./start.command --tts-provider doubao --device 'MacBook Air麦克风' --output-device '外置耳机'
+./start.command --tts-provider doubao --check
+
+# 回家使用 Vivian
+./start.command --tts-provider studio
+```
+
+从其他目录可执行 `/Users/chenzhuoping/Documents/work/project/openNova/start.command` 并附加相同参数。也可双击 `start.command` 使用系统默认设备。
+
+启动按顺序完成：
+
+1. 检查 Bot 身份和真实工程路径；已有服务复用，缺失时在后台启动。网页仍为 `http://127.0.0.1:18560/`。
+2. 默认 Studio 模式检查本地 TTS 接口。若不可用，经 SSH 检查 Studio；TTS 尚未运行时执行已安装的 `serve.sh`，随后建立 SSH 转发。豆包模式跳过这一步全部本地端口 / SSH 检查，直接连接云端。
+3. 执行现有持续语音客户端，自动带上 `--bot` 和本次转发地址，再传递输入 / 输出设备。VAD 和豆包 ASR 接入由语音客户端负责。
+
+`--list-devices` 不启动服务、不打开麦克风。`--check` 会启动缺失的依赖服务，再检查原生设备、VAD、Bot 和 TTS 接口，不打开麦克风、不调用 ASR、不生成 GPT 回复。Studio 模式不合成音频；豆包模式合成一次“你好。”并丢弃，以确认服务权限和完整音频流，会产生少量 TTS 用量。不能代替真实交流验收。
+
+`--tts-provider studio|doubao` 优先于 `OPENNOVA_TTS_PROVIDER`，其次为 `config/voice.local.json` 的 `tts.provider`，默认 `studio`；`cloud` 是 `doubao` 的别名。豆包默认使用 VV 女声、1 倍原速，可通过 `--tts-voice`、`OPENNOVA_DOUBAO_TTS_VOICE` 或 `tts.doubao_voice` 改为已授权的 2.0 Speaker ID。Vivian 仍是 Studio 音色，两者音色不同。云端固定请求官方 HTTPS 接口，`--tts-url` / `--tts-port` 只影响 Studio。
+
+豆包凭据优先级：`DOUBAO_TTS_API_KEY` → 本地 secrets 的 `doubao.tts_api_key` → 已有 `doubao.api_key`。同一 Key 可以调用已开通的 ASR 和 TTS；只有 ASR 权限时会提示开通语音合成 2.0，停止启动。无需把密钥放入命令。详细配置见 [TTS 说明](../../services/tts/README.md#豆包云端-tts办公室模式)。
+
+默认 SSH 主机为 `agent-control`，Studio 工程目录为 `/Users/nova/Documents/project/openNova/services/tts`。可通过 `--studio-host`、`--studio-tts-dir` 修改。要求此前已完成 SSH 主机信任和免密认证；连接失败会停止并提示，不自动修改 SSH 信任设置。默认本地转发端口为 18000，可用 `--tts-port` 修改；一键入口显式向语音客户端传入该回环地址，覆盖普通入口的 `tts.url` / `OPENNOVA_TTS_URL`。
+
+`--proxy` 优先于 `OPENNOVA_PROXY`，仅对本次启动的进程生效；已有 Bot 保持原启动环境。更换代理后如需让 Bot 使用新设置，先执行 `tools/bot/run.command --stop`，再执行一键入口。脚本不更改系统代理。TTS HTTP 检查和语音传输绕过 HTTP 代理，SSH 的实际网络路径由现有 SSH / Tailscale 配置决定。
+
+退出时输入 `/quit` 或按 `Ctrl+C`：语音客户端清理收音、播放和当前任务；保留 Bot 和 Studio TTS，便于继续网页聊天或再次启动。仅本次创建的 SSH 转发会关闭，原有转发不受影响。一键入口同时只允许一个语音会话，避免重复拾音。启动失败不会结束已有服务；自动启动且已就绪的 Bot 也会保留。
+
+Air 启动日志位于 `output/voice/launcher/` 下的 `bot.log`、`studio.log`、`tunnel.log`；远端自动启动 TTS 的日志位于 Studio 工程 `output/tts/launcher.log`。日志受 Git 忽略并以本机私有权限创建，Bot 内部日志可能包含本地管理地址，勿公开上传。端口被其他程序占用时明确报错，不自动结束该程序。
+
+启动器回归：`/opt/homebrew/opt/node@24/bin/node --test tools/voice/tests/launcher.test.mjs`。覆盖服务启动与复用、参数传递、SSH / 端口错误、并发启动保护、锁恢复、真实 uv/Python 中断清理以及远端启动脚本；外部 Bot / SSH / 音频使用本地测试进程，TTS 启动脚本使用临时 HTTP 服务。另已在 Air 实测现有转发复用、新建转发及 `--check`，未进行真人对话或重新加载 Studio 模型。
+
+## 原有语音模式
+
+以下为旧模式和手动启动说明，`--web` 是旧语音模式的联网搜索开关，不是网页入口，也不与 `--bot` 同时使用。
+
 运行链路：**Air 原生音频 / Silero VAD → 豆包流式 ASR 2.0 → DeepSeek Harness / GPT-6.1 Sol → Studio Vivian → Air 1.5 倍保调播放**。
 
 2026-10-12 新增 `--continuous` 持续交流模式：持续拾音、增量文本分段合成、候选插话暂停、确认插话后取消旧生成和播报，以及静音、停止和重新开始。原来的轮流说话模式继续保留。2026-10-13 新增可选 `--web` 只读搜索和网页读取；视觉、文件和命令执行仍关闭。
@@ -75,9 +131,34 @@ uv run tools/voice/conversation.py --continuous
 | `/retry` | 恢复设备连接后按本次设备参数重建音频；若 Agent 连接已退出，显式重建 Agent 并提示进入新模型会话 |
 | `/quit` 或 `Ctrl+C` | 退出并清理采集、播放、识别连接及本次自有子进程 |
 
-正常停顿默认 800 ms。最新中间转写出现明显未完句或改口词时延长到 1600 ms；可用 `--silence-ms` / `--extended-silence-ms` 调整，最大 3000 ms。这是有限规则，不是完整语义断句。中间转写按修订替换，只有成功的最终文本进入 Agent。候选人声先暂停播报，有有效识别文本后才取消；空结果可以恢复仍有效的上一段播报。
+正常停顿默认 800 ms。最新中间转写出现明显未完句或改口词时延长到 1600 ms；可用 `--silence-ms` / `--extended-silence-ms` 调整，最大 3000 ms。这是有限规则，不是完整语义断句。中间转写按修订替换，只有成功的最终文本进入 Agent。思考或播报期间新增输入采用下面的插话过滤；待机聆听仍使用原来的起点与前置音频缓存。
 
 每轮最长发言 45 秒。超时、积压或提前失败的输入会被放弃，等待真实停顿后接收下一轮，避免把残余半句话当作新问题。最多 2 个 ASR 请求在收尾，100 帧上行缓存、8 个待合成文本段，每段最多 160 字，原生播放器最多缓存 2 秒 PCM；子进程和管道也有各自有限缓冲。持续模式运行到明确退出，不使用原有 `--turns` / `--listen-seconds` 的轮流模式计数。
+
+## 插话误触发优化（2026-10-16）
+
+所有持续模式入口（包括一键 Bot、旧 Harness 和云端 / Studio TTS）默认启用；退出旧语音进程后重新运行原命令即可，不需要更新 Studio。收音与 ASR 仍从原有约 96 ms 的 VAD 候选开始，不会为等待插话确认而丢弃句首。
+
+| 判定步骤 | 当前行为 |
+| --- | --- |
+| 候选收音 | 仅开始识别，不立即暂停播报 |
+| 暂停门槛 | 连续 256 ms 的音频同时满足 VAD 概率 ≥ 0.65、RMS ≥ -55 dBFS，且高于估计环境底噪 8 dB；底噪仅在低语音概率帧更新 |
+| 普通插话确认 | 去掉标点和“嗯、啊”等语气音后至少两个有效字符；中间转写的前两个有效字符跨至少 160 ms 的两次结果保持一致，或得到有效最终转写，并满足上述声学门槛 |
+| 明确停止指令 | “停”“等一下”“暂停”等完整匹配指令，在满足声学强度要求的连续 96 ms 人声后可快速确认，不等待普通插话稳定窗口 |
+| 未确认的候选 | ASR 失败或最终转写不符合插话条件时，恢复仍有效的旧播报；没有结论时约 1.2 秒自动恢复，同一候选不反复暂停。较晚到达的有效最终转写仍可提交 |
+
+一旦已确认插话并取消旧回复，保留该轮有效最终转写，包括 ASR 对短指令的修订。这些是初始保守阈值，尚未完成真实蓝牙声学验收。较轻或极短的“好”“不”等播报中插话可能被忽略，可改为“好的，继续”“不是这个”；待机时单字交流不受此限制。清晰持续的远处人声仍可能通过，音量不是距离或身份识别；本次没有新增声纹、唤醒词或回声消除模型，也不会保证过滤所有咳嗽。
+
+若通过手动持续入口使用 `--output-dir`，`conversation.json` 的每轮 `barge_in` 最多保存 50 条候选、暂停、确认、过滤及恢复事件，包含连续强人声时长、最近一帧 VAD 概率 / RMS 和环境底噪估计，不保存原始录音。`strong_ms` 是该候选内最长连续合格时长，不代表最近一帧仍是人声。一键入口暂不透传 `--output-dir`。
+
+复测时先让 Nova“用五句话介绍一下 OpenNova”，在播报过程中分别测试：
+
+1. 敲键盘、短促咳嗽或让远处的人正常说话，观察是否仍频繁暂停；安静外放也应测试，排查自身回声。
+2. 近距离说“帮我说得简短一点”，应暂停并切换到新回复，句首不丢失。
+3. 说“停”或“等一下”，应保留快速插话；一次未确认候选后，旧回复应恢复，不从头重播。
+4. `/mute`、`/unmute` 与 `/retry` 后重新测试，确认没有迟到识别或超时事件干扰新回复。
+
+离线针对性回归：`python3.11 -m unittest discover -s tools/voice/tests -p test_barge_in.py`。使用人工构造的音频强度 / VAD 结果与本地替身 ASR、Agent、播放器，验证决策和生命周期；不代表真实噪音识别率或扬声器停声延迟。
 
 ## 依赖和启动检查
 
@@ -106,7 +187,7 @@ Studio 运行[现有 TTS 服务](../../services/tts/README.md)。Air 的 `127.0.
 ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18000:127.0.0.1:8000 agent-control
 ```
 
-SSH 转发当前需要手动保持运行；端口不可达时先检查转发和 Studio 服务。网络过载不会自动重试旧回答，终端保留已显示文字，下一轮可继续说话。授权或启动失败仍需修复对应配置。TTS 客户端绕过 HTTP 代理访问回环端口；SSH 实际走局域网还是中继取决于当前网络路径，不能仅凭开启 VPN 推断。网络排查与单次局域网测量见 [TTS 说明](../../services/tts/README.md#局域网传输复核-2026-10-12)。
+使用这个手动入口时，SSH 转发需要手动保持运行；根目录 `start.command` 已自动管理连接。端口不可达时先检查转发和 Studio 服务。网络过载不会自动重试旧回答，终端保留已显示文字，下一轮可继续说话。授权或启动失败仍需修复对应配置。TTS 客户端绕过 HTTP 代理访问回环端口；SSH 实际走局域网还是中继取决于当前网络路径，不能仅凭开启 VPN 推断。网络排查与单次局域网测量见 [TTS 说明](../../services/tts/README.md#局域网传输复核-2026-10-12)。
 
 ## 版本收尾验证（2026-10-12）
 
@@ -167,7 +248,7 @@ OPENNOVA_PROXY=http://127.0.0.1:7897 tools/voice/run-continuous.command \
 
 - 安静时连续外放，确认助手不会把自己当作用户。
 - 在句首、句中、句尾插话，确认及时停声且新表达开头完整。
-- “好”“不”“等一下”、停顿后补充和改口；键盘声与轻声。重咳嗽可能触发候选人声，相关优化按用户决定暂缓。
+- “好”“不”“等一下”、停顿后补充和改口；键盘声、轻声、重咳嗽与远处人声。插话过滤规则已更新，听感和阈值仍需现场验证。
 - 静音期间说话、恢复后开口、设备变更后 `/retry`。
 - 多句 Vivian 的衔接、音量与语调；长时间运行；Studio 断流后的资源释放时间。
 
@@ -179,3 +260,9 @@ uv run tools/voice/conversation.py --device 'MacBook Air麦克风'
 ```
 
 不传 `--continuous` 时仍按原流程：思考和播报期间关闭麦克风，播放结束等待 0.6 秒后重新收音。可显式指定蓝牙设备和输出，例如 `--device SRS-XB100 --output-device SRS-XB100`。默认最多 20 次聆听、每次 60 秒；此模式没有 AEC 或播报插话。原有 `--audio` / `--no-play` / 回复 WAV 保存行为保持不变。
+
+## 可选 DeepSeek-Bot 实验
+
+先运行 `tools/bot/run.command` 保持宿主，再在持续语音命令加 `--bot`。网页入口为 http://127.0.0.1:18560/，可输入文本、查看双方对话、查看语音执行的文件/记忆修改记录；文件与记忆直接生效，无需确认。该模式与 `--web` 互斥，文本和语音使用同一持久 Bot，会等待完整答复再播报。部署、操作记录命令及尚待现场验收项目见[接入实验说明](../../docs/research/opennova-bot-spike.md)。
+
+Bot 模式现已连接 OpenNova 真实工程，支持文件浏览、代码检索、读写和 Shell 测试执行，无需二次确认。语音 `/stop` 或确认插话会取消当前前台命令，已完成的修改保留；`/operations` 与网页操作记录显示同一组文件差异和命令结果。前台整轮时限 10 分钟，长任务等待期间麦克风继续监听。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "视频制作"
+  short_description: "通过方舟 Seedance 生成分镜视频并查询下载任务 使用 FFmpeg 剪辑合并成片"
+  default_prompt: "使用 $video-production 将分镜脚本制作成视频，并按顺序剪辑成完整短片。"
