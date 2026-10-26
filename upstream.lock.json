@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "nodeMajor": 24,
+    "pnpm": "11.28.5"
+  },
+  "components": {
+    "harness": {
+      "path": "engine/harness",
+      "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+      "revision": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+      "version": "0.2.1-alpha.2",
+      "license": "MIT",
+      "localPatches": [
+        {
+          "sourceRepository": "https://github.com/jornel83/deepseek-harness.git",
+          "commit": "bf89008192b279f9928aa4578aed183a7547a9d2",
+          "description": "Explicit public HTTP options and charset detection"
+        },
+        {
+          "sourceRepository": "https://github.com/jornel83/deepseek-harness.git",
+          "commit": "cccbe9cb4763f597bfb83129ca03345c3fbead1b",
+          "description": "Retain HTTP errors with invalid HTML charsets"
+        }
+      ]
+    },
+    "bot": {
+      "path": "engine/bot",
+      "packagePath": "ds-bot",
+      "repository": "https://github.com/Fei2411/DeepSeek-Bot.git",
+      "revision": "20ebc9213cbbde7249d71786765f86be00dc6663",
+      "version": "0.1.5",
+      "license": "Apache-2.0",
+      "localPatches": []
+    }
+  }
+}
