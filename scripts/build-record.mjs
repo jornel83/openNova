@@ -4,7 +4,7 @@ import {readFileSync,readdirSync,lstatSync,readlinkSync,realpathSync,existsSync,
 import {join,relative,dirname,sep} from 'node:path';
 import {ROOT,runtimeSources} from '../services/runtime/sources.mjs';
 
-const roots=['engine/harness','engine/bot/ds-bot','services','scripts','tools/setup','config','patches','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','upstream.lock.json'];
+const roots=['engine/harness','engine/bot/ds-bot','engine/siwc','services','scripts','tools/setup','config','patches','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','upstream.lock.json'];
 const ignored=new Set(['node_modules','.git','lib','dist','output','target','coverage','.superpowers','__pycache__','.pytest_cache','.dsh-build','.cache']);
 const recordPath=root=>join(root,'output/build/manifest.json');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -29,6 +29,7 @@ export function sourceDigest(root=ROOT) {
 export const BUILD_ARTIFACTS=[
   'engine/harness/apps/cli/lib/bin.js','engine/harness/packages/sdk/client/lib/index.js',
   'engine/harness/packages/llm/llm/lib/index.js','engine/bot/ds-bot/client.js',
+  'engine/siwc/packages/local/dist/index.js','engine/siwc/packages/local/dist/items.js',
   'output/bot/web/index.html','output/bot/web/assets/app.js','output/bot/web/assets/app.css',
 ];
 
@@ -36,7 +37,7 @@ export function buildArtifacts(root=ROOT) {
   const files=new Set(BUILD_ARTIFACTS);
   for(const pattern of ['engine/harness/apps/*/{lib,dist}/**/*','engine/harness/packages/*/*/lib/**/*',
     'engine/harness/vendor/*/lib/**/*','engine/harness/native/system/packages/*/{lib,prebuilds}/**/*',
-    'engine/harness/native/system/packages/*/*.node','output/bot/web/**/*']) {
+    'engine/harness/native/system/packages/*/*.node','output/bot/web/**/*','engine/siwc/packages/local/dist/**/*']) {
     for(const path of globSync(pattern,{cwd:root}))if(lstatSync(join(root,path)).isFile())files.add(path);
   }
   return [...files].sort();
@@ -44,7 +45,7 @@ export function buildArtifacts(root=ROOT) {
 
 export function recordBuild(root=ROOT,artifacts=buildArtifacts(root)) {
   const sources=runtimeSources(root),record={schemaVersion:1,sourceDigest:sourceDigest(root),
-    upstream:{harness:sources.manifest.components.harness.revision,bot:sources.manifest.components.bot.revision},
+    upstream:{harness:sources.manifest.components.harness.revision,bot:sources.manifest.components.bot.revision,siwc:sources.manifest.components.siwc.revision},
     nodeMajor:Number(process.versions.node.split('.')[0]),
     artifacts:Object.fromEntries(artifacts.map(path=>[path,hash(readFileSync(join(root,path)))]))};
   mkdirSync(dirname(recordPath(root)),{recursive:true});writeFileSync(recordPath(root),JSON.stringify(record,null,2)+'\n');

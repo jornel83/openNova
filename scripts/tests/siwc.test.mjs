@@ -23,7 +23,7 @@ test('SDK code stays in repository while authorization and helper paths remain c
 test('SDK module requires both bundled build entries and ignores old overlays without Git',t=>{
   const root=mkdtempSync(join(tmpdir(),'nova-sdk export '));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const entry=join(root,'engine/siwc/packages/local/dist/index.js');mkdirSync(dirname(entry),{recursive:true});
-  assert.throws(()=>siwcModule(root),/siwc_build_missing.*pnpm run build/);
+  assert.throws(()=>siwcModule(root),e=>e.code==='siwc_build_missing'&&/pnpm run build/.test(e.message));
   writeFileSync(entry,'export {};');assert.throws(()=>siwcModule(root),/siwc_build_missing/);
   writeFileSync(join(dirname(entry),'items.js'),'export {};');assert.equal(siwcModule(root),entry);
   rmSync(entry);assert.throws(()=>siwcModule(root),/siwc_build_missing/);

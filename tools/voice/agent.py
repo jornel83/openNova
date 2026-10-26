@@ -26,6 +26,7 @@ def failure_message(event):
         'web_api_key_missing':'联网模式需要 Exa API Key，请配置本机 config/secrets.local.json 的 web.exa_api_key。',
         'deepseek_api_key_missing':'联网模式需要 DeepSeek API Key，请配置本机 config/secrets.local.json 的 web.deepseek_api_key。',
         'invalid_web_configuration':'联网配置格式有误，请参考 config/voice.example.json。',
+        'siwc_build_missing':'请先运行 pnpm run setup 和 pnpm run build。',
         'siwc_tools_extension_missing':'请先运行 python3.11 tools/setup/bootstrap.py --install --web。',
         'agent_timeout':'本轮已超过 90 秒，请重试或缩小问题范围。',
         'web_time_budget':'本轮检索已达到时间预算，请缩小问题范围后重试。',

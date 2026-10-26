@@ -11,6 +11,7 @@ jobs:
     env:
       CI: 'true'
       OPENNOVA_HARNESS_ROOT: /nonexistent/legacy-harness
+      OPENNOVA_SIWC_ROOT: /nonexistent/legacy-siwc
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,11 +44,11 @@ jobs:
         run: |
           pnpm test
           pnpm run test:bot
-      - name: Optional ChatGPT adapter contracts (no authorization)
+      - name: Bundled SDK and helper contracts (no authorization)
         working-directory: ${{ runner.temp }}/opennova source
         env:
-          OPENNOVA_SIWC_ROOT: ${{ runner.temp }}/opennova-siwc
           OPENNOVA_KEYCHAIN_HELPER: ${{ runner.temp }}/opennova-siwc-keychain
         run: |
           python3.11 tools/setup/bootstrap.py --install --web
-          pnpm run test:chatgpt
+          python3.11 tools/setup/bootstrap.py --check --web
+          node --test engine/siwc/packages/local/test/*.test.mjs

@@ -10,12 +10,12 @@
 | --- | --- |
 | Harness | 仓库内 `engine/harness/`；版本和本地补丁见根目录 `upstream.lock.json`，pnpm `11.28.5` |
 | 启动方式 | 官方 SDK 启动 `dsh --profile sdk-minimal`，加载本目录 `voice.patch.yml`；通过 OpenNova 插件适配 |
-| 官方 DevKit | `~/.local/share/opennova/siwc-devkit`，提交 `0a36fefeb913055c8c7a1a29b63d82b96b2e841a`；`@siwc/local` 已构建 |
+| 官方 DevKit | 仓库内 `engine/siwc/`，提交 `0a36fefeb913055c8c7a1a29b63d82b96b2e841a`；`@siwc/local` 已构建 |
 | 凭据加密程序 | `~/.local/share/opennova/bin/siwc-keychain`；使用此前验证的 OpenNova Keychain 条目 `OpenNova.SIWC.Probe` |
 | 独立注册与授权 | `~/.config/opennova-siwc-probe/`，沿用本次用户授权的 OpenNova 注册；凭据加密保存 |
 | Harness 文字会话 | `~/.local/share/opennova/harness-home/sessions/`；不读取用户默认 Harness 配置 |
 
-模型适配配置可通过 `OPENNOVA_SIWC_ROOT`、`OPENNOVA_SIWC_STORAGE`、`OPENNOVA_KEYCHAIN_HELPER` 指定。`config/secrets.local.json` 中的豆包密钥不参与模型授权。不得读取或复用 Codex 的登录文件，也不自动使用环境中的其他模型 API Key。
+模型适配配置可通过 `OPENNOVA_SIWC_STORAGE`、`OPENNOVA_KEYCHAIN_HELPER` 指定。`config/secrets.local.json` 中的豆包密钥不参与模型授权。不得读取或复用 Codex 的登录文件，也不自动使用环境中的其他模型 API Key。
 
 ```sh
 node services/agent/worker.mjs --check
@@ -48,7 +48,7 @@ OPENNOVA_PROXY=http://127.0.0.1:7897 /opt/homebrew/opt/node@24/bin/node tools/ag
 
 DeepSeek 通过原生 `web-search-deepseek` 插件调用官方 Anthropic 兼容接口，搜索模型为 `deepseek-flash`，每次辅助模型请求最多一次服务端搜索、输出上限 2,048 Token。主对话模型继续使用 GPT-6.1 Sol。每轮仍最多两次辅助搜索请求；这些限制不构成货币费用硬上限。仅取得链接和标题时，应按需 `web_fetch` 阅读正文后再做详细总结。
 
-- `patches/siwc/0001-stream-items.patch`：在官方 DevKit 的 authenticated 路径增加 `streamItems`，沿用刷新和 Keychain。按固定提交导出、应用补丁、npm 锁定安装及构建；产物位于 `output/deps/siwc/<revision>-<patch-sha>`，不修改原检出。没有向业务层暴露 token。
+- `patches/siwc/0001-stream-items.patch`：在官方 DevKit 的 authenticated 路径增加 `streamItems`，沿用刷新和 Keychain。补丁已应用到 `engine/siwc/` 跟踪源码；根目录锁定安装并构建 `packages/local/dist/`，文本与工具路径共用该 SDK。没有向业务层暴露 token。
 - `responses-protocol.mjs`：把允许的工具放进 `opennova` namespace，往返保留 call ID、结果、reasoning replay。只接收完成的输出；兼容订阅流的空 completed.output + output_item.done，截断、失败和取消不会提交可执行调用。
 - `web.patch.yml`：加载 Harness 原生 Web / Exa / DeepSeek / HTTP fetch / tool-web / timeout-policy，按配置选择一个搜索后端。每轮最多 2 次搜索、3 次读取、6 次模型请求；每次搜索 1 个查询、最多 5 项，网页输出 12,000 字符。单次搜索 15 秒、读取 10 秒，从第一个 Web 工具启动至 Agent 完成最多 45 秒（包括工具间模型推理）、整轮 90 秒；不含 TTS。
 - `time-context.mjs`：通过 Harness 上下文每步刷新本机时区与纽约时间，支持跨日会话；缺省年份与相对日期由提示规则结合上下文理解。
@@ -90,6 +90,6 @@ JSONL ready 包含 `outputMode: incremental | settled-answer`。联网模式仅�
 
 ## 环境重建
 
-从仓库根目录运行 `pnpm run setup -- --chatgpt`、`pnpm run build`。Harness/Bot 源码随 OpenNova 分发，安装不再访问私人 SSH 仓库或相邻工程。`tools/setup/bootstrap.py` 只管理可选 SIWC 与 Keychain helper；精确版本由 `config/runtime-versions.json` 固定。已有 helper 与授权数据保留。
+从仓库根目录运行 `pnpm run setup -- --chatgpt`、`pnpm run build`。Harness/Bot/SIWC 源码随 OpenNova 分发，安装不再访问私人 SSH 仓库或相邻工程。`tools/setup/bootstrap.py` 只准备或检查 Keychain helper；三个上游版本统一由 `upstream.lock.json` 固定。已有 helper 与授权数据保留。
 
-`agent.harness_root` / 外部 `OPENNOVA_HARNESS_ROOT` 不再改变源码位置；SIWC 的机器路径仍可配置。默认 `pnpm test` 无需 SIWC，准备适配扩展后执行 `pnpm run test:chatgpt`。源码或补丁变化后需重建；构建摘要会检测陈旧产物。完整步骤见[开发说明](../../docs/development.md)。前面的日期段落记录历史验证，当前安装方式以本节和根 README 为准。
+旧 Harness/SIWC 外部源码路径设置不再生效。授权存储和 helper 的机器路径仍可配置。默认 `pnpm test` 已包含 SIWC 协议测试，可通过 `pnpm run test:chatgpt` 单独运行。源码或补丁变化后需重建；构建摘要会检测陈旧产物。完整步骤见[开发说明](../../docs/development.md)。前面的日期段落记录历史验证，当前安装方式以本节和根 README 为准。

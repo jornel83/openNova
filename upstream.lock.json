@@ -32,6 +32,20 @@
       "version": "0.1.5",
       "license": "Apache-2.0",
       "localPatches": []
+    },
+    "siwc": {
+      "path": "engine/siwc",
+      "repository": "https://github.com/openai/sign-in-with-chatgpt-devkit.git",
+      "revision": "0a36fefeb913055c8c7a1a29b63d82b96b2e841a",
+      "version": "0.1.0",
+      "license": "LicenseRef-SIWC-Noncommercial-1.0",
+      "localPatches": [
+        {
+          "path": "patches/siwc/0001-stream-items.patch",
+          "sha256": "5bd4c030e8550e294e4814f3ab75c742e110b1e0bdac77e8846dd14c854629c6",
+          "description": "Authenticated structured response streaming; already applied to tracked source"
+        }
+      ]
     }
   }
 }

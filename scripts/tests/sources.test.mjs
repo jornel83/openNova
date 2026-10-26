@@ -13,7 +13,7 @@ test('default runtime sources are inside this checkout despite legacy external c
   writeFileSync(file,JSON.stringify({agent:{harness_root:'/missing/sibling-harness',siwc_root:'/optional/siwc'}}));
   const s=loadSettings({OPENNOVA_HARNESS_ROOT:'/another/missing-harness'},file);
   assert.equal(s.harnessRoot,join(ROOT,'engine/harness'));
-  assert.equal(s.siwcRoot,'/optional/siwc');
+  assert.equal(s.siwcRoot,join(ROOT,'engine/siwc'));
   assert.equal(botSettings({}).plugin,join(ROOT,'engine/bot/ds-bot'));
   assert.equal(runtimeSources().harnessRoot,s.harnessRoot);
 });
@@ -21,7 +21,7 @@ test('default runtime sources are inside this checkout despite legacy external c
 test('source contracts work in a moved export without Git metadata or build outputs',t=>{
   const root=mkdtempSync(join(tmpdir(),'nova-export-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   writeFileSync(join(root,'upstream.lock.json'),readFileSync(join(ROOT,'upstream.lock.json')));
-  for(const [path,name,version] of [['engine/harness','@deepseek-ai/dsh-root','0.2.1-alpha.2'],['engine/bot/ds-bot','ds-bot','0.1.5']]){
+  for(const [path,name,version] of [['engine/harness','@deepseek-ai/dsh-root','0.2.1-alpha.2'],['engine/bot/ds-bot','ds-bot','0.1.5'],['engine/siwc','sign-in-with-chatgpt','0.1.0']]){
     mkdirSync(join(root,path),{recursive:true});
     writeFileSync(join(root,path,'package.json'),JSON.stringify({name,version}));
     writeFileSync(join(root,path,'LICENSE'),'fixture');

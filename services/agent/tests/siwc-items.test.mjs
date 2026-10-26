@@ -1,13 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
-import {join} from 'node:path';
-import {homedir} from 'node:os';
-import {existsSync,readFileSync} from 'node:fs';
-const manifest=new URL('../../../output/deps/siwc/current.json',import.meta.url);
-const root=process.env.OPENNOVA_TEST_SIWC || (existsSync(manifest) ? JSON.parse(readFileSync(manifest)).path : join(homedir(),'.local/share/opennova/siwc-devkit'));
-let items;
-try {items=await import(pathToFileURL(join(root,'packages/local/dist/items.js')));} catch(e) {if(e.code!=='ERR_MODULE_NOT_FOUND')throw e;}
+import {siwcModule} from '../siwc.mjs';
+const items=await import(new URL('./items.js',pathToFileURL(siwcModule())));
 const call=(options={})=>items.streamItems('synthetic-token',{model:'gpt-6.1-sol',input:[{role:'user',content:'hello'}],...options},new AbortController().signal);
 const frame=x=>`data: ${JSON.stringify(x)}\n\n`;
 const output=[{type:'function_call',id:'fc_1',call_id:'call_1',name:'web_search',namespace:'opennova',arguments:'{"queries":["hello"]}',status:'completed'}];

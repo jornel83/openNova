@@ -7,8 +7,8 @@ import {recordBuild,checkBuild,sourceDigest} from './build-record.mjs';
 
 const HELP=`OpenNova (Node 24, pnpm 11.28.5)
   pnpm run setup                 Install locked dependencies, no account required
-  pnpm run setup -- --chatgpt     Also prepare optional SIWC/Keychain adapter (macOS)
-  pnpm run build                 Build included Harness, Bot and OpenNova web
+  pnpm run setup -- --chatgpt     Also prepare the optional Keychain helper (macOS)
+  pnpm run build                 Build included Harness, Bot, SIWC and OpenNova web
   pnpm test                      Offline product regression tests
   pnpm run test:bot               Included upstream Bot tests
   pnpm start                     Start the shared Bot and web interface
@@ -18,15 +18,15 @@ Configure your own model authorization before starting the assistant.
 `;
 
 export function commandPlan(command,args=[],root=ROOT) {
-  const sources=runtimeSources(root),harness=sources.harnessRoot,bot=sources.botRoot;
+  const sources=runtimeSources(root),harness=sources.harnessRoot,bot=sources.botRoot,siwc=sources.siwcRoot;
   const clean=args.filter(a=>a!=='--');
   if(!['setup','build','test:bot','start','start:voice'].includes(command))throw Error('unknown_command: '+command);
   if((command==='setup'&&clean.some(a=>a!=='--chatgpt'))||(['build','test:bot'].includes(command)&&clean.length))throw Error('unknown_option');
   const step=(command,args,cwd=root,env={})=>({command,args,cwd,env:{CI:'true',...env}});
   if(command==='setup')return [step('pnpm',['install','--frozen-lockfile']),step('pnpm',['install','--frozen-lockfile'],harness),
-    step('npm',['ci','--no-audit','--no-fund'],bot),
+    step('npm',['ci','--no-audit','--no-fund'],bot),step('npm',['ci','--ignore-scripts','--no-audit','--no-fund','--workspace','@siwc/local','--include-workspace-root'],siwc),
     ...(clean.includes('--chatgpt')?[step(process.env.OPENNOVA_PYTHON||'python3.11',[join(root,'tools/setup/bootstrap.py'),'--install','--web'])]:[])];
-  if(command==='build')return [step('pnpm',['run','build'],harness),step('npm',['run','build'],bot),step(process.execPath,[join(root,'services/bot/web/build.mjs')])];
+  if(command==='build')return [step('pnpm',['run','build'],harness),step('npm',['run','build'],bot),step('npm',['run','build','-w','@siwc/local'],siwc),step(process.execPath,[join(root,'services/bot/web/build.mjs')])];
   if(command==='test:bot')return [step(process.execPath,['--import',join(root,'services/bot/resolve.mjs'),'--test',...[...globSync('test/*.test.js',{cwd:bot})].sort()],bot,
     {DSH_HARNESS:harness,OPENNOVA_HARNESS_ROOT:harness,OPENNOVA_BOT_PLUGIN:bot})];
   if(command==='start')return [step(process.execPath,[join(root,'services/bot/launch.mjs'),...clean])];
@@ -42,7 +42,7 @@ export function requiresBuild(command,options) {
 export function doctor(root=ROOT) {
   const sources=checkEngineSources(root);
   return {sources:true,node:process.versions.node,requiredNodeMajor:24,
-    engines:{harness:sources.harnessRoot,bot:sources.botRoot},build:checkBuild(root)};
+    engines:{harness:sources.harnessRoot,bot:sources.botRoot,siwc:sources.siwcRoot},build:checkBuild(root)};
 }
 
 function sourceIdentity(root) {

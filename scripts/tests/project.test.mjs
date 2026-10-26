@@ -11,7 +11,7 @@ import {recordBuild,checkBuild,buildArtifacts} from '../build-record.mjs';
 function fixture(t) {
   const root=mkdtempSync(join(tmpdir(),'nova-build-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   cpSync(join(ROOT,'upstream.lock.json'),join(root,'upstream.lock.json'));
-  for(const [dir,name,version] of [['engine/harness','@deepseek-ai/dsh-root','0.2.1-alpha.2'],['engine/bot/ds-bot','ds-bot','0.1.5']]){
+  for(const [dir,name,version] of [['engine/harness','@deepseek-ai/dsh-root','0.2.1-alpha.2'],['engine/bot/ds-bot','ds-bot','0.1.5'],['engine/siwc','sign-in-with-chatgpt','0.1.0']]){
     mkdirSync(join(root,dir),{recursive:true});
     writeFileSync(join(root,dir,'package.json'),JSON.stringify({name,version}));writeFileSync(join(root,dir,'LICENSE'),'fixture');
   }
@@ -75,4 +75,12 @@ test('stop, status and help remain available when a build is stale',()=>{
   assert.equal(requiresBuild('start:voice',['-h']),false);
   assert.equal(requiresBuild('start:voice',['--list-devices']),false);
   assert.equal(requiresBuild('start:voice',['--check']),true);
+});
+
+test('editing bundled SDK source invalidates the build record',t=>{
+  const root=fixture(t),source=join(root,'engine/siwc/packages/local/src/index.ts'),asset='output/bot/web/index.html';
+  mkdirSync(join(source,'..'),{recursive:true});writeFileSync(source,'export const revision=1;');
+  mkdirSync(join(root,asset,'..'),{recursive:true});writeFileSync(join(root,asset),'built');
+  recordBuild(root,[asset]);assert.equal(checkBuild(root).ready,true);
+  writeFileSync(source,'export const revision=2;');assert.equal(checkBuild(root).ready,false);
 });

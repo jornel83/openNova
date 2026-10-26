@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the optional pinned ChatGPT adapter; Harness is included in OpenNova."""
+"""Prepare/check the macOS helper; SDK sources and builds belong to OpenNova."""
 import argparse
 import json
 import os
@@ -17,74 +17,45 @@ def run(args, cwd=None, capture=False):
                           text=True, stdout=subprocess.PIPE if capture else None).stdout
 
 
-def ensure_repo(path, spec, *, install):
-    path = Path(path)
-    if not path.exists():
+def ensure_helper(path, *, install):
+    helper = Path(path)
+    if not helper.exists():
         if not install:
-            raise RuntimeError(f'Missing repository: {path}; run --install')
-        path.parent.mkdir(parents=True, exist_ok=True)
-        run(['git', 'init', '-q', path])
-        run(['git', '-C', path, 'remote', 'add', 'origin', spec['url']])
-        run(['git', '-C', path, 'fetch', '--depth=1', 'origin', spec['revision']])
-        run(['git', '-C', path, 'checkout', '--detach', spec['revision']])
-    revision = run(['git', '-C', path, 'rev-parse', 'HEAD'], capture=True).strip()
-    if revision != spec['revision']:
-        raise RuntimeError(f'Unexpected revision in {path}; preserve it and configure another install path')
-    if run(['git', '-C', path, 'status', '--porcelain'], capture=True).strip():
-        raise RuntimeError(f'Found uncommitted changes in {path}; checkout preserved')
+            raise RuntimeError('Keychain helper missing; run pnpm run setup -- --chatgpt')
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        run(['swiftc', ROOT / 'services/agent/keychain.swift', '-o', helper])
+        helper.chmod(0o700)
+    if not os.access(helper, os.X_OK):
+        raise RuntimeError('Keychain helper is not executable; existing file preserved')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--check', action='store_true', help='Read-only local dependency checks; no login or microphone')
-    mode.add_argument('--install', action='store_true', help='Download/build missing dependencies at pinned versions')
-    parser.add_argument('--web', action='store_true', help='Also prepare/check the pinned SIWC tool extension')
+    mode.add_argument('--check', action='store_true', help='Check local builds/helper; no login or credentials')
+    mode.add_argument('--install', action='store_true', help='Compile a missing Keychain helper; preserve existing files')
+    parser.add_argument('--web', action='store_true', help='Compatibility flag: tool streaming is now included in the SDK')
     args = parser.parse_args()
     try:
         if platform.system() != 'Darwin':
-            raise RuntimeError('This bootstrap targets macOS and its Keychain')
-        for executable in ('git', 'node', 'npm', 'npx', 'uv', 'ffmpeg', 'swiftc'):
+            raise RuntimeError('This helper uses macOS Keychain')
+        for executable in ('node', 'swiftc'):
             if not shutil.which(executable):
                 raise RuntimeError(f'Missing {executable}; see README installation prerequisites')
-        version = run(['node', '--version'], capture=True).strip().lstrip('v')
-        major = int(version.split('.')[0])
-        if major != 24:
+        if int(run(['node', '--version'], capture=True).strip().lstrip('v').split('.')[0]) != 24:
             raise RuntimeError('OpenNova requires Node 24')
-        source = "import {loadSettings} from './services/agent/settings.mjs'; console.log(JSON.stringify(loadSettings()));"
-        settings = json.loads(run(['node', '--input-type=module', '-e', source], cwd=ROOT, capture=True))
-        versions = json.loads((ROOT / 'config/runtime-versions.json').read_text())
-        siwc = Path(settings['siwcRoot'])
-        check = 'checkEngineSources' if args.install else 'requireBuiltHarness'
+        settings = json.loads(run(['node', '--input-type=module', '-e',
+            "import {loadSettings} from './services/agent/settings.mjs'; console.log(JSON.stringify(loadSettings()));"], cwd=ROOT, capture=True))
         run(['node', '--input-type=module', '-e',
-             f"import {{{check}}} from './services/runtime/sources.mjs'; {check}();"], cwd=ROOT)
-        # Only the optional public SIWC dependency is an external source checkout.
-        ensure_repo(siwc, versions['siwc'], install=args.install)
-        if not (siwc / 'packages/local/dist/index.js').is_file():
-            if not args.install:
-                raise RuntimeError('SIWC build missing; run --install')
-            run(['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund',
-                 '--workspace', '@siwc/local', '--include-workspace-root'], cwd=siwc)
-            run(['npm', 'run', 'build', '-w', '@siwc/local'], cwd=siwc)
-        helper = Path(settings['keychainPath'])
-        if not helper.exists():
-            if not args.install:
-                raise RuntimeError('Keychain helper missing; run --install')
-            helper.parent.mkdir(parents=True, exist_ok=True)
-            run(['swiftc', ROOT / 'services/agent/keychain.swift', '-o', helper])
-            helper.chmod(0o700)
-        if not os.access(helper, os.X_OK):
-            raise RuntimeError('Keychain helper is not executable; existing file preserved')
-        # Import artifacts, without authorizing or opening private credential storage.
-        for module in (siwc / 'packages/local/dist/index.js',):
-            run(['node', '--input-type=module', '-e', f'await import({json.dumps(module.as_uri())});'])
-        if args.web:
-            from build_siwc_overlay import build_overlay
-            overlay = build_overlay(siwc, check=not args.install)
-            module = overlay / 'packages/local/dist/index.js'
-            run(['node', '--input-type=module', '-e', f'await import({json.dumps(module.as_uri())});'])
-        print('ChatGPT adapter ready: pinned SIWC + existing Keychain helper; bundled Harness source verified.')
-        print('Next: pnpm run build; configure local secrets/TTS; authorize; run conversation.py --check.')
+            "import {checkEngineSources} from './services/runtime/sources.mjs'; checkEngineSources();"], cwd=ROOT)
+        ensure_helper(settings['keychainPath'], install=args.install)
+        if args.check:
+            run(['node', '--input-type=module', '-e',
+                "import {requireBuiltHarness} from './services/runtime/sources.mjs'; "
+                "import {siwcModule} from './services/agent/siwc.mjs'; "
+                "import {pathToFileURL} from 'node:url'; requireBuiltHarness(); await import(pathToFileURL(siwcModule()));"], cwd=ROOT)
+        print('Keychain helper ready; existing authorization storage unchanged.')
+        print('Build bundled SDK with pnpm run build; authorize separately when needed.')
         return 0
     except (RuntimeError, OSError, subprocess.CalledProcessError, ValueError) as error:
         print(f'Environment setup failed: {error}', file=sys.stderr)

@@ -9,16 +9,16 @@ export function runtimeSources(root=ROOT) {
   let manifest;
   try {
     manifest=JSON.parse(readFileSync(join(root,'upstream.lock.json'),'utf8'));
-    const {harness,bot}=manifest.components;
-    if(manifest.schemaVersion!==1||harness.path!=='engine/harness'||bot.path!=='engine/bot'||bot.packagePath!=='ds-bot'
-      ||![harness,bot].every(c=>/^[0-9a-f]{40}$/.test(c.revision)&&typeof c.version==='string'))throw Error();
+    const {harness,bot,siwc}=manifest.components;
+    if(manifest.schemaVersion!==1||harness.path!=='engine/harness'||bot.path!=='engine/bot'||bot.packagePath!=='ds-bot'||siwc.path!=='engine/siwc'
+      ||![harness,bot,siwc].every(c=>/^[0-9a-f]{40}$/.test(c.revision)&&typeof c.version==='string'))throw Error();
   }catch {throw Error('invalid_engine_manifest: restore upstream.lock.json from the OpenNova source distribution');}
-  return {root:resolve(root),manifest,harnessRoot:resolve(root,'engine/harness'),botRoot:resolve(root,'engine/bot/ds-bot')};
+  return {root:resolve(root),manifest,harnessRoot:resolve(root,'engine/harness'),botRoot:resolve(root,'engine/bot/ds-bot'),siwcRoot:resolve(root,'engine/siwc')};
 }
 
 export function checkEngineSources(root=ROOT) {
   const sources=runtimeSources(root);
-  for(const [id,path,name] of [['harness',sources.harnessRoot,'@deepseek-ai/dsh-root'],['bot',sources.botRoot,'ds-bot']]) {
+  for(const [id,path,name] of [['harness',sources.harnessRoot,'@deepseek-ai/dsh-root'],['bot',sources.botRoot,'ds-bot'],['siwc',sources.siwcRoot,'sign-in-with-chatgpt']]) {
     let pkg;
     try{pkg=JSON.parse(readFileSync(join(path,'package.json'),'utf8'));}
     catch{throw Error(`bundled_${id}_source_missing: use a complete OpenNova checkout or source archive`);}

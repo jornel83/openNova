@@ -12,7 +12,7 @@ test('machine config supplies paths; environment wins; empty fields keep default
     const file = join(dir, 'voice.local.json');
     writeFileSync(file, JSON.stringify({agent:{harness_root:'/tmp/harness', siwc_root:''}}));
     assert.equal(loadSettings({}, file).harnessRoot, join(ROOT,'engine/harness'));
-    assert.match(loadSettings({}, file).siwcRoot, /opennova\/siwc-devkit$/);
+    assert.equal(loadSettings({}, file).siwcRoot, join(ROOT,'engine/siwc'));
     assert.equal(loadSettings({OPENNOVA_HARNESS_ROOT:'/other'}, file).harnessRoot, join(ROOT,'engine/harness'));
     writeFileSync(file, 'private-invalid-json');
     assert.throws(() => loadSettings({}, file), /^Error: invalid_agent_configuration$/);
