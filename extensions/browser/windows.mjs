@@ -29,8 +29,13 @@ export function createWindowManager(chrome){
   const bounds=layout(area);let workCreated=false,chatCreated=false;
   if(!await isWorkValid(b)&&Number.isInteger(b.workWindowId))b=await repair(b);
   if(!await isWorkValid(b)){workCreated=true;creatingWork=true;const w=await chrome.windows.create({url:'about:blank',type:'normal',focused:false,...bounds.work});b={...b,bindingId:crypto.randomUUID(),workWindowId:w.id,workTabId:w.tabs[0].id};}
-  let chatValid=false;try{const w=await chrome.windows.get(b.chatWindowId,{populate:true});chatValid=w.tabs?.some(t=>t.url===chatUrl||t.pendingUrl===chatUrl);}catch{}
-  if(!chatValid){chatCreated=true;const w=await chrome.windows.create({url:chatUrl,type:'popup',...bounds.chat});b.chatWindowId=w.id;}
+  const matches=w=>w?.type==='popup'&&w.id!==b.workWindowId&&w.tabs?.some(t=>t.url===chatUrl||t.pendingUrl===chatUrl);
+  let chat;try{chat=await chrome.windows.get(b.chatWindowId,{populate:true});}catch{}
+  // An extension reload may clear session IDs while its dedicated popup survives.
+  // Never adopt an unrelated work window or an ordinary browser tab.
+  if(!matches(chat))chat=(await chrome.windows.getAll({populate:true,windowTypes:['popup']})).find(matches);
+  if(chat)b.chatWindowId=chat.id;
+  else{chatCreated=true;const w=await chrome.windows.create({url:chatUrl,type:'popup',...bounds.chat});b.chatWindowId=w.id;}
   // Chrome may clamp requested width/height. Correct only windows made by this
   // call; a subsequent ensure must leave the user's chosen positions untouched.
   if(workCreated&&chatCreated){
@@ -49,7 +54,7 @@ export function createWindowManager(chrome){
    }
   }
   b.chatUrl=chatUrl;await save(b);
-  if(options.activate){const w=await chrome.windows.get(b.workWindowId);await chrome.windows.update(w.id,{focused:true,...(w.state==='minimized'?{state:'normal'}:{})});}
+  if(options.activate){for(const id of [b.workWindowId,b.chatWindowId]){const w=await chrome.windows.get(id);await chrome.windows.update(id,{focused:true,...(w.state==='minimized'?{state:'normal'}:{})});}}
   return {workWindowId:b.workWindowId,workTabId:b.workTabId,chatWindowId:b.chatWindowId};
  }
  async function bind(tab){const b=await get();if(tab.windowId===b.chatWindowId||isChatPage(tab.url,b.chatUrl))throw Error('chat_page_cannot_be_work_page');if(!/^https?:\/\//.test(tab.url||''))throw Error('unsupported_page');return save({...b,bindingId:crypto.randomUUID(),workWindowId:tab.windowId,workTabId:tab.id});}

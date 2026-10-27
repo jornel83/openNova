@@ -26,3 +26,22 @@ test('chat.show crosses command runner without replaying an already completed ca
  const cmd={id:'show-nova',method:'chat.show',args:{},deadlineAt:Date.now()+10000};
  assert.equal((await run(cmd)).status,'completed');assert.equal((await run(cmd)).status,'completed');assert.equal(called,1);
 });
+
+test('expired confirmed commands release journal capacity without forgetting uncertain actions',async()=>{
+ const start=Date.now();let time=start,saved={},calls=0;const storage={get:async()=>structuredClone(saved),set:async v=>{saved=structuredClone(v);}};
+ const run=createCommandRunner({storage,now:()=>time,execute:async()=>{calls++;return {status:'completed'};}});
+ for(let i=0;i<2048;i++)assert.equal((await run({id:'old-'+i,method:'read',deadlineAt:start+10000})).status,'completed');
+ saved.uncertain={fingerprint:JSON.stringify({method:'click',args:{},page:null})};
+ time=start+20000;
+ const restarted=createCommandRunner({storage,now:()=>time,execute:async()=>{calls++;return {status:'completed'};}});
+ assert.equal((await restarted({id:'fresh',method:'read',deadlineAt:start+30000})).status,'completed');
+ assert.equal((await restarted({id:'old-0',method:'read',deadlineAt:start+10000})).status,'cancelled');
+ assert.equal((await restarted({id:'uncertain',method:'click',deadlineAt:start+30000})).status,'unknown');
+ assert.equal(calls,2049);assert.ok(Object.keys(saved).length<10);
+});
+test('a storage failure does not poison the command queue',async()=>{
+ let fail=true,saved={};const run=createCommandRunner({storage:{get:async()=>{if(fail){fail=false;throw Error('temporary');}return saved;},set:async v=>{saved=v;}},execute:async()=>({status:'completed'})});
+ const cmd={id:'retry',method:'read',deadlineAt:Date.now()+10000};
+ await assert.rejects(run(cmd),/temporary/);
+ assert.equal((await run({...cmd,id:'new'})).status,'completed');
+});

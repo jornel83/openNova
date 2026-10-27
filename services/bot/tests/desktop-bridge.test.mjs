@@ -75,3 +75,13 @@ test('chat.show can be dispatched without any work page reference',async t=>{
  }});
  assert.equal((await f.bridge.execute({id:'show',method:'chat.show',args:{}})).status,'completed');
 });
+
+test('completed commands expire without a lifetime limit; unknown sends remain deduplicated',async t=>{
+ const f=await fixture(t),{token}=await (await f.pair(f.bridge.pairing().code)).json(),ws=await f.connect(token);
+ let sends=0;ws.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='command'){sends++;ws.send(JSON.stringify({type:'result',result:{id:m.command.id,status:'completed'}}));}});
+ for(let i=0;i<2048;i++)assert.equal((await f.bridge.execute({id:'old-'+i,method:'read',deadlineAt:10000})).status,'completed');
+ f.tick(20000);
+ assert.equal((await f.bridge.execute({id:'new',method:'windows.ensure',deadlineAt:30000})).status,'completed');
+ assert.equal((await f.bridge.execute({id:'old-0',method:'read',deadlineAt:10000})).status,'cancelled');assert.equal(sends,2049);
+ const journal=JSON.parse(readFileSync(join(f.home,'browser-commands.json'),'utf8'));assert.ok(journal.length<10);
+});

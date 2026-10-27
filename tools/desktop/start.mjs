@@ -41,7 +41,7 @@ export async function prepareDesktop({config,root,health,signal,log,env=process.
   }
  }
  if(state?.connected){
-  const result=await call('/desktop/open');
+  const result=await call('/desktop/open',{activate:true});
   if(result.status==='completed'){log(`工作窗口和 Nova 对话窗口已就绪：${url}`);return result;}
   // Delivery may have succeeded. Do not open a second chat after an ambiguous reply.
   if(result.status==='unknown'){log(`开窗回执未确认，请查看 Chrome。可重新运行 --ui 补齐窗口；文字入口：${url}`);return result;}

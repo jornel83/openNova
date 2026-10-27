@@ -13,9 +13,9 @@ export function createBrowserBridge({server,home,onContext=()=>{},now=Date.now,a
  let credential=read(credentialPath,null),pair=null,active=null,closed=false;
  const journal=new Map(read(journalPath,[]).map(([key,value])=>[key,{...value,result:{id:key,status:'unknown',error:'host_restarted'}}]));
  const pending=new Map(),sockets=new Set();
- const persist=()=>write(journalPath,[...journal].map(([key,v])=>[key,{fingerprint:v.fingerprint}]));
+ const persist=()=>write(journalPath,[...journal].map(([key,v])=>[key,{fingerprint:v.fingerprint,deadlineAt:v.deadlineAt,confirmed:v.confirmed}]));
  const wss=new WebSocketServer({noServer:true,maxPayload:MAX_PACKET,perMessageDeflate:false});
- function settle(key,value){const p=pending.get(key);if(!p)return;pending.delete(key);clearTimeout(p.timer);p.signal?.removeEventListener('abort',p.abort);journal.get(key).result=value;p.resolve(value);}
+ function settle(key,value){const p=pending.get(key);if(!p)return;pending.delete(key);clearTimeout(p.timer);p.signal?.removeEventListener('abort',p.abort);const entry=journal.get(key);entry.result=value;entry.confirmed=value.status==='completed';persist();p.resolve(value);}
  function lost(ws){if(active!==ws)return;active=null;for(const key of pending.keys())settle(key,{id:key,status:'unknown',error:'browser_disconnected_after_send'});onContext({page:null,selection:null},{disconnected:true});}
  function attach(ws,req){
    sockets.add(ws);ws.on('error',()=>lost(ws));let authenticated=false,lastSeen=now();
@@ -70,8 +70,11 @@ export function createBrowserBridge({server,home,onContext=()=>{},now=Date.now,a
    if(deadlineAt<=now())return Promise.resolve({id:command.id,status:'cancelled',error:'deadline_exceeded'});
    const frame=JSON.stringify({type:'command',command:{...command,args:command.args||{},deadlineAt}});
    if(Buffer.byteLength(frame)>MAX_PACKET)return fail('command_too_large');
+   // Retire only confirmed completions after their immutable deadline. Unknown
+   // deliveries (including old-format records) remain tombstones, never replayed.
+   for(const [key,entry] of journal)if(entry.confirmed&&entry.deadlineAt<now()&&!pending.has(key))journal.delete(key);
    if(journal.size>=2048)return fail('command_journal_full');
-   let resolve;const promise=new Promise(r=>resolve=r);journal.set(command.id,{fingerprint,promise});persist();
+   let resolve;const promise=new Promise(r=>resolve=r);journal.set(command.id,{fingerprint,promise,deadlineAt,confirmed:false});persist();
    const abort=()=>{if(active?.readyState===WebSocket.OPEN)active.send(JSON.stringify({type:'cancel',id:command.id}));settle(command.id,{id:command.id,status:'unknown',error:'cancelled_after_send'});};
    const timer=setTimeout(()=>{if(active?.readyState===WebSocket.OPEN)active.send(JSON.stringify({type:'cancel',id:command.id}));settle(command.id,{id:command.id,status:'unknown',error:'deadline_exceeded_after_send'});},Math.min(deadlineAt-now(),30000));
    pending.set(command.id,{resolve,timer,abort,signal});signal?.addEventListener('abort',abort,{once:true});

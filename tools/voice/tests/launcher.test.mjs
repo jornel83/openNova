@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, utimesSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {createServer} from 'node:net';
 import {createServer as httpServer} from 'node:http';
 import {spawn, spawnSync} from 'node:child_process';
@@ -210,7 +211,7 @@ test('Studio bootstrap starts the installed service once and recovers an old emp
   `);
   writeFileSync(join(ttsDir,'serve.sh'),`#!/bin/sh\nexec '${process.execPath}' server.cjs\n`);
   const bootstrap=()=>new Promise((resolve,reject)=>{
-    const child=spawn('/bin/sh',[new URL('../ensure-studio-tts.sh',import.meta.url).pathname,ttsDir],
+    const child=spawn('/bin/sh',[fileURLToPath(new URL('../ensure-studio-tts.sh',import.meta.url)),ttsDir],
       {env:f.env,stdio:['ignore','pipe','pipe']});
     let output='';child.stdout.on('data',x=>output+=x);child.stderr.on('data',x=>output+=x);
     child.on('error',reject);child.on('exit',code=>{if(code)reject(Error(output));else resolve(output);});
@@ -228,7 +229,7 @@ test('CLI validates mode and parameters before causing side effects',()=>{
 });
 
 test('root command works outside the project and help needs no services',()=>{
-  const result=spawnSync(new URL('../../../start.command',import.meta.url).pathname,['--help'],
+  const result=spawnSync(fileURLToPath(new URL('../../../start.command',import.meta.url)),['--help'],
     {cwd:tmpdir(),encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
   assert.match(result.stdout,/--device/);assert.match(result.stdout,/--check/);

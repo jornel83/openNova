@@ -12,6 +12,7 @@ async function fixture(){
   storage:{session:{get:async()=>structuredClone(store),set:async v=>Object.assign(store,structuredClone(v))}},
   system:{display:{getInfo:async()=>[{isPrimary:true,workArea:{left:0,top:20,width:1440,height:880}}]}},
   windows:{
+   getAll:async()=>[...wins.values()].map(w=>({...w,tabs:[...tabs.values()].filter(t=>t.windowId===w.id)})),
    create:async props=>{const w={id:++i,...props};wins.set(w.id,w);const t={id:++i,windowId:w.id,url:props.url,title:props.url,active:true};tabs.set(t.id,t);return {...w,tabs:[t]};},
    get:async id=>{if(!wins.has(id))throw Error('no window');return {...wins.get(id),tabs:[...tabs.values()].filter(t=>t.windowId===id)};},
    update:async(id,props)=>Object.assign(wins.get(id),props),

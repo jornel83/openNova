@@ -3,6 +3,7 @@ import {createWindowManager,layout} from '../windows.mjs';
 function fake(){let i=0,store={};const windows=new Map(),tabs=new Map();return {storage:{session:{get:async()=>structuredClone(store),set:async v=>Object.assign(store,structuredClone(v))}},system:{display:{getInfo:async()=>[{isPrimary:true,workArea:{left:0,top:20,width:1440,height:880}}]}},windows:{
  create:async props=>{const w={id:++i,...props};const t={id:++i,windowId:w.id,url:props.url};w.tabs=[t];windows.set(w.id,w);tabs.set(t.id,t);return structuredClone(w);},
  get:id=>{if(!Number.isInteger(id))throw Error('No matching signature');if(!windows.has(id))return Promise.reject(Error('no window'));return Promise.resolve(structuredClone(windows.get(id)));},
+ getAll:async()=>[...windows.values()].map(w=>structuredClone(w)),
  update:async()=>{throw Error('should not rearrange existing windows');},
  },tabs:{query:async q=>[...tabs.values()].filter(t=>t.windowId===q.windowId),get:async id=>{if(!tabs.has(id))throw Error('no tab');return {...tabs.get(id)};}},windowsMap:windows,tabsMap:tabs};}
 test('repeated ensure reuses windows, aligns heights; chat or unrelated focus never binds it',async()=>{
@@ -117,4 +118,19 @@ test('show Nova rejects nonlocal URL and cancellation before creating or focusin
  await assert.rejects(m.showChat(args,()=>{throw Error('command_cancelled');}),/command_cancelled/);assert.equal(chrome.windowsMap.size,0);
  await m.ensureWindows(args);const count=chrome.windowsMap.size;let checks=0;
  await assert.rejects(m.showChat(args,()=>{if(++checks>1)throw Error('command_cancelled');}),/command_cancelled/);assert.equal(chrome.windowsMap.size,count);
+});
+
+test('startup recovers the dedicated chat popup when its session binding disappears',async()=>{
+ const {chrome,m,args}=chatFixture();const pair=await m.ensureWindows(args);
+ await chrome.storage.session.set({binding:{}});
+ const result=await m.ensureWindows({...args,activate:true});
+ assert.equal(result.chatWindowId,pair.chatWindowId);
+ assert.equal([...chrome.windowsMap.values()].filter(w=>w.type==='popup').length,1);
+});
+test('startup restores minimized chat while preserving user geometry',async()=>{
+ const {chrome,m,args}=chatFixture();const pair=await m.ensureWindows(args),chat=chrome.windowsMap.get(pair.chatWindowId);
+ Object.assign(chat,{state:'minimized',left:900,top:100,width:450,height:720,focused:false});
+ await m.ensureWindows({...args,activate:true});
+ assert.equal(chat.state,'normal');assert.equal(chat.focused,true);
+ assert.deepEqual([chat.left,chat.top,chat.width,chat.height],[900,100,450,720]);assert.equal(chrome.windowsMap.size,2);
 });

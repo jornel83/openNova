@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {existsSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';import {pathToFileURL} from 'node:url';
+import {existsSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';import {pathToFileURL,fileURLToPath} from 'node:url';
 import {loadSettings} from '../../agent/settings.mjs';import {createBridge} from '../http.mjs';
 const execution=await import('../research/exec.mjs').catch(()=>({}));
 const root=loadSettings().harnessRoot,imp=p=>import(pathToFileURL(join(root,p)));
@@ -15,7 +15,7 @@ test('helper_joins_parent_request, helper_502_exits_nonzero, ordinary_bash_still
  const server=createBridge({token:'test',handle:async(path,body)=>{assert.equal(path,'/research/http');return manager.http(body,async(request,context)=>{observed=context;return {ok:false,statusCode:502,excerpt:'upstream failed',request};});}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();server.close();});writeFileSync(join(f.home,'client.token'),'test');
  manager=execution.createResearchExec({shell:f.ctx.shell,ops:f.ops,workspace:f.home,home:f.home,port:server.address().port});t.after(()=>manager.close());
- const helper=new URL('../../../tools/research/http.mjs',import.meta.url).pathname;
+ const helper=fileURLToPath(new URL('../../../tools/research/http.mjs',import.meta.url));
  const r=await manager.run({command:`${process.execPath} '${helper}' --url https://example.com`},{requestId:'r1',callId:'c1',signal:controller.signal});
  assert.equal(r.exitCode,1);assert.equal(r.status,'failed');assert.equal(observed.requestId,'r1');assert.equal(observed.parentCallId,'c1');assert.equal(r.httpFailures,1);
  await assert.rejects(manager.http({executionId:r.id,request:{url:'https://example.com'}},()=>{}),/execution_not_active/);
@@ -44,7 +44,7 @@ test('native research helper uses one read budget and exit zero cannot hide HTTP
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();server.close();});writeFileSync(join(f.home,'client.token'),'test');
  const ctx={get:n=>n==='shell'?f.ctx.shell:undefined,on:(n,fn)=>hooks[n]=fn,systemPrompt:{context(){}}};
  runtime=installResearch(ctx,{ops:f.ops,requests,config:{enabled:true,available:true,workspace:f.home,home:f.home,port:server.address().port},transport:{async fetchWithOptions({url}){return {url,statusCode:502,contentType:'text/plain',encoding:'utf-8',body:{kind:'text',content:'Bad gateway'}};}}});runtime.begin(requests.active);t.after(()=>runtime.close());
- const helper=new URL('../../../tools/research/http.mjs',import.meta.url).pathname;
+ const helper=fileURLToPath(new URL('../../../tools/research/http.mjs',import.meta.url));
  const result=await hooks['tools/execute']({name:'research_exec',arguments:{command:`${process.execPath} '${helper}' --url https://example.com; true`},callId:'parent',signal:c.signal},()=>assert.fail());
  assert.equal(result.isError,true);assert.equal(result.meta.execution.exitCode,0);assert.equal(result.meta.execution.httpFailures,1);assert.equal(runtime.sources.forRequest('r-live').length,0);
  assert.equal(f.rows.get('r-live').research.usage.readCalls,1);assert.equal(f.rows.get('r-live').research.usage.researchExecCalls,1);
@@ -59,7 +59,7 @@ test('native script can recover from a failed source and derive from the success
  runtime=installResearch(ctx,{ops:f.ops,requests,config:{available:true,workspace:f.home,home:f.home,port:server.address().port},transport:{async fetchWithOptions({url}){
   return {url,statusCode:url.endsWith('/bad')?403:200,contentType:'application/json',encoding:'utf-8',body:{kind:'text',content:'{"value":42}'}};
  }}});runtime.begin(requests.active);t.after(()=>runtime.close());
- const helper=new URL('../../../tools/research/http.mjs',import.meta.url).pathname;
+ const helper=fileURLToPath(new URL('../../../tools/research/http.mjs',import.meta.url));
  const command=`${process.execPath} '${helper}' --url https://example.com/bad || ${process.execPath} '${helper}' --url https://example.com/good > "$OPENNOVA_RESEARCH_OUTPUT_DIR/result.json"`;
  const result=await hooks['tools/execute']({name:'research_exec',arguments:{command},callId:'recover',signal:c.signal},()=>assert.fail());
  assert.equal(result.isError,false);const record=result.meta.execution;assert.equal(record.httpFailures,1);assert.equal(record.httpSuccesses,1);assert.equal(record.httpOutcome,'partial');
