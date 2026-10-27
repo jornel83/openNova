@@ -81,3 +81,5 @@ git subtree pull --prefix=engine/siwc https://github.com/openai/sign-in-with-cha
 本次整合的具体命令范围、计数和源码导出结果见[整合验证记录](research/opennova-engine-subtree-verification.md)。
 
 SIWC 纳入仓库后的验证和原目录切换记录见[SIWC 整合验证](research/opennova-siwc-subtree-verification.md)。
+
+工程外源码引用复查、检查命令和数据保留结果见[源码独立性验证](research/opennova-source-independence-verification.md)。
