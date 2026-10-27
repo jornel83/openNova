@@ -4,7 +4,7 @@ import {readFileSync,readdirSync,lstatSync,readlinkSync,realpathSync,existsSync,
 import {join,relative,dirname,sep} from 'node:path';
 import {ROOT,runtimeSources} from '../services/runtime/sources.mjs';
 
-const roots=['engine/harness','engine/bot/ds-bot','engine/siwc','services','scripts','tools/setup','config','patches','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','upstream.lock.json'];
+const roots=['engine/harness','engine/bot/ds-bot','engine/siwc','services','scripts','tools','skills','config','patches','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','upstream.lock.json'];
 const ignored=new Set(['node_modules','.git','lib','dist','output','target','coverage','.superpowers','__pycache__','.pytest_cache','.dsh-build','.cache']);
 const recordPath=root=>join(root,'output/build/manifest.json');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -35,6 +35,7 @@ export const BUILD_ARTIFACTS=[
 
 export function buildArtifacts(root=ROOT) {
   const files=new Set(BUILD_ARTIFACTS);
+  if(process.platform==='darwin')files.add('output/bin/siwc-keychain');
   for(const pattern of ['engine/harness/apps/*/{lib,dist}/**/*','engine/harness/packages/*/*/lib/**/*',
     'engine/harness/vendor/*/lib/**/*','engine/harness/native/system/packages/*/{lib,prebuilds}/**/*',
     'engine/harness/native/system/packages/*/*.node','output/bot/web/**/*','engine/siwc/packages/local/dist/**/*']) {

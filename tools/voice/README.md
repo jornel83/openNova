@@ -30,7 +30,7 @@
 ./start.command --tts-provider studio
 ```
 
-从其他目录可执行 `/Users/chenzhuoping/Documents/work/project/openNova/start.command` 并附加相同参数。也可双击 `start.command` 使用系统默认设备。
+从其他目录可执行 `/path/to/openNova/start.command` 并附加相同参数。也可双击 `start.command` 使用系统默认设备。
 
 启动按顺序完成：
 
@@ -44,7 +44,7 @@
 
 豆包凭据优先级：`DOUBAO_TTS_API_KEY` → 本地 secrets 的 `doubao.tts_api_key` → 已有 `doubao.api_key`。同一 Key 可以调用已开通的 ASR 和 TTS；只有 ASR 权限时会提示开通语音合成 2.0，停止启动。无需把密钥放入命令。详细配置见 [TTS 说明](../../services/tts/README.md#豆包云端-tts办公室模式)。
 
-默认 SSH 主机为 `agent-control`，Studio 工程目录为 `/Users/nova/Documents/project/openNova/services/tts`。可通过 `--studio-host`、`--studio-tts-dir` 修改。要求此前已完成 SSH 主机信任和免密认证；连接失败会停止并提示，不自动修改 SSH 信任设置。默认本地转发端口为 18000，可用 `--tts-port` 修改；一键入口显式向语音客户端传入该回环地址，覆盖普通入口的 `tts.url` / `OPENNOVA_TTS_URL`。
+默认 SSH 主机为 `agent-control`。Studio 的 `services/tts` 部署路径通过机器配置 `tts.studio_tts_dir`、`OPENNOVA_STUDIO_TTS_DIR` 或 `--studio-tts-dir` 指定；优先级为命令行、环境变量、配置文件。主机同样支持 `tts.studio_host`、`OPENNOVA_STUDIO_HOST`、`--studio-host`。没有可复用的 TTS 连接且未配置部署路径时会报错，不再内置个人机器路径。Studio 运行的是本仓库 `services/tts` 的部署副本。要求此前已完成 SSH 主机信任和免密认证；连接失败会停止并提示，不自动修改 SSH 信任设置。默认本地转发端口为 18000，可用 `--tts-port` 修改；一键入口显式向语音客户端传入该回环地址，覆盖普通入口的 `tts.url` / `OPENNOVA_TTS_URL`。
 
 `--proxy` 优先于 `OPENNOVA_PROXY`，仅对本次启动的进程生效；已有 Bot 保持原启动环境。更换代理后如需让 Bot 使用新设置，先执行 `tools/bot/run.command --stop`，再执行一键入口。脚本不更改系统代理。TTS HTTP 检查和语音传输绕过 HTTP 代理，SSH 的实际网络路径由现有 SSH / Tailscale 配置决定。
 

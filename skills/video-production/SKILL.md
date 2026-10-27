@@ -14,7 +14,7 @@ records and media processing. This package does not generate reference images.
 In this repository, run `python3 tools/video/tool.py --request request.json`.
 For stdin requests use `--request -` with the working directory set to the
 project root. The skill's `scripts/video_tool.py` is an equivalent launcher.
-When the skill is copied elsewhere, set `OPENNOVA_ROOT` to the repository root.
+Keep the bundled skill inside this repository. Its launcher resolves the repository from its own location; `OPENNOVA_ROOT` cannot redirect it to another checkout.
 
 For an openNova tool gateway, register the six definitions in
 `tools/video/tool-definitions.json`; call `tools.video.tool.invoke(name, args)`

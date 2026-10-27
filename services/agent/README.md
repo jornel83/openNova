@@ -11,11 +11,11 @@
 | Harness | 仓库内 `engine/harness/`；版本和本地补丁见根目录 `upstream.lock.json`，pnpm `11.28.5` |
 | 启动方式 | 官方 SDK 启动 `dsh --profile sdk-minimal`，加载本目录 `voice.patch.yml`；通过 OpenNova 插件适配 |
 | 官方 DevKit | 仓库内 `engine/siwc/`，提交 `0a36fefeb913055c8c7a1a29b63d82b96b2e841a`；`@siwc/local` 已构建 |
-| 凭据加密程序 | `~/.local/share/opennova/bin/siwc-keychain`；使用此前验证的 OpenNova Keychain 条目 `OpenNova.SIWC.Probe` |
+| 凭据加密程序 | `output/bin/siwc-keychain`（由仓库内 Swift 源码构建）；使用此前验证的 OpenNova Keychain 条目 `OpenNova.SIWC.Probe` |
 | 独立注册与授权 | `~/.config/opennova-siwc-probe/`，沿用本次用户授权的 OpenNova 注册；凭据加密保存 |
 | Harness 文字会话 | `~/.local/share/opennova/harness-home/sessions/`；不读取用户默认 Harness 配置 |
 
-模型适配配置可通过 `OPENNOVA_SIWC_STORAGE`、`OPENNOVA_KEYCHAIN_HELPER` 指定。`config/secrets.local.json` 中的豆包密钥不参与模型授权。不得读取或复用 Codex 的登录文件，也不自动使用环境中的其他模型 API Key。
+模型适配配置可通过 `OPENNOVA_SIWC_STORAGE` 指定。`config/secrets.local.json` 中的豆包密钥不参与模型授权。不得读取或复用 Codex 的登录文件，也不自动使用环境中的其他模型 API Key。
 
 ```sh
 node services/agent/worker.mjs --check
@@ -93,3 +93,5 @@ JSONL ready 包含 `outputMode: incremental | settled-answer`。联网模式仅�
 从仓库根目录运行 `pnpm run setup -- --chatgpt`、`pnpm run build`。Harness/Bot/SIWC 源码随 OpenNova 分发，安装不再访问私人 SSH 仓库或相邻工程。`tools/setup/bootstrap.py` 只准备或检查 Keychain helper；三个上游版本统一由 `upstream.lock.json` 固定。已有 helper 与授权数据保留。
 
 旧 Harness/SIWC 外部源码路径设置不再生效。授权存储和 helper 的机器路径仍可配置。默认 `pnpm test` 已包含 SIWC 协议测试，可通过 `pnpm run test:chatgpt` 单独运行。源码或补丁变化后需重建；构建摘要会检测陈旧产物。完整步骤见[开发说明](../../docs/development.md)。前面的日期段落记录历史验证，当前安装方式以本节和根 README 为准。
+
+Keychain helper 固定从仓库内加载，旧 `keychain_helper` / `OPENNOVA_KEYCHAIN_HELPER` 不再生效。macOS 构建自动生成此程序，不读取凭据。迁移已有机器时可保留已受系统信任的本机编译产物及其构建记录；Swift 源码更新后重新编译，系统可能要求重新允许该程序访问原 Keychain 条目，不应删除或重建现有授权。

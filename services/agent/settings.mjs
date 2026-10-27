@@ -20,7 +20,7 @@ export function loadSettings(env = process.env, file = env.OPENNOVA_CONFIG || jo
   return {
     harnessRoot: runtimeSources(root).harnessRoot,
     siwcRoot: runtimeSources(root).siwcRoot,
-    keychainPath: path('OPENNOVA_KEYCHAIN_HELPER', 'keychain_helper', join(homedir(), '.local/share/opennova/bin/siwc-keychain')),
+    keychainPath: join(root, 'output/bin/siwc-keychain'),
     storageDir: path('OPENNOVA_SIWC_STORAGE', 'siwc_storage', join(homedir(), '.config/opennova-siwc-probe')),
   };
 }

@@ -39,6 +39,7 @@ jobs:
         run: |
           pnpm run build
           pnpm run doctor
+          pnpm run audit:sources
       - name: Offline product and upstream Bot regression
         working-directory: ${{ runner.temp }}/opennova source
         run: |
@@ -47,7 +48,7 @@ jobs:
       - name: Bundled SDK and helper contracts (no authorization)
         working-directory: ${{ runner.temp }}/opennova source
         env:
-          OPENNOVA_KEYCHAIN_HELPER: ${{ runner.temp }}/opennova-siwc-keychain
+          OPENNOVA_KEYCHAIN_HELPER: /nonexistent/legacy-keychain-helper
         run: |
           python3.11 tools/setup/bootstrap.py --install --web
           python3.11 tools/setup/bootstrap.py --check --web

@@ -48,7 +48,7 @@ python3.11 services/tts/doubao.py
 
 ## 部署位置与版本
 
-- SSH 主机：`agent-control`（Mac Studio）；工程：`/Users/nova/Documents/project/openNova/services/tts`。
+- 将本仓库的 `services/tts` 部署到 Studio；通过 `tts.studio_host` / `tts.studio_tts_dir` 记录机器位置，也可用对应的启动参数覆盖。
 - Python 3.12.14；MLX-Audio 固定提交 `e66ad2ff4eb96ce1149000187b30370cbcd707aa`，所有解析依赖记录在 `uv.lock`；实装 MLX 0.32.3、MLX-Audio 0.5.8。
 - 默认模型：上述 CustomVoice / Vivian 固定快照，首次请求时加载，后续复用。
 - 克隆备选：`mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16`，revision `a6eb4f68e4b056f1215157bb696209bc82a6db48`；权重保存在 `~/AgentWorkstation/models/opennova/qwen3-tts-1.7b-base-bf16/<revision>/`。

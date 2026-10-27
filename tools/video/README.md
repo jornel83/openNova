@@ -86,8 +86,8 @@ child.stdin.end(JSON.stringify({ ...args, action: actions[name] }));
 `submitting` 记录，先查询方舟任务历史，避免重复计费。
 
 将 `skills/video-production/SKILL.md` 注册到 Harness 的 skill 搜索目录。
-需要给 Codex 使用时，可复制该 skill 文件夹到 `~/.codex/skills/`，并设置
-`OPENNOVA_ROOT` 指向此仓库；不自动修改用户的全局 skill 配置。
+将 skill 保留在工程内，使用其完整路径注册；启动器始终加载本仓库代码，
+不再使用 `OPENNOVA_ROOT` 跳转工程。不自动修改用户的全局 skill 配置。
 
 ## 验证
 

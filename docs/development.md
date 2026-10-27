@@ -23,6 +23,7 @@
 pnpm run setup
 pnpm run build
 pnpm run doctor
+pnpm run audit:sources
 pnpm test
 pnpm run test:bot
 ```
@@ -47,9 +48,11 @@ pnpm start
 
 `upstream.lock.json` 统一管理 Harness、Bot、SIWC。SIWC 源码在 `engine/siwc/`，构建在 `engine/siwc/packages/local/dist/`；文本与工具模型调用使用同一套 SDK。旧的 `output/deps/siwc/` overlay 不再被读取，旧外部 SDK 目录保留但不参与运行。`patches/siwc/0001-stream-items.patch` 已应用到跟踪源码，构建时不要再次应用。
 
-默认 `pnpm test` 包含 SIWC 协议测试；`pnpm run test:chatgpt` 可以单独运行这些测试。它们使用模拟响应，不登录、不访问 Keychain。上游 SDK 本地测试可运行 `node --test engine/siwc/packages/local/test/*.test.mjs`。`--chatgpt` 只准备缺失的 macOS Keychain helper，`bootstrap.py --check --web` 只检查本地依赖；`--web` 作为兼容参数保留。
+默认 `pnpm test` 包含 SIWC 协议测试；`pnpm run test:chatgpt` 可以单独运行这些测试。它们使用模拟响应，不登录、不访问 Keychain。上游 SDK 本地测试可运行 `node --test engine/siwc/packages/local/test/*.test.mjs`。`--chatgpt` 准备仓库内的 macOS Keychain helper；macOS 的 `build` 也自动完成此步骤，`bootstrap.py --check --web` 只检查本地依赖；`--web` 作为兼容参数保留。
 
-旧 `agent.harness_root`、`agent.siwc_root` 及 `OPENNOVA_HARNESS_ROOT`、`OPENNOVA_SIWC_ROOT` 不再决定源码位置。`OPENNOVA_KEYCHAIN_HELPER`、`OPENNOVA_SIWC_STORAGE` 继续支持机器配置，原授权、会话和记忆仍在仓库外。Keychain helper 源码在 `services/agent/keychain.swift`；其已有安装路径和 Keychain 身份保持不变。配置文件与凭据不要提交到仓库。
+旧 `agent.harness_root`、`agent.siwc_root`、`agent.keychain_helper` 以及对应的源码路径环境变量不再决定实现位置。Keychain helper 源码在 `services/agent/keychain.swift`，本机产物固定为 `output/bin/siwc-keychain`。构建记录其源码和二进制摘要，缺失或变更时原子重建，不访问 Keychain。迁移已有安装时保留已受系统信任的程序副本及摘要；全新安装从完整 Swift 源码编译。Keychain 条目身份不变；新编译的程序可能需要系统访问许可，不应删除原条目。`OPENNOVA_SIWC_STORAGE` 继续指定外部授权数据，原会话和记忆仍在仓库外。配置文件与凭据不要提交到仓库。
+
+`pnpm run audit:sources` 可在 checkout 或无 Git 源码包内检查源码链接、嵌套仓库、submodule/gitlink 和包清单中的本地路径依赖。它排除安装依赖与生成产物，不能替代对任意自定义插件的人工审阅。产品默认路径回归还验证旧外部 SDK/helper/video 路径不会改变实现。Node、Python、Swift、uv、FFmpeg 和通过锁文件安装的第三方包仍是正常环境依赖；可选 Studio TTS 是本仓库服务的远端部署，位置必须显式配置。
 
 SIWC 原始代码和 OpenNova 对其所做的修改采用其 **Noncommercial License v1.0**，保留在 `engine/siwc/LICENSE`、`patches/siwc/LICENSE` 中；其非商业限制不因纳入 OpenNova 而改变。OpenNova 独立自有代码继续采用根目录许可。不要将整个源码包描述为全部采用 Apache-2.0。
 

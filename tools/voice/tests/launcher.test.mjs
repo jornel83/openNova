@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {createServer} from 'node:net';
 import {createServer as httpServer} from 'node:http';
 import {spawn, spawnSync} from 'node:child_process';
-import {launch, parseArgs, probeTts, ttsProvider} from '../start.mjs';
+import {launch, parseArgs, probeTts, ttsProvider, studioSettings} from '../start.mjs';
 
 async function freePort() {
   const server=createServer();
@@ -225,4 +225,24 @@ test('root command works outside the project and help needs no services',()=>{
     {cwd:tmpdir(),encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
   assert.match(result.stdout,/--device/);assert.match(result.stdout,/--check/);
+});
+
+ test('Studio deployment path comes from explicit configuration instead of a personal checkout',async t=>{
+  const f=await fixture(t);
+  assert.equal(parseArgs([]).studioTtsDir,undefined);
+  assert.equal(studioSettings({}, {}, f.root).studioTtsDir,'');
+  mkdirSync(join(f.root,'config'));
+  writeFileSync(join(f.root,'config/voice.local.json'),JSON.stringify({tts:{studio_host:'configured',studio_tts_dir:'/deployment/config/tts'}}));
+  assert.equal(studioSettings({}, {}, f.root).studioTtsDir,'/deployment/config/tts');
+  const env={OPENNOVA_STUDIO_TTS_DIR:'/deployment/env/tts'};
+  assert.equal(studioSettings({},env,f.root).studioTtsDir,'/deployment/env/tts');
+  assert.equal(studioSettings({studioTtsDir:'/deployment/cli/tts'},env,f.root).studioTtsDir,'/deployment/cli/tts');
+  assert.throws(()=>studioSettings({}, {OPENNOVA_STUDIO_TTS_DIR:'relative'},f.root),/绝对路径/);
+});
+
+test('missing Studio deployment path never starts SSH',async t=>{
+  const f=await fixture(t);
+  const options={...f.options};delete options.studioTtsDir;
+  await assert.rejects(launch(options,f.runtime),/studio_tts_dir/);
+  assert.equal(existsSync(join(f.root,'remote')),false);
 });

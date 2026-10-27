@@ -30,19 +30,31 @@ function normalizeProvider(value) {
   return value;
 }
 
-export function ttsProvider(options,env=process.env,root=ROOT) {
-  if(options.ttsProvider||env.OPENNOVA_TTS_PROVIDER)return normalizeProvider(options.ttsProvider||env.OPENNOVA_TTS_PROVIDER);
+function ttsConfig(env,root) {
   let path=env.OPENNOVA_CONFIG||join(root,'config/voice.local.json');
   if(path.startsWith('~/'))path=join(homedir(),path.slice(2));
   let config={};
   try {config=JSON.parse(readFileSync(path,'utf8'));}
   catch(error) {if(error.code!=='ENOENT')throw Error('无法读取 TTS 配置，请检查 config/voice.local.json / OPENNOVA_CONFIG。');}
   if(!config||typeof config!=='object')throw Error('TTS 配置必须是 JSON 对象。');
-  return normalizeProvider(config.tts?.provider||'studio');
+  return config.tts??{};
+}
+
+export function ttsProvider(options,env=process.env,root=ROOT) {
+  return normalizeProvider(options.ttsProvider||env.OPENNOVA_TTS_PROVIDER||ttsConfig(env,root).provider||'studio');
+}
+
+export function studioSettings(options,env=process.env,root=ROOT) {
+  const config=ttsConfig(env,root);
+  const studioHost=options.studioHost||env.OPENNOVA_STUDIO_HOST||config.studio_host||'agent-control';
+  const studioTtsDir=options.studioTtsDir||env.OPENNOVA_STUDIO_TTS_DIR||config.studio_tts_dir||'';
+  if(typeof studioHost!=='string'||!/^[a-zA-Z0-9_][a-zA-Z0-9_.@:-]*$/.test(studioHost))throw Error('Studio SSH 主机参数无效。');
+  if(typeof studioTtsDir!=='string'||(studioTtsDir&&(!studioTtsDir.startsWith('/')||/[\r\n\0]/.test(studioTtsDir))))throw Error('Studio TTS 目录需要绝对路径。');
+  return {studioHost,studioTtsDir};
 }
 
 export function parseArgs(argv) {
-  const options={studioHost:'agent-control',studioTtsDir:'/Users/nova/Documents/project/openNova/services/tts',ttsPort:18000};
+  const options={ttsPort:18000};
   const values={'--device':'device','--output-device':'outputDevice','--proxy':'proxy',
     '--tts-provider':'ttsProvider','--tts-voice':'ttsVoice',
     '--studio-host':'studioHost','--studio-tts-dir':'studioTtsDir','--tts-port':'ttsPort'};
@@ -60,8 +72,8 @@ export function parseArgs(argv) {
   options.ttsPort=Number(options.ttsPort);
   if(options.ttsProvider)options.ttsProvider=normalizeProvider(options.ttsProvider);
   if(!Number.isInteger(options.ttsPort)||options.ttsPort<1024||options.ttsPort>65535)throw Error('转发端口必须为 1024–65535。');
-  if(!/^[a-zA-Z0-9_][a-zA-Z0-9_.@:-]*$/.test(options.studioHost))throw Error('Studio SSH 主机参数无效。');
-  if(!options.studioTtsDir.startsWith('/')||/[\r\n\0]/.test(options.studioTtsDir))throw Error('Studio TTS 目录需要绝对路径。');
+  if(options.studioHost&&!/^[a-zA-Z0-9_][a-zA-Z0-9_.@:-]*$/.test(options.studioHost))throw Error('Studio SSH 主机参数无效。');
+  if(options.studioTtsDir&&(!options.studioTtsDir.startsWith('/')||/[\r\n\0]/.test(options.studioTtsDir)))throw Error('Studio TTS 目录需要绝对路径。');
   if(options.proxy) {
     const url=new URL(options.proxy);
     if(!['http:','https:'].includes(url.protocol))throw Error('代理需要 http:// 或 https:// 地址。');
@@ -170,6 +182,7 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
     try{return await commandExit(child,{signal});}finally{await stop(child);}
   }
   const provider=ttsProvider(options,runEnv,root);
+  const studio=provider==='studio'?studioSettings(options,runEnv,root):null;
   // Children and the launcher resolve the same CLI override over local settings.
   runEnv.OPENNOVA_TTS_PROVIDER=provider;
   if(options.ttsVoice)runEnv.OPENNOVA_DOUBAO_TTS_VOICE=options.ttsVoice;
@@ -205,6 +218,7 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
     log('[2/3] 检查 Studio TTS 与连接……');
     if(await probeTts(ttsUrl,signal))log('复用现有 TTS 连接。');
     else {
+      if(!studio.studioTtsDir)throw Error('请通过 tts.studio_tts_dir、OPENNOVA_STUDIO_TTS_DIR 或 --studio-tts-dir 指定 Studio 上部署的 services/tts 绝对路径。');
       // A live but unhealthy tunnel may point at a stopped remote service. Allow it
       // only when lsof identifies an SSH listener; never replace unrelated listeners.
       const occupied=await portOpen(options.ttsPort);
@@ -221,13 +235,13 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
         '-o','ForkAfterAuthentication=no','-o','StdinNull=no',
         '-o','ServerAliveInterval=15','-o','ServerAliveCountMax=3'];
       const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
-      log(`连接 Studio（${options.studioHost}），按需启动已安装的 TTS……`);
-      remote=spawnLogged('ssh',[...ssh,options.studioHost,`sh -s -- ${quote(options.studioTtsDir)}`],
+      log(`连接 Studio（${studio.studioHost}），按需启动已安装的 TTS……`);
+      remote=spawnLogged('ssh',[...ssh,studio.studioHost,`sh -s -- ${quote(studio.studioTtsDir)}`],
         {env:runEnv,cwd:root,logPath:join(logDir,'studio.log'),input:readFileSync(join(ROOT,'tools/voice/ensure-studio-tts.sh'))});
       if(await commandExit(remote,{signal,timeout:waitMs})!==0)throw Error('Studio SSH / TTS 启动失败；请确认主机在线、SSH 免密连接和已安装的 TTS，详见 output/voice/launcher/studio.log。');
       if(!occupied) {
         tunnel=spawnLogged('ssh',[...ssh,'-N','-o','ExitOnForwardFailure=yes','-L',
-          `127.0.0.1:${options.ttsPort}:127.0.0.1:8000`,options.studioHost],
+          `127.0.0.1:${options.ttsPort}:127.0.0.1:8000`,studio.studioHost],
           {env:runEnv,cwd:root,logPath:join(logDir,'tunnel.log')});
       }
       await waitReady(()=>probeTts(ttsUrl,signal),tunnel,timing,

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Prepare/check the macOS helper; SDK sources and builds belong to OpenNova."""
 import argparse
+import hashlib
+import tempfile
 import json
 import os
 from pathlib import Path
@@ -17,23 +19,43 @@ def run(args, cwd=None, capture=False):
                           text=True, stdout=subprocess.PIPE if capture else None).stdout
 
 
+def helper_record(helper):
+    return {'schemaVersion': 1,
+            'sourceSha256': hashlib.sha256((ROOT / 'services/agent/keychain.swift').read_bytes()).hexdigest(),
+            'binarySha256': hashlib.sha256(helper.read_bytes()).hexdigest()}
+
+
 def ensure_helper(path, *, install):
     helper = Path(path)
-    if not helper.exists():
-        if not install:
-            raise RuntimeError('Keychain helper missing; run pnpm run setup -- --chatgpt')
-        helper.parent.mkdir(parents=True, exist_ok=True)
-        run(['swiftc', ROOT / 'services/agent/keychain.swift', '-o', helper])
-        helper.chmod(0o700)
-    if not os.access(helper, os.X_OK):
-        raise RuntimeError('Keychain helper is not executable; existing file preserved')
+    record = helper.with_suffix('.build.json')
+    try:
+        saved = json.loads(record.read_text())
+        current = helper_record(helper)
+        if all(saved.get(key) == value for key, value in current.items()) and os.access(helper, os.X_OK):
+            return
+    except (OSError, ValueError):
+        pass
+    if not install:
+        raise RuntimeError('Keychain helper missing or helper stale; run pnpm run build')
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    # Build without accessing Keychain. Keep the last working binary on failure.
+    with tempfile.TemporaryDirectory(prefix='.keychain-', dir=helper.parent) as directory:
+        staged = Path(directory) / helper.name
+        run(['swiftc', ROOT / 'services/agent/keychain.swift', '-o', staged])
+        staged.chmod(0o700)
+        metadata = helper_record(staged)
+        metadata['origin'] = 'compiled-from-source'
+        staged.replace(helper)
+        temporary_record = Path(directory) / 'record.json'
+        temporary_record.write_text(json.dumps(metadata, indent=2) + '\n')
+        temporary_record.replace(record)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check', action='store_true', help='Check local builds/helper; no login or credentials')
-    mode.add_argument('--install', action='store_true', help='Compile a missing Keychain helper; preserve existing files')
+    mode.add_argument('--install', action='store_true', help='Build the repository Keychain helper when missing or stale')
     parser.add_argument('--web', action='store_true', help='Compatibility flag: tool streaming is now included in the SDK')
     args = parser.parse_args()
     try:

@@ -84,3 +84,19 @@ test('editing bundled SDK source invalidates the build record',t=>{
   recordBuild(root,[asset]);assert.equal(checkBuild(root).ready,true);
   writeFileSync(source,'export const revision=2;');assert.equal(checkBuild(root).ready,false);
 });
+
+test('macOS build includes the repository Keychain helper',()=>{
+  if(process.platform!=='darwin')return;
+  assert.ok(commandPlan('build').some(s=>s.args.some(a=>a.endsWith('/tools/setup/bootstrap.py'))));
+  assert.ok(buildArtifacts().includes('output/bin/siwc-keychain'));
+});
+
+test('voice and skill edits invalidate source freshness',t=>{
+  const root=fixture(t),asset='output/bot/web/index.html';
+  mkdirSync(join(root,asset,'..'),{recursive:true});writeFileSync(join(root,asset),'built');
+  for(const source of ['tools/voice/start.mjs','skills/video-production/scripts/video_tool.py']) {
+    mkdirSync(join(root,source,'..'),{recursive:true});writeFileSync(join(root,source),'first');
+    recordBuild(root,[asset]);writeFileSync(join(root,source),'changed');
+    assert.equal(checkBuild(root).ready,false);
+  }
+});

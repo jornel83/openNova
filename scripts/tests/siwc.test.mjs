@@ -9,13 +9,13 @@ import {siwcModule} from '../../services/agent/siwc.mjs';
 import {commandPlan} from '../project.mjs';
 import {buildArtifacts} from '../build-record.mjs';
 
-test('SDK code stays in repository while authorization and helper paths remain configurable',t=>{
+test('SDK and helper code stay in repository while authorization storage remains configurable',t=>{
   const root=mkdtempSync(join(tmpdir(),'nova-siwc '));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const config=join(root,'voice.local.json');
   writeFileSync(config,JSON.stringify({agent:{siwc_root:'/missing/old-sdk',siwc_storage:'/outside/credentials',keychain_helper:'/outside/helper'}}));
   const settings=loadSettings({OPENNOVA_SIWC_ROOT:'/another/old-sdk'},config);
   assert.equal(settings.siwcRoot,join(ROOT,'engine/siwc'));
-  assert.equal(settings.storageDir,'/outside/credentials');assert.equal(settings.keychainPath,'/outside/helper');
+  assert.equal(settings.storageDir,'/outside/credentials');assert.equal(settings.keychainPath,join(ROOT,'output/bin/siwc-keychain'));
   assert.equal(loadSettings({OPENNOVA_SIWC_STORAGE:'/override/credentials'},config).storageDir,'/override/credentials');
   assert.equal(runtimeSources().siwcRoot,settings.siwcRoot);
 });

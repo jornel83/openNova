@@ -1,0 +1,10 @@
+# OpenNova source independence audit
+
+Spec: All product and bundled engine source must live in this checkout. No private sibling checkout, external SDK or external executable may be selected as product code. Declared package dependencies/toolchains and optional remote TTS deployments remain installation/runtime infrastructure. Preserve authorization, sessions and memory outside the repository, including existing Keychain identity and local settings.
+
+1. Pin the Keychain helper to output/bin/siwc-keychain and compile from services/agent/keychain.swift on macOS. Track helper source/build hashes; preserve a migrated trusted local binary until its source changes. Do not access credentials during build. Regression: legacy helper overrides ignored, external credential storage preserved, missing/changed helper build behavior.
+2. Remove the personal remote Studio directory default; read CLI/environment/machine configuration explicitly and require a deployment path only when remote startup is needed. Pin bundled video skill launcher to its repository. Regression: configuration precedence, existing TTS reuse, absent deployment path and hostile OPENNOVA_ROOT.
+3. Add a repeatable source-boundary audit (including symlinks, Git links and local package dependencies) that works without Git. Keep generated dependency trees outside the source audit. Extend build freshness to voice/video/skills and helper output. Document normal toolchain/service boundaries.
+4. Run regressions, source export setup/build/doctor/audit, and a fresh independent review. Back up original local state, merge into the original checkout, migrate only the trusted helper binary and missing machine deployment setting, build/restart the original Bot and verify health plus data preservation.
+
+Review focus: stale helper source vs migrated binary, failed compile atomicity, no-Git archives, symlink escapes, package local dependencies, CLI/config precedence, no unnecessary SSH on reuse/cloud paths, unchanged Keychain/storage identity and no committed machine state. Do not contact real remote TTS or model services for tests.

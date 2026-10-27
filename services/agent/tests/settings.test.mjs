@@ -18,3 +18,12 @@ test('machine config supplies paths; environment wins; empty fields keep default
     assert.throws(() => loadSettings({}, file), /^Error: invalid_agent_configuration$/);
   } finally { rmSync(dir, {recursive:true}); }
 });
+
+ test('helper code stays in the checkout while authorization storage remains configurable', t => {
+  const dir=mkdtempSync(join(tmpdir(),'nova-settings-'));t.after(()=>rmSync(dir,{recursive:true}));
+  const file=join(dir,'voice.local.json');
+  writeFileSync(file,JSON.stringify({agent:{keychain_helper:'/external/helper',siwc_storage:'/external/credentials'}}));
+  assert.equal(loadSettings({OPENNOVA_KEYCHAIN_HELPER:'/other/helper'},file).keychainPath,join(ROOT,'output/bin/siwc-keychain'));
+  assert.equal(loadSettings({},file).storageDir,'/external/credentials');
+  assert.equal(loadSettings({OPENNOVA_SIWC_STORAGE:'/different/credentials'},file).storageDir,'/different/credentials');
+});

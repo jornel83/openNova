@@ -15,6 +15,7 @@
     "test:chatgpt": "node --test services/agent/tests/siwc-items.test.mjs",
     "start": "node scripts/project.mjs start",
     "start:voice": "node scripts/project.mjs start:voice",
+    "audit:sources": "node scripts/source-audit.mjs",
     "doctor": "node scripts/project.mjs doctor"
   },
   "devDependencies": {"esbuild": "0.28.2"}

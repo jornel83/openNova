@@ -1,6 +1,5 @@
 {
   "agent": {
-    "keychain_helper": "",
     "siwc_storage": ""
   },
   "web": {
@@ -9,6 +8,8 @@
   },
   "tts": {
     "provider": "studio",
+    "studio_host": "agent-control",
+    "studio_tts_dir": "",
     "doubao_voice": "zh_female_vv_uranus_bigtts",
     "data_dir": "",
     "url": "http://127.0.0.1:18000"
