@@ -32,3 +32,22 @@ test('pnpm workspace local overrides must also stay inside the source export',t=
   const root=fixture(t);writeFileSync(join(root,'pnpm-workspace.yaml'),"overrides:\n  dep: 'link:../foreign'\n");
   assert.throws(()=>auditSourceTree(root),/external_local_dependency/);
 });
+test('local declarations canonicalize symlinks even in excluded dependency directories',t=>{
+  const root=fixture(t);mkdirSync(join(root,'node_modules'));symlinkSync(tmpdir(),join(root,'node_modules/external-code'));
+  writeFileSync(join(root,'package.json'),JSON.stringify({dependencies:{external:'file:node_modules/external-code'}}));
+  assert.throws(()=>auditSourceTree(root),/external_local_dependency/);
+});
+test('relative workspace dependencies cannot select a sibling checkout',t=>{
+  const root=fixture(t);writeFileSync(join(root,'package.json'),JSON.stringify({dependencies:{external:'workspace:../foreign'}}));
+  assert.throws(()=>auditSourceTree(root),/external_local_dependency/);
+});
+test('workspace package selectors reject external roots in both manifest formats',t=>{
+  const root=fixture(t);writeFileSync(join(root,'pnpm-workspace.yaml'),"packages: ['../foreign']\n");
+  assert.throws(()=>auditSourceTree(root),/external_workspace_package/);
+  rmSync(join(root,'pnpm-workspace.yaml'));writeFileSync(join(root,'package.json'),JSON.stringify({workspaces:['../foreign']}));
+  assert.throws(()=>auditSourceTree(root),/external_workspace_package/);
+});
+test('YAML aliases and quoted paths are parsed before checking their boundaries',t=>{
+  const root=fixture(t);writeFileSync(join(root,'pnpm-workspace.yaml'),'outside: &path "../foreign"\npackages: [*path]\n');
+  assert.throws(()=>auditSourceTree(root),/external_workspace_package/);
+});

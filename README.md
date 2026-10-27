@@ -84,7 +84,7 @@ pnpm run start:voice -- --help
 
 语音 `--check` 与 `pnpm run doctor` 不同：前者会检查实际服务和授权；豆包 TTS 模式会合成一段探针音频并产生少量计费用量。真人麦克风、声学打断和云端效果需要在目标设备另行验收。
 
-已有 Bot 数据仍在 `~/.local/share/opennova/bot-spike/`，独立 Harness 语音会话仍在 `~/.local/share/opennova/harness-home/`。迁移不搬动会话、记忆、权限或 Keychain。`agent.harness_root`、`agent.siwc_root` 和用户传入的 `OPENNOVA_HARNESS_ROOT`、`OPENNOVA_SIWC_ROOT` 不再选择外部源码；授权存储、Keychain helper、TTS 的机器配置继续有效。
+已有 Bot 数据仍在 `~/.local/share/opennova/bot-spike/`，独立 Harness 语音会话仍在 `~/.local/share/opennova/harness-home/`。迁移不搬动会话、记忆、权限或 Keychain。`agent.harness_root`、`agent.siwc_root` 和用户传入的 `OPENNOVA_HARNESS_ROOT`、`OPENNOVA_SIWC_ROOT` 不再选择外部源码；授权存储和 TTS 的机器配置继续有效。Keychain helper 及旧 `agent.keychain_helper` / `OPENNOVA_KEYCHAIN_HELPER` 路径覆盖已收拢为工程内 `output/bin/siwc-keychain`，由仓库内 Swift 源码构建；原 Keychain 身份保持不变。
 
 ## 开发与许可
 

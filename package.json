@@ -6,7 +6,9 @@
   "license": "Apache-2.0",
   "description": "OpenNova voice and work assistant with bundled Harness, Bot and SIWC source",
   "packageManager": "pnpm@11.28.5",
-  "engines": {"node": ">=24 <25"},
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "setup": "node scripts/project.mjs setup",
     "build": "node scripts/project.mjs build",
@@ -18,5 +20,8 @@
     "audit:sources": "node scripts/source-audit.mjs",
     "doctor": "node scripts/project.mjs doctor"
   },
-  "devDependencies": {"esbuild": "0.28.2"}
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "yaml": "2.9.0"
+  }
 }
