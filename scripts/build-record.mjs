@@ -4,7 +4,7 @@ import {readFileSync,readdirSync,lstatSync,readlinkSync,realpathSync,existsSync,
 import {join,relative,dirname,sep} from 'node:path';
 import {ROOT,runtimeSources} from '../services/runtime/sources.mjs';
 
-const roots=['engine/harness','engine/bot/ds-bot','engine/siwc','services','scripts','tools','skills','config','patches','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','upstream.lock.json'];
+const roots=['engine/harness','engine/bot/ds-bot','engine/siwc','services','scripts','tools','skills','extensions','config','patches','package.json','pnpm-lock.yaml','pnpm-workspace.yaml','upstream.lock.json'];
 const ignored=new Set(['node_modules','.git','lib','dist','output','target','coverage','.superpowers','__pycache__','.pytest_cache','.dsh-build','.cache']);
 const recordPath=root=>join(root,'output/build/manifest.json');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');

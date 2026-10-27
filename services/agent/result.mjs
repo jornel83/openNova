@@ -1,12 +1,9 @@
 /** Accept only the current turn's successfully committed, uninterrupted assistant text. */
-import {errorEvent} from './errors.mjs';
+import {safeError} from './errors.mjs';
 
 export function completedReply(result) {
   const terminal = result.events.findLast(event => event.type === 'turn/end');
-  if (terminal?.data?.reason?.kind === 'error') {
-    const code = errorEvent(terminal.data.reason.error, 'conversation').code;
-    if (code !== 'agent_runtime_failed') throw new Error(code);
-  }
+  if (terminal?.data?.reason?.kind === 'error'&&terminal.data.reason.error) throw safeError(terminal.data.reason.error);
   const assistant = result.events.findLast(event => event.type === 'assistant/message');
   const text = assistant?.data?.message?.content
     ?.filter(block => block.type === 'text').map(block => block.text).join('');

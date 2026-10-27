@@ -10,7 +10,7 @@ try {
   requireBuiltHarness();
   const env={...process.env,PATH:dirname(process.execPath)+':'+(process.env.PATH||'')};
   const python=process.env.OPENNOVA_PYTHON||'python3.11';
-  const groups=['services/agent/tests','services/bot/tests','tools/voice/tests','scripts/tests'];
+  const groups=['services/agent/tests','services/bot/tests','tools/voice/tests','scripts/tests','extensions/browser/tests'];
   const files=groups.flatMap(dir=>[...globSync('*.test.mjs',{cwd:join(ROOT,dir)})].sort().map(file=>join(ROOT,dir,file)));
   const runs=[[process.execPath,['--test',...files]],...['tools/asr/tests','tools/voice/tests','services/tts/tests','tools/setup/tests','tools/video/tests']
     .map(dir=>[python,['-m','unittest','discover','-s',dir,'-v']])];

@@ -48,3 +48,11 @@ test('malformed link text cannot block page processing or cancellation timers',(
  assert.equal(child.error,undefined,`page processing stalled: ${child.error?.message}`);
  assert.equal(child.status,0,child.stderr);
 });
+test('title_only_is_not_body and short_json_is_usable',async()=>{
+ const p=await createContentFetcher(root);
+ p.transport.fetch=async()=>page('<html><head><title>光迅科技行情</title></head><body></body></html>');
+ await assert.rejects(p.fetch({url:'https://example.com'}),/body_unavailable/);
+ p.transport.fetch=async()=>({...page(''),body:{kind:'text',content:'{"price":1}'},contentType:'application/json'});
+ const result=await p.fetch({url:'https://example.com'});
+ assert.equal(result.quality.state,'usable');assert.match(result.body.content,/"price":1/);
+});

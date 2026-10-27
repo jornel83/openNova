@@ -12,7 +12,7 @@ final class CaptureRing {
     let written = Atomic<Int>(0)
     let read = Atomic<Int>(0)
     let overflow = Atomic<Bool>(false)
-    let enabled = Atomic<Bool>(true)
+    let enabled = Atomic<Bool>(false)
     let writing = Atomic<Bool>(false)
     let skipNext = Atomic<Bool>(false)
     init() { samples = .allocate(capacity: capacity) }
@@ -187,6 +187,11 @@ final class AudioBridge {
         }
     }
 
+    var playbackState: String {
+        if queue.paused { return "paused" }
+        return queue.frames > 0 && player.isPlaying ? "playing" : "idle"
+    }
+
     func command(_ request: [String: Any]) {
         let rid = request["rid"] as? Int ?? 0
         let type = request["type"] as? String ?? ""
@@ -230,7 +235,7 @@ final class AudioBridge {
                 DispatchQueue.main.async {
                     guard let self = self, generation == self.queue.generation else { return }
                     self.queue.complete(generation: generation, count: count)
-                    emit(["type":"played", "generation":generation, "segment":segment, "frames":self.queue.frames])
+                    emit(["type":"played", "generation":generation, "segment":segment, "frames":self.queue.frames, "playback":self.playbackState])
                 }
             }
             if !queue.paused && !player.isPlaying { player.play() }
@@ -239,6 +244,7 @@ final class AudioBridge {
         }
         response["frames"] = queue.frames
         response["generation"] = queue.generation
+        response["playback"] = playbackState
         emit(response)
     }
 

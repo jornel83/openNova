@@ -1,12 +1,19 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Button,DiffBlock} from '@deepseek-ai/dsh-client-ui-primitives';
-import {BotMark} from '@opennova/ds-bot/mark.js';
+import {Button} from '@deepseek-ai/dsh-client-ui-primitives';
 import {Bubbles} from '@opennova/ds-bot/cells.js';
 import {UserMessageCell,USER_MESSAGE_CSS} from '@opennova/ds-bot/user-message.js';
 import {SHELL_CSS,CONVERSATION_CSS} from '@opennova/ds-bot/styles.js';
 import {installLocale} from '@opennova/ds-bot/i18n.js';
 import {WebApi,errorText} from './api.mjs';
+import {voicePresentation} from './voice-state.mjs';
+import {NovaRing} from './nova-ring.jsx';
+import {ContextChip} from './context-chip.jsx';
+import {OperationCard} from './operation-card.jsx';
+import {ResearchSources} from './research-sources.jsx';
+import {researchPhaseLabel} from './research-view.mjs';
+import {modelRetryLabel} from '../../agent/model-retry.mjs';
+import {Icon} from './icons.jsx';
 import './app.css';
 
 // The upstream components use a small locale service; retain their own Chinese copy.
@@ -14,58 +21,55 @@ let dictionary={};
 installLocale({getLocale:()=>({active:'zh'}),register:(_ns,_lang,values)=>{dictionary=values;},
   bind:()=>((key,params={})=>(dictionary[key]||key).replace(/\{(\w+)\}/g,(all,k)=>params[k]??all))});
 const nativeStyle=document.createElement('style');nativeStyle.textContent=SHELL_CSS+CONVERSATION_CSS+USER_MESSAGE_CSS;document.head.prepend(nativeStyle);
-document.body.dataset.btMotion='quiet';
+document.body.dataset.btMotion='quiet';document.body.dataset.dsDarkTheme='';
 const api=new WebApi();
-const statusLabels={cancelled:'已取消',pending:'旧方案未执行',applying:'正在保存',applied:'已保存',rejected:'已拒绝',conflict:'需要重新核对',failed:'执行失败',completed:'已完成',running:'执行中',timed_out:'已超时',interrupted:'已中断'};
-const diffLabels={copy:'复制差异',copied:'已复制',codeLabel:'文件修改',wrapLabel:'自动换行',unwrapLabel:'取消换行',collapseAria:'收起差异',expandAria:n=>`展开剩余 ${n} 行`,collapse:'收起',expand:n=>`展开剩余 ${n} 行`};
+function savedDraft(){try{return sessionStorage.getItem('opennova.web.draft')??storage.get()?.text??'';}catch{return '';}}
 const storage={get(){try{return JSON.parse(sessionStorage.getItem('opennova.web.outbox')||'null');}catch{return null;}},set(value){try{value?sessionStorage.setItem('opennova.web.outbox',JSON.stringify(value)):sessionStorage.removeItem('opennova.web.outbox');}catch{}}};
 
-function Operation({item,disabled,onAction}) {
-  const [error,setError]=useState(''),[working,setWorking]=useState(false);
-  const recoverable=item.kind!=='tool'&&item.status==='applying'&&!disabled&&!working;
-  async function retry(){setWorking(true);setError('');try{await onAction('approve',item.id);}catch(e){setError(errorText(e));}finally{setWorking(false);}}
-  if(item.kind==='tool'&&item.operation!=='file')return <article className="approval-card" aria-label={'操作记录 '+item.tool}>
-    <div className="approval-title"><strong>{item.description||item.tool}</strong><span className={'status '+item.status}>{statusLabels[item.status]||item.status}</span></div>
-    {item.command&&<pre className="tool-output">{item.command}</pre>}
-    <p className="subtle operation-path">{item.cwd}</p>
-    {item.operation==='shell'&&<p className="subtle">退出码：{item.exitCode??'—'}{item.timeoutMs?' · 时限 '+Math.round(item.timeoutMs/1000)+' 秒':''}</p>}
-    <details open={item.operation==='shell'}><summary>执行输出</summary><pre className="tool-output">{item.operation==='shell'?[item.stdout,item.stderr].filter(Boolean).join('\n')||item.output||'等待命令结束…':item.output||'执行中…'}</pre></details>
-    {(item.stdoutPath||item.stderrPath)&&<p className="subtle operation-path">完整日志：{item.stdoutPath||item.stderrPath}</p>}
-    {item.error&&<p className="error">{item.error}</p>}
-  </article>;
-  return <article className="approval-card" aria-label={'操作记录 '+(item.path||'记忆')}>
-    <div className="approval-title"><strong>{item.path||'记忆修改'}</strong><span className={'status '+item.status}>{recoverable?'保存状态待核对':item.tool==='forget'&&item.status==='applied'?'已删除':statusLabels[item.status]||item.status}</span></div>
-    {item.operation==='file'?item.previewValid?<DiffBlock diffs={item.diffs||[{path:item.path,oldText:item.beforeContent,newText:item.content}]} labels={diffLabels} maxLines={18}/>:<p role="alert">当前记录没有可用差异预览，请读取文件核对。</p>:
-      <div className="memory-change">{(item.target?.text||item.args?.entry)&&<p><span>原记录</span>{item.target?.text||item.args.entry}</p>}{item.tool==='forget'?<p>{item.status==='applied'?'已删除这条有效记忆。':'删除记忆的操作记录。'}</p>:<p><span>保存内容</span>{item.args?.text}</p>}</div>}
-    {item.previewTruncated&&<p className="subtle">差异预览已截断；完整文件已保存。</p>}
-    {item.status==='pending'&&<p className="subtle">这是旧版本未执行的方案；需要执行时可直接告诉 OpenNova。</p>}
-    {item.error&&<p className="error">{errorText({message:item.error})}</p>}
-    {recoverable&&<p className="subtle">上次保存未完成，可重试并核对实际结果。</p>}
-    {error&&<p role="alert" className="error">{error}</p>}
-    {recoverable&&<Button className="nova-primary" disabled={item.previewValid===false} onClick={retry}>重试保存</Button>}
-  </article>;
-}
-
 function App(){
-  const [snapshot,setSnapshot]=useState(null),[online,setOnline]=useState(false),[draft,setDraft]=useState(()=>storage.get()?.text||''),[error,setError]=useState(''),[sending,setSending]=useState(false),[panel,setPanel]=useState(()=>window.matchMedia("(min-width: 1100px)").matches),[limit,setLimit]=useState(50),[outbox,setOutbox]=useState(storage.get);
+  const [snapshot,setSnapshot]=useState(null),[online,setOnline]=useState(false),[draft,setDraft]=useState(savedDraft),[error,setError]=useState(''),[sending,setSending]=useState(false),[limit,setLimit]=useState(50),[outbox,setOutbox]=useState(storage.get);
+  const [openingWork,setOpeningWork]=useState(false);
+  const [voicePending,setVoicePending]=useState(false),[lastControl,setLastControl]=useState(null);
   const inflight=useRef(false),outgoing=useRef(outbox),count=useRef(0),applied=useRef(0),scroll=useRef(),stick=useRef(true),input=useRef();
   const setOutgoing=value=>{outgoing.current=value;storage.set(value);setOutbox(value);};
   async function refresh(){
     const order=++count.current;
     try{
       const next=await api.call('snapshot',{limit});
-      if(order<applied.current)return;applied.current=order;setSnapshot(next);setOnline(true);
+      if(order<applied.current)return null;applied.current=order;setSnapshot(next);setOnline(true);
       const pending=outgoing.current;
       if(pending&&next.messages.some(m=>m.id===pending.id)){setOutgoing(null);setDraft(value=>value===pending.text?'':value);}
+      return next;
     }catch(e){if(order>=applied.current){applied.current=order;setOnline(false);}throw e;}
   }
-  useEffect(()=>{let stopped=false,timer;const poll=async()=>{try{await refresh();}catch{}if(!stopped)timer=setTimeout(poll,document.hidden?5000:1000);};void poll();return()=>{stopped=true;clearTimeout(timer);};},[limit]);
-  const messages=snapshot?.messages||[],approvals=snapshot?.approvals||[],issues=approvals.filter(p=>['applying','failed','conflict'].includes(p.status));
+  useEffect(()=>{
+    let stopped=false,pollTimer,retryTimer,eventTimer;const controller=new AbortController();
+    const poll=async()=>{try{await refresh();}catch{}if(!stopped)pollTimer=setTimeout(poll,document.hidden?15000:5000);};
+    const invalidate=()=>{if(stopped||eventTimer)return;eventTimer=setTimeout(()=>{eventTimer=null;if(!stopped)void refresh().catch(()=>{});},40);};
+    const connect=async()=>{try{const next=await refresh();if(!stopped&&next?.cursor)await api.events(next.cursor,invalidate,{signal:controller.signal});}catch{}if(!stopped)retryTimer=setTimeout(connect,2000);};
+    void connect();pollTimer=setTimeout(poll,5000);
+    return()=>{stopped=true;controller.abort();clearTimeout(pollTimer);clearTimeout(retryTimer);clearTimeout(eventTimer);};
+  },[limit]);
+  const messages=snapshot?.messages||[],approvals=snapshot?.approvals||[];
+  const operationsFor=id=>approvals.filter(p=>p.requestId===id).sort((a,b)=>a.createdAt-b.createdAt);
+  const unlinked=approvals.filter(p=>!p.requestId);
+  const active=messages.find(m=>m.id===snapshot?.activeId);
+  const voice=snapshot?.desktop?.voice??{};
+  const presentation=voicePresentation(snapshot,online);
+  useEffect(()=>{const result=voice.controls?.find(c=>c.id===lastControl);if(result&&['failed','stale','unavailable'].includes(result.status)){setError(result.status==='failed'?'语音控制未完成，请重连音频或查看终端。':result.status==='stale'?'语音状态已变化，旧操作已忽略。':'语音已断开，请在终端重新启动。');setLastControl(null);}},[voice.controls,lastControl]);
+  const novaState=presentation.state,novaStatus=presentation.label;
+  const speechDraft=voice.connected&&voice.draft&&!messages.some(m=>m.id===voice.draft.requestId)?voice.draft:null;
   const bot={id:snapshot?.health.botId||'opennova',name:'OpenNova',color:'blue',avatar:{shape:'drop'}},sessionId=snapshot?.health.sessionId||bot.id;
   const roster={bots:[bot],byId:{[bot.id]:bot,[sessionId]:bot},roomsById:{}};
   const busy=!!snapshot?.busy;
+  useEffect(()=>{try{sessionStorage.setItem('opennova.web.draft',draft);}catch{}},[draft]);
   const actions={openSession:()=>{},quote:(_id,text)=>{setDraft(text.split('\n').map(line=>'> '+line).join('\n')+'\n\n');input.current?.focus();}};
-  useEffect(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[messages.length,messages.at(-1)?.status,messages.at(-1)?.text]);
+  useEffect(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[messages.length,messages.at(-1)?.status,messages.at(-1)?.text,approvals.length]);
+  useEffect(()=>{
+    const content=scroll.current?.firstElementChild;if(!content)return;
+    const observer=new ResizeObserver(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;});
+    observer.observe(content);observer.observe(scroll.current);return()=>observer.disconnect();
+  },[]);
   async function send(event){
     event?.preventDefault();if(inflight.current||busy||!online||(!outgoing.current&&!draft.trim()))return;
     inflight.current=true;setSending(true);setError('');
@@ -74,21 +78,69 @@ function App(){
     catch(e){setError(errorText(e));if(e.code&&e.code!=='network')setOutgoing(null);}
     finally{inflight.current=false;setSending(false);input.current?.focus();}
   }
+  async function openWork(){
+    setOpeningWork(true);setError('');
+    try{const result=await api.call('desktop-open');if(result.status!=='completed')throw Error(result.error||'browser_open_unknown');await refresh();}
+    catch(e){setError(errorText(e));}finally{setOpeningWork(false);}
+  }
+  async function reopen(fileId){
+    setError('');try{await api.call('document-open',{id:crypto.randomUUID(),fileId});await refresh();}catch(e){setError(errorText(e));}
+  }
   async function action(name,id){const result=await api.call(name,{id});await refresh();return result;}
-  return <div className={'nova-app '+(panel?'with-panel':'')}>
-    <aside className="nova-sidebar"><div className="brand">OpenNova<span>AI 助手</span></div><button className="bot-tile" onClick={()=>input.current?.focus()}><BotMark bot={bot} size={42} state={busy?'think':'idle'}/><span><strong>OpenNova</strong><small>工作协同与日常陪伴</small></span></button><p className="shared-note">网页与语音共用这段对话。<br/>切换入口，继续聊就好。</p><button className="review-link" onClick={()=>setPanel(!panel)}>操作记录 <span>{issues.length}</span></button><div className="sidebar-footer"><span className={'connection-dot '+(online?'on':'')}/>{online?'已连接':'正在连接'}<small>基于 DeepSeek-Bot</small></div></aside>
-    <main className="nova-main"><header className="chat-header"><div><BotMark bot={bot} size={27} state={busy?'think':'idle'}/><strong>OpenNova</strong><span>{busy?'正在处理…':'与你继续交流'}</span></div><Button className="nova-secondary" onClick={()=>setPanel(!panel)}>操作记录{issues.length?' · '+issues.length:''}</Button></header>
-      {!online&&<div className="connection-banner" role="status">正在连接 Bot 服务。服务恢复后会自动接续，已保存的对话仍会保留。</div>}
-      <div className="chat-scroll" ref={scroll} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
-        {snapshot?.hasMore&&limit<500&&<Button className="history-more nova-secondary" onClick={()=>{stick.current=false;setLimit(Math.min(500,limit+50));}}>加载更早的对话</Button>}
-        {snapshot&&!messages.length&&<div className="welcome"><BotMark bot={bot} size={76}/><h1>你好，我们从哪里开始？</h1><p>可以继续刚才的语音话题，也可以让我读取、编辑项目文件。</p></div>}
-        {messages.map(message=><section className="exchange" key={message.id} data-request-id={message.id}><div className="message-meta">{message.source==='voice'?'语音':message.source==='web'?'网页':'终端'} · {new Date(message.createdAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div><UserMessageCell node={{data:{content:[{type:'text',text:message.input}],time:message.createdAt}}} sessionId={sessionId} useRoster={select=>select(roster)} actions={actions}/>
-          {message.status==='completed'?<div className="assistant-message"><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/></div>:<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(message.tool?'正在处理：'+message.tool:'正在思考…'):errorText({message:message.error||message.status,code:message.status})}</p>}</section>)}
-      </div></div>
-      <form className="composer-area" onSubmit={send}>{error&&<div className="error" role="alert">{error}</div>}{outbox&&!sending&&<div className="subtle">上一条消息的发送状态待确认。重试会发送原消息，编辑中的新草稿会保留。</div>}<div className="composer"><textarea ref={input} aria-label="发送给 OpenNova" placeholder="输入消息，继续这段对话…" value={draft} maxLength={8000} rows={3} onChange={e=>{setDraft(e.target.value);}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&e.keyCode!==229){e.preventDefault();void send();}}}/><div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{snapshot?.activeId?<Button className="nova-secondary" onClick={()=>{void action('cancel',snapshot.activeId).catch(e=>setError(errorText(e)));}}>停止回复</Button>:<Button type="submit" className="nova-primary" disabled={!online||busy||sending||(!outbox&&!draft.trim())}>{sending?'发送中…':outbox?'重试发送':'发送'}</Button>}</div></div><p className="composer-hint">可直接修改工程、运行测试；执行结果见操作记录。</p></form>
-    </main>
-    {panel&&<aside className="approval-panel" aria-label="操作记录"><header><div><strong>操作记录</strong><p>查看执行结果和内容差异</p></div><Button className="nova-secondary" aria-label="关闭操作记录" onClick={()=>setPanel(false)}>×</Button></header>{!approvals.length&&<div className="empty-approvals">暂无操作记录</div>}{approvals.map(p=><Operation key={p.id} item={p} disabled={busy||!online} onAction={action}/>)}</aside>}
-  </div>;
+  async function voiceControl(action){
+    setVoicePending(true);setError('');
+    try{
+      const id=crypto.randomUUID();setLastControl(id);
+      await api.call('voice-control',{id,action,voiceInstanceId:voice.voiceInstanceId,generation:voice.generation,requestId:voice.requestId});
+      await refresh();
+    }catch(e){setError(errorText(e));}finally{setVoicePending(false);}
+  }
+  async function stopReply(){
+    setVoicePending(true);setError('');
+    try{
+      const commands=[];
+      if(snapshot.activeId)commands.push(api.call('cancel',{id:snapshot.activeId}));
+      if(voice.connected&&['buffering','playing','paused'].includes(voice.playback)&&voice.requestId!==snapshot.activeId)
+        commands.push(api.call('voice-control',{id:crypto.randomUUID(),action:'stop',voiceInstanceId:voice.voiceInstanceId,generation:voice.generation,requestId:voice.requestId}));
+      await Promise.all(commands);await refresh();
+    }catch(e){setError(errorText(e));}finally{setVoicePending(false);}
+  }
+  return <main className="nova-app">
+    <header className="nova-header">
+      <div className="window-heading"><span>OPENNOVA</span><button type="button" className="open-work" disabled={!online||openingWork} onClick={()=>void openWork()} title="打开浏览器工作窗口"><Icon name="open"/>{openingWork?'正在打开':'打开工作窗口'}</button><span className={'connection '+(online?'online':'')}><i/>{online?'已连接':'连接中'}</span></div>
+      <div className="nova-identity"><NovaRing state={novaState}/><h1>NOVA</h1><p role="status">{novaStatus}</p></div>
+    </header>
+    {!online&&<div className="connection-banner" role="status">连接中断时可以继续编辑，草稿会保留。正在自动重连…</div>}
+    <div className="chat-scroll" ref={scroll} onClickCapture={e=>{if(e.target.closest('summary'))stick.current=false;}} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
+      {snapshot?.hasMore&&limit<500&&<Button className="history-more nova-secondary" onClick={()=>{stick.current=false;setLimit(Math.min(500,limit+50));}}>加载更早的对话</Button>}
+      {snapshot&&!messages.length&&<div className="welcome"><span className="eyebrow">LET’S BUILD TOGETHER</span><h2>一起把想法变成现实</h2><p>聊聊你的想法，或从工作窗口里的一段内容开始。</p></div>}
+      {messages.map(message=><section className="exchange" key={message.id} data-request-id={message.id}>
+        <div className="message-meta">{message.source==='voice'?'语音':message.source==='web'?'文字':'终端'} · {new Date(message.createdAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+        <UserMessageCell node={{data:{content:[{type:'text',text:message.input}],time:message.createdAt}}} sessionId={sessionId} useRoster={select=>select(roster)} actions={actions}/>
+        <div className="assistant-message"><div className="speaker-label"><span/> NOVA</div>
+          {!!operationsFor(message.id).length&&<div className="inline-operations" aria-label="本轮操作">{operationsFor(message.id).map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</div>}
+          {message.status==='completed'?<><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/><ResearchSources sources={message.sources} derivations={message.derivations}/></>:<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(modelRetryLabel(message)||researchPhaseLabel(message)||(message.phase==='tool'?'正在处理工作内容…':'正在思考…')):errorText({message:message.error||message.status,code:message.status,diagnostic:message.diagnostic})}</p>}
+        </div>
+      </section>)}
+      {speechDraft&&<div className="speech-draft" role="status" aria-label="实时语音转写"><span>语音 · {voice.recognition==='recognizing'?'识别中':'正在提交'}</span><p>{speechDraft.text||'正在听你说…'}</p></div>}
+      {!!unlinked.length&&<details className="other-operations"><summary>其他操作记录 · {unlinked.length}</summary>{unlinked.map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</details>}
+    </div></div>
+    <div className="chat-bottom">
+      <ContextChip context={snapshot?.desktop?.context||snapshot?.workContext} disabled={busy||!online} onOpenFile={reopen} onClear={()=>void action('context-clear').catch(e=>setError(errorText(e)))}/>
+      <form className="composer-area" onSubmit={send}>
+        {error&&<div className="error" role="alert">{error}</div>}
+        {outbox&&!sending&&<p className="subtle">上一条消息的发送状态待确认。重试会发送原消息，新草稿会保留。</p>}
+        <div className="composer"><textarea ref={input} aria-label="发送给 OpenNova" placeholder="说说你的想法…" value={draft} maxLength={8000} rows={2} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&e.keyCode!==229){e.preventDefault();void send();}}}/>
+          <div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{presentation.canStop?<button type="button" className="stop-button" disabled={voicePending} onClick={()=>void stopReply()}><Icon name="stop"/> 停止回复</button>:<button type="submit" className="send-button" title={outbox?'重试发送':'发送'} aria-label={sending?'发送中':outbox?'重试发送':'发送'} disabled={!online||busy||sending||(!outbox&&!draft.trim())}><Icon name="send"/></button>}</div>
+        </div>
+      </form>
+      <div className="voice-footer">
+        <button type="button" className="voice-symbol" aria-label={voice.capture==='listening'?'静音麦克风':voice.capture==='off'?'开始交流':'恢复麦克风'} title={presentation.micLabel} disabled={!presentation.canControl||voicePending||voice.capture==='error'} onClick={()=>void voiceControl(voice.capture==='off'?'start':voice.capture==='listening'?'mute':'unmute')}><Icon name={voice.capture==='listening'&&presentation.canControl?'mic':'micOff'}/></button>
+        <div><span>{presentation.micLabel}</span><small>{presentation.canControl?'文字与语音共用这段对话':'在终端启动语音后自动连接'}</small></div>
+        {presentation.canControl&&<div className="voice-actions"><button type="button" disabled={voicePending} onClick={()=>void voiceControl(voice.capture==='off'?'start':'end')}>{voice.capture==='off'?'开始':'结束'}</button><button type="button" disabled={voicePending} onClick={()=>void voiceControl('retry')} title="重连音频设备">重连</button></div>}
+      </div>
+    </div>
+  </main>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

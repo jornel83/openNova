@@ -1,3 +1,4 @@
+import {prepareDesktop} from '../desktop/start.mjs';
 import {spawn} from 'node:child_process';
 import {request} from 'node:http';
 import {createConnection} from 'node:net';
@@ -6,13 +7,25 @@ import {join, resolve} from 'node:path';
 import {homedir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {botSettings, ROOT} from '../../services/bot/settings.mjs';
+import {loadResearchConfig,RESEARCH_VERSION} from '../../services/bot/research/config.mjs';
+
+export function researchStartupNotice(health,desired={}){
+ const r=health?.research;
+ if(!r||r.version!==RESEARCH_VERSION||desired.enabled&&!r.enabled||desired.mode&&r.mode!==desired.mode)return '后台检索版本或模式尚未更新；请在结束当前语音后停止并重启 Bot。普通对话与工程功能仍可用。';
+ if(r.available)return `后台检索：DeepSeek 已接入（${r.mode==='legacy'?'旧版回退模式':'DSH 原生联网'}）；实际查询时验证网络与账号权限。`;
+ if(!r.enabled)return '后台检索未开启；可在 web.enabled 配置中启用，普通功能可用。';
+ const reason={deepseek_api_key_missing:'缺少 DeepSeek 搜索密钥',research_provider_unsupported:'当前 Bot 的搜索后端需要设为 deepseek',invalid_research_configuration:'检索配置无效'}[r.reason]||'当前不可用';
+ return `后台检索：${reason}；普通对话与工程功能仍可用。`;
+}
 
 const HELP=`OpenNova 一键语音启动（自动使用共享 Bot）
 用法：./start.command [选项]
+  --ui                  自动打开工作窗口和 Nova 对话窗口（默认）
+  --no-ui               仅终端语音，不自动开窗
   --device 名称          麦克风；省略使用系统默认输入
   --output-device 名称   播放设备；省略使用系统默认输出
   --list-devices         只列出设备，不启动 Bot、SSH 或 TTS
-  --check                启动缺失服务并检查语音依赖，不开启麦克风
+  --check                启动缺失服务并检查语音依赖，不打开窗口或麦克风
   --proxy URL            本次新启动 Bot 的云端代理；也可用 OPENNOVA_PROXY
   --studio-host 主机     SSH 别名，默认 agent-control
   --studio-tts-dir 路径  Studio 的 services/tts 绝对路径
@@ -61,6 +74,8 @@ export function parseArgs(argv) {
   for(let i=0;i<argv.length;i++) {
     const arg=argv[i];
     if(['--help','-h'].includes(arg))options.help=true;
+    else if(arg==='--ui')options.ui=true;
+    else if(arg==='--no-ui')options.ui=false;
     else if(arg==='--check')options.check=true;
     else if(arg==='--list-devices')options.listDevices=true;
     else if(values[arg]) {
@@ -69,6 +84,7 @@ export function parseArgs(argv) {
       options[values[arg]]=value;
     }else throw Error(`不支持的参数 ${arg}；请使用 --help。一键入口已使用 Bot 模式，无需 --bot / --web。`);
   }
+  options.ui=options.help||options.listDevices||options.check?false:options.ui??true;
   options.ttsPort=Number(options.ttsPort);
   if(options.ttsProvider)options.ttsProvider=normalizeProvider(options.ttsProvider);
   if(!Number.isInteger(options.ttsPort)||options.ttsPort<1024||options.ttsPort>65535)throw Error('转发端口必须为 1024–65535。');
@@ -125,7 +141,7 @@ function acquireLock(path) {
         try {process.kill(pid,0);}catch(err){stale=err.code==='ESRCH';}
       }else stale=Date.now()-statSync(path).mtimeMs>120000;
     }catch {stale=Date.now()-statSync(path).mtimeMs>120000;}
-    if(!stale)throw Error('已有一键启动或语音会话正在运行，请先在原终端 /quit。');
+    if(!stale)throw Object.assign(Error('已有一键启动或语音会话正在运行，请先在原终端 /quit。'),{code:'launch_busy'});
     rmSync(path,{recursive:true});mkdirSync(path,{mode:0o700});
   }
   writeFileSync(join(path,'pid'),String(process.pid),{mode:0o600});
@@ -174,7 +190,7 @@ async function commandExit(child,{signal,timeout=120000}={}) {
   });
 }
 
-export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,pollMs=500,signal,log=console.log}={}) {
+export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,pollMs=500,signal,log=console.log,openBrowser,uiWaitMs=8000}={}) {
   const runEnv={...env};if(options.proxy)runEnv.OPENNOVA_PROXY=options.proxy;
   const voice=join(root,'tools/voice/run-continuous.command');
   if(options.listDevices) {
@@ -187,20 +203,23 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
   runEnv.OPENNOVA_TTS_PROVIDER=provider;
   if(options.ttsVoice)runEnv.OPENNOVA_DOUBAO_TTS_VOICE=options.ttsVoice;
   const b=botSettings(runEnv),ttsUrl=`http://127.0.0.1:${options.ttsPort}`;
-  const release=acquireLock(join(b.home,'voice-launch.lock'));
+  let release,existingLaunch=false;
+  try{release=acquireLock(join(b.home,'voice-launch.lock'));}
+  catch(error){if(error.code!=='launch_busy'||!options.ui||options.check)throw error;existingLaunch=true;}
   const logDir=join(root,'output/voice/launcher');
   mkdirSync(logDir,{recursive:true,mode:0o700});
-  let bot,tunnel,remote,client,botReady=false;
+  let bot,tunnel,remote,client,botReady=false,health;
   const timing={signal,waitMs,pollMs};
   const botHealth=async()=>{
     let data;
     try {data=await jsonRequest(b.url+'/health',{token:readFileSync(b.tokenPath,'utf8').trim(),signal});}
     catch {signal?.throwIfAborted();return false;}
     if(data.ready&&data.workspace!==root)throw Error('现有 Bot 使用了其他工程，请先检查 Bot 配置。');
-    return data.ready===true;
+    health=data;return data.ready===true;
   };
   try {
-    log('[1/3] 检查 Bot 服务……');
+    log('检查 Bot 服务……');
+    if(existingLaunch)await waitReady(botHealth,null,timing,'已有启动正在进行，但 Bot 尚未就绪；请查看原终端。');
     if(await botHealth()) {
       log(`复用 Bot：${b.url}/`);
       if(runEnv.OPENNOVA_PROXY)log('已有 Bot 沿用启动时的代理设置；如需更换，请先 tools/bot/run.command --stop 后重新启动。');
@@ -208,14 +227,23 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
     else {
       if(await portOpen(b.port)||await portOpen(b.webPort))throw Error('Bot 端口已占用但宿主未就绪；请检查现有进程，未自动终止。');
       log('正在后台启动 Bot，日志：output/voice/launcher/bot.log');
-      bot=spawnLogged(join(root,'tools/bot/run.command'),[],{env:runEnv,cwd:root,logPath:join(logDir,'bot.log'),detached:true});
+      bot=spawnLogged(join(root,'tools/bot/run.command'),['--no-ui'],{env:runEnv,cwd:root,logPath:join(logDir,'bot.log'),detached:true});
       await waitReady(botHealth,bot,timing,'Bot 启动失败或超时，请查看 output/voice/launcher/bot.log。');
       botReady=true;bot.unref();log(`Bot 已就绪：${b.url}/`);
     }
+    log(researchStartupNotice(health,loadResearchConfig({env:runEnv,configFile:runEnv.OPENNOVA_CONFIG||join(root,'config/voice.local.json'),secretsFile:runEnv.OPENNOVA_SECRETS_FILE||join(root,'config/secrets.local.json')})));
+    if(options.ui&&!options.check)await prepareDesktop({config:b,root,health,signal,log,env:runEnv,openBrowser,waitMs:uiWaitMs});
+    if(!options.check){
+      const snapshot=await jsonRequest(b.url+'/snapshot',{token:readFileSync(b.tokenPath,'utf8').trim(),signal});
+      if(existingLaunch||snapshot.desktop?.voice?.connected){
+        log('已有语音会话，复用当前会话；设备与 TTS 沿用原终端配置。需要更换时，请先在原终端 /quit。');
+        return 0;
+      }
+    }
     if(provider==='doubao') {
-      log('[2/3] 使用豆包云端 TTS，跳过 Studio / SSH；语音入口将验证云端权限。');
+      log('使用豆包云端 TTS，跳过 Studio / SSH；语音入口将验证云端权限。');
     } else {
-    log('[2/3] 检查 Studio TTS 与连接……');
+    log('检查 Studio TTS 与连接……');
     if(await probeTts(ttsUrl,signal))log('复用现有 TTS 连接。');
     else {
       if(!studio.studioTtsDir)throw Error('请通过 tts.studio_tts_dir、OPENNOVA_STUDIO_TTS_DIR 或 --studio-tts-dir 指定 Studio 上部署的 services/tts 绝对路径。');
@@ -249,7 +277,7 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
       log('Studio TTS 连接已就绪。');
     }
     }
-    log(options.check?'[3/3] 检查语音依赖，不打开麦克风……':'[3/3] 启动语音对话；/quit 或 Ctrl+C 退出。');
+    log(options.check?'检查语音依赖，不打开麦克风……':'启动语音对话；/quit 或 Ctrl+C 退出。');
     const args=['--bot'];
     if(provider==='studio')args.push('--tts-url',ttsUrl);
     else args.push('--tts-provider','doubao');
@@ -260,11 +288,16 @@ export async function launch(options,{root=ROOT,env=process.env,waitMs=120000,po
     // Isolate terminal signals, forwarding one SIGINT so Python can run its
     // async microphone/playback cleanup instead of receiving duplicate interrupts.
     client=spawn(voice,args,{env:runEnv,cwd:root,stdio:'inherit',detached:true});
-    return await commandExit(client,{signal,timeout:0});
+    const code=await commandExit(client,{signal,timeout:0});
+    if(code&&options.ui&&!options.check)log(`语音未就绪，文字对话仍可使用：${b.url}/。请检查终端提示后重新运行相同启动命令。`);
+    return code;
+  }catch(error){
+    if(health?.ready&&options.ui&&!options.check&&!signal?.aborted)log(`语音启动未完成，文字对话仍可使用：${b.url}/。Studio 不在线时可改用 --tts-provider doubao。`);
+    throw error;
   }finally {
     await stop(client,{signal:'SIGINT',graceMs:20000,group:true});await stop(remote);await stop(tunnel);
     if(bot&&!botReady)await stop(bot,{group:true});
-    release();
+    release?.();
   }
 }
 

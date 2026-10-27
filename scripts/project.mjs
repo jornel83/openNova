@@ -24,7 +24,7 @@ export function commandPlan(command,args=[],root=ROOT) {
   if((command==='setup'&&clean.some(a=>a!=='--chatgpt'))||(['build','test:bot'].includes(command)&&clean.length))throw Error('unknown_option');
   const step=(command,args,cwd=root,env={})=>({command,args,cwd,env:{CI:'true',...env}});
   if(command==='setup')return [step('pnpm',['install','--frozen-lockfile']),step('pnpm',['install','--frozen-lockfile'],harness),
-    step('npm',['ci','--no-audit','--no-fund'],bot),step('npm',['ci','--ignore-scripts','--no-audit','--no-fund','--workspace','@siwc/local','--include-workspace-root'],siwc),
+    step('npm',['ci','--no-audit','--no-fund'],bot),step('npm',['ci','--no-audit','--no-fund'],join(root,'services/bot/desktop')),step('npm',['ci','--ignore-scripts','--no-audit','--no-fund','--workspace','@siwc/local','--include-workspace-root'],siwc),
     ...(clean.includes('--chatgpt')?[step(process.env.OPENNOVA_PYTHON||'python3.11',[join(root,'tools/setup/bootstrap.py'),'--install','--web'])]:[])];
   if(command==='build')return [step('pnpm',['run','build'],harness),step('npm',['run','build'],bot),step('npm',['run','build','-w','@siwc/local'],siwc),step(process.execPath,[join(root,'services/bot/web/build.mjs')]),
     ...(process.platform==='darwin'?[step(process.env.OPENNOVA_PYTHON||'python3.11',[join(root,'tools/setup/bootstrap.py'),'--install'])]:[])];

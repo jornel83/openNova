@@ -1,5 +1,12 @@
 # OpenNova MVP 开发环境部署方案
 
+> 2026-10-25 联网接入更新：默认改为 DSH 原生 web_search / web_fetch / bash；OpenNova 仅监听进度、保存来源和处理语音交互。旧版研究预算和 web_request / research_exec / research_derive 只在显式 legacy 回退模式启用。启动与验收见 [原生联网验收](opennova-native-research-test-cases.md)。以下早期阶段记录保留用于历史追溯。
+
+
+2026-10-24 当前增量：**Bot 已统一接入 DeepSeek 后台搜索、公开网页正文、持久来源与检索预算**。沿用当前 Air Bot + 可切换 TTS，`config/voice.local.json` 中启用 `web.enabled=true`、`web.provider="deepseek"`，密钥沿用本机 secrets 的 `web.deepseek_api_key`。无须 Exa，无须为 Bot 追加旧 `--web`。配置在 Bot 启动时加载，退出语音不等于重启 Bot；一键启动会提示当前宿主能力和是否需要重启。详见 [联网研究验收及配置](opennova-bot-research-test-cases.md) 与 [当前实际架构](opennova-demo-architecture-status.md)。
+
+以下 2026-10-13 及更早内容为历史部署基线和目标设计；其中 Exa 依赖、浏览器待开发、Studio 常驻 Agent 等说明不代表当前已部署状态。
+
 2026-10-13 联网版增量：已实现独立 SIWC 工具扩展、Harness 原生 Web 插件、来源与预算控制、文字入口和持续语音 `--web`。部署位置保持 Air Agent + Studio Vivian；新增外部依赖为 Exa 搜索 Key。工具协议和真实公开网页读取已验证，真实搜索仍待 Key；[联网验收记录](opennova-web-search-verification.md) 汇总命令、证据与未完成验证。下面保留原语音基线与目标架构的历史说明。
 
 日期：2026-10-12。状态：已有 VAD → 豆包 ASR → Harness / GPT-6.1 Sol → Vivian 闭环。持续交流模式已实现并通过真实两轮文件链路、同会话生成取消与自动化回归；Air 原生 Voice Processing 音频桥已完成内置组合、SRS-XB100 组合及内置麦克风配蓝牙输出的实际启动、PCM 采集和静音播放检查。**外放 AEC、现场插话完整性与听感尚未完成专项验证。** Studio 常驻 Agent 与 MVP 主服务尚未部署。
@@ -227,3 +234,9 @@ TTS 长句持续生成的 RTF 应小于 1，才有持续实时播放的基础；
 Vivian 接入无需真人参考录音。当前终端 Demo 已完成 LLM 接入、Harness 会话与文件输入语音闭环，豆包 ASR 账号与实时接口也已通过独立验证。
 
 当前版本收尾验证与命令集中在 [Demo 运行说明](../../tools/voice/README.md)。下一轮仍需用内置和蓝牙设备检查外放自触发、插话及时停声、开头不丢字与真实设备重连；咳嗽误触发优化暂缓。后续工程方向为统一启动 / 网络诊断，以及首个 Agent 工作协同闭环，Studio 常驻迁移另行推进。连续模式两轮记录见 `output/voice/continuous-real-04/conversation.json`；六句增量合成记录见 `output/voice/continuous-long-01/conversation.json`。不以文件测试或静音播放代替真人外放验证。
+
+## 2026-10-25：通用联网研究执行
+
+后台研究扩展为 DeepSeek 搜索 → 网页 / 公开 HTTP 接口 → 原生研究脚本 → 来源与结果关联。Bot 可自行选择调用路径，查询不要求工作浏览器在线。新增 `web_request`、`research_exec`、`research_derive`，支持国内编码、必要 Referer、统一预算、取消和历史回查。普通工程 Shell 保持原权限；其中自行联网的响应不自动成为已记录 HTTP 来源。详细边界、验证与回退见 [通用联网研究验收](opennova-research-execution-test-cases.md)。
+
+R6–R11 实施验证更新（2026-10-25）：日常 Bot 已启用研究 version 2；Node 259、Python 103、Harness HTTP 74 项通过。重复股票取数 8/9，历史日期 1/1；北京天气本次未能核实，真人语音现场验收待完成。详情见 [通用研究验收记录](opennova-research-execution-test-cases.md)。

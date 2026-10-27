@@ -18,7 +18,7 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
   const port=await freePort();let webPort=await freePort();while(webPort===port)webPort=await freePort();
   const b={...botSettings({OPENNOVA_BOT_HOME:home,OPENNOVA_BOT_PORT:String(port),OPENNOVA_BOT_WEB_PORT:String(webPort)}),workspace:join(home,'workspace')};
   mkdirSync(b.workspace);writeFileSync(b.tokenPath,'offline-fixture-token');
-  const patch=runtimePatch({bot:b,agent:{harnessRoot:sources.harnessRoot},webAssets:join(ROOT,'output/bot/web')});
+  const patch=runtimePatch({bot:b,agent:{harnessRoot:sources.harnessRoot},webAssets:join(ROOT,'output/bot/web'),desktop:true});
   patch.find(row=>row.insert).insert.find(p=>p.id==='opennova-chatgpt').name=join(ROOT,'services/bot/tests/fixtures/mock-provider.mjs');
   const patchPath=join(home,'test.patch.json');writeFileSync(patchPath,JSON.stringify(patch));
   let child,logs='';
@@ -49,6 +49,8 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
     return waitFor(async()=>{const health=await api('/health');return health.ready&&health;});
   }
   const health=await start();assert.equal(health.workspace,b.workspace);
+  assert.equal(health.desktopEnabled,true);
+  assert.equal((await api('/desktop/status')).paired,false);
   assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status,200);
   await api('/ask',{id:'first',text:'hello',source:'text'});
   const result=await waitFor(async()=>{const r=await api('/result',{id:'first'});if(r.status==='failed')throw Error(JSON.stringify(r));return r.status==='completed'&&r;});

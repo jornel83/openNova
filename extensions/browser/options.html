@@ -1,0 +1,11 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>OpenNova · 浏览器接入验证</title>
+<style>body{font:16px system-ui;max-width:680px;margin:48px auto;padding:20px;background:#101725;color:#e7eef8}input,button{font:inherit;padding:10px;margin:6px 0}input{display:block;width:95%}button{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#182238;padding:16px}small{color:#b9c7de}label{display:block;margin-top:20px}</style>
+<h1>OpenNova 浏览器接入 · M0</h1><p>仅共享明确绑定的工作标签页。Nova 对话窗口不会被当作工作页。</p>
+<label>本机服务地址<input id="base" value="http://127.0.0.1:18560" spellcheck="false"></label>
+<label>一次性配对码（60 秒有效）<input id="code" type="password" autocomplete="off"></label>
+<button id="pair">配对</button> <button id="reconnect">重新连接</button>
+<p><small>安装：chrome://extensions → 开发者模式 → 加载已解压的扩展程序 → 选择 extensions/browser。运行 tools/desktop/setup.mjs 取得配对码。长期凭证只保存在扩展的私有存储里。</small></p>
+<button id="grant">授权 HTTP(S) 页面读取</button> <button id="windows">打开 / 复用双窗口</button>
+<p><small>站点权限用于后台语音协作；只读取绑定页，密码输入框不读取。也可在 Chrome 扩展详情中按站点管理权限。点击目标网页上的扩展图标可主动绑定该页。</small></p>
+<button id="read">读取工作页</button> <button id="status">刷新状态</button>
+<pre id="result" aria-live="polite">尚未连接</pre><script type="module" src="options.mjs"></script></html>

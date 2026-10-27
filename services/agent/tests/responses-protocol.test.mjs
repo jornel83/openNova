@@ -33,3 +33,23 @@ for(const [name,item] of [['missing id',{...fc(),call_id:''}],['bad JSON',{...fc
 test('failed or cancelled response cannot commit a partial function',async()=>{
  const seen=[];await assert.rejects(async()=>{for await(const c of protocol.responseToolChunks({streamItems:async()=>{throw Error('stream_interrupted');}},opts))seen.push(c);});assert.equal(seen.length,0);
 });
+test('tool stream preserves safe connection errors through Harness turn settlement',async()=>{
+ const {completedReply}=await import('../result.mjs');const seen=[];let failure;
+ const client={async streamItems(){throw Object.assign(new Error('Could not reach ChatGPT. Check your connection and try again.'),{code:'network_error',retryable:true});}};
+ try{for await(const c of protocol.responseToolChunks(client,opts))seen.push(c);}catch(error){failure=error;}
+ assert.equal(seen.length,0);
+ // Installed Harness normalizes an unknown error class to UNKNOWN and retains its message.
+ assert.throws(()=>completedReply({events:[{type:'turn/end',data:{turn:1,reason:{kind:'error',error:{code:'UNKNOWN',message:failure?.message}}}}]}),/network_error/);
+});
+test('tool stream does not leak unknown SDK error text into stored turn errors',async()=>{
+ const client={async streamItems(){throw Object.assign(new Error('private-prompt private-token'),{code:'private_code'});}};
+ await assert.rejects(()=>Array.fromAsync(protocol.responseToolChunks(client,opts)),error=>error.message==='agent_runtime_failed'&&!JSON.stringify(error).includes('private'));
+});
+test('compaction keeps tool history but advertises no executable tools',()=>{
+ const r=protocol.projectToolRequest({...opts,purpose:'compaction',messages:[...opts.messages,{role:'assistant',content:[{type:'tool-call',id:'old',name:'web_search',arguments:'{}'}]},{role:'tool',toolCallId:'old',content:[{type:'text',text:'source evidence'}]}]});
+ assert.equal(r.tools,undefined);assert.equal(r.input.at(-1).output,'source evidence');
+});
+test('compaction cannot emit a tool call even if the provider returns one',async()=>{
+ const seen=[];await assert.rejects(async()=>{for await(const c of protocol.responseToolChunks({streamItems:async()=>({output:[fc()]})},{...opts,purpose:'compaction'}))seen.push(c);},/invalid_tool_call/);
+ assert.equal(seen.length,0);
+});

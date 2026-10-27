@@ -1,4 +1,3 @@
-import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, utimesSync} from 'node:fs';
@@ -7,7 +6,7 @@ import {join} from 'node:path';
 import {createServer} from 'node:net';
 import {createServer as httpServer} from 'node:http';
 import {spawn, spawnSync} from 'node:child_process';
-import {launch, parseArgs, probeTts, ttsProvider, studioSettings} from '../start.mjs';
+import {launch, parseArgs, probeTts, ttsProvider,studioSettings} from '../start.mjs';
 
 async function freePort() {
   const server=createServer();
@@ -32,13 +31,20 @@ async function fixture(t) {
     const fs=require('node:fs'),http=require('node:http'),root=process.env.FIXTURE_ROOT;
     const tts=process.argv.includes('-N');
     fs.appendFileSync(root+'/starts', (tts?'tts':'bot')+'\\n');
+    if(!tts)fs.writeFileSync(root+'/bot-args',JSON.stringify(process.argv.slice(2)));
     fs.appendFileSync(root+'/pids', process.pid+'\\n');
     if(!tts)fs.writeFileSync(root+'/state/client.token','fixture-token');
     const server=http.createServer((req,res)=>{
       res.setHeader('Content-Type','application/json');
       if(!tts && req.headers.authorization!=='Bearer fixture-token'){res.writeHead(401);return res.end('{}');}
+      if(!tts){
+        fs.appendFileSync(root+'/requests',req.url+'\\n');
+        if(req.url==='/desktop/status')return res.end(JSON.stringify({paired:true,connected:process.env.EXTENSION_OFF!=='1'||fs.existsSync(root+'/browser-ready')}));
+        if(req.url==='/desktop/open'){fs.appendFileSync(root+'/window-ensures','ensure\\n');return res.end(JSON.stringify({status:'completed',windows:{workWindowId:1,chatWindowId:2}}));}
+        if(req.url==='/snapshot')return res.end(JSON.stringify({desktop:{voice:{connected:process.env.EXISTING_VOICE==='1'}}}));
+      }
       const data=tts?{paths:{'/v1/audio/speech':{post:{}}}}:
-        {ready:true,workspace:root,model:'opennova-chatgpt/gpt-6.1-sol'};
+        {ready:true,runtimeId:'fixture-boot',workspace:root,model:'opennova-chatgpt/gpt-6.1-sol'};
       res.end(JSON.stringify(data));
     });
     server.listen(Number(tts?process.env.FIXTURE_TTS_PORT:process.env.OPENNOVA_BOT_PORT),'127.0.0.1');
@@ -53,6 +59,7 @@ async function fixture(t) {
   `);
   script('tools/voice/run-continuous.command',`
     const fs=require('node:fs'),root=process.env.FIXTURE_ROOT;
+    fs.appendFileSync(root+'/voice-starts','start\\n');
     fs.writeFileSync(root+'/voice.json',JSON.stringify({args:process.argv.slice(2),proxy:process.env.OPENNOVA_PROXY}));
     if(process.env.WAIT_VOICE){
       process.on('SIGINT',()=>{fs.writeFileSync(root+'/voice-closed','yes');process.exit(0);});
@@ -203,7 +210,7 @@ test('Studio bootstrap starts the installed service once and recovers an old emp
   `);
   writeFileSync(join(ttsDir,'serve.sh'),`#!/bin/sh\nexec '${process.execPath}' server.cjs\n`);
   const bootstrap=()=>new Promise((resolve,reject)=>{
-    const child=spawn('/bin/sh',[fileURLToPath(new URL('../ensure-studio-tts.sh',import.meta.url)),ttsDir],
+    const child=spawn('/bin/sh',[new URL('../ensure-studio-tts.sh',import.meta.url).pathname,ttsDir],
       {env:f.env,stdio:['ignore','pipe','pipe']});
     let output='';child.stdout.on('data',x=>output+=x);child.stderr.on('data',x=>output+=x);
     child.on('error',reject);child.on('exit',code=>{if(code)reject(Error(output));else resolve(output);});
@@ -221,10 +228,80 @@ test('CLI validates mode and parameters before causing side effects',()=>{
 });
 
 test('root command works outside the project and help needs no services',()=>{
-  const result=spawnSync(fileURLToPath(new URL('../../../start.command',import.meta.url)),['--help'],
+  const result=spawnSync(new URL('../../../start.command',import.meta.url).pathname,['--help'],
     {cwd:tmpdir(),encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
   assert.match(result.stdout,/--device/);assert.match(result.stdout,/--check/);
+});
+
+
+test('UI startup opens windows before TTS and voice, enables desktop on a cold Bot',async t=>{
+ const f=await fixture(t);f.env.SSH_FAIL='255';const logs=[];
+ await assert.rejects(launch({...f.options,ui:true},{...f.runtime,log:s=>logs.push(s)}),/Studio/);
+ assert.deepEqual(JSON.parse(readFileSync(join(f.root,'bot-args'),'utf8')),['--no-ui']);
+ assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\n');
+ assert.equal(existsSync(join(f.root,'voice.json')),false);
+ assert.ok(logs.some(x=>x.includes('文字')&&x.includes('http://127.0.0.1:')));
+ assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'voice-launch.lock')),false);
+});
+test('UI reconnect reuses an active launcher without another microphone or SSH connection',async t=>{
+ const f=await fixture(t);f.env.WAIT_VOICE='1';const c=new AbortController();
+ const first=assert.rejects(launch({...f.options,ui:true},{...f.runtime,signal:c.signal}),/test_cancel/);
+ try{
+  for(let i=0;i<100&&!existsSync(join(f.root,'voice.json'));i++)await new Promise(r=>setTimeout(r,40));
+  assert.equal(await launch({...f.options,ui:true},f.runtime),0);
+  assert.equal(readFileSync(join(f.root,'voice-starts'),'utf8'),'start\n');
+  assert.equal(readFileSync(join(f.root,'remote'),'utf8'),'started\n');
+  assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\nensure\n');
+  assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'voice-launch.lock')),true);
+ }finally{c.abort(Error('test_cancel'));await first;}
+});
+test('a voice client started directly is reused without taking its microphone ownership',async t=>{
+ const f=await fixture(t);f.env.EXISTING_VOICE='1';
+ assert.equal(await launch({...f.options,ui:true},f.runtime),0);
+ assert.equal(existsSync(join(f.root,'voice.json')),false);
+ assert.equal(existsSync(join(f.root,'remote')),false);
+});
+test('missing extension keeps text and voice, opens fallback once per Bot boot without credentials',async t=>{
+ const f=await fixture(t);f.env.EXTENSION_OFF='1';const opened=[],logs=[];
+ const runtime={...f.runtime,uiWaitMs:10,openBrowser:async url=>opened.push(url),log:s=>logs.push(s)};
+ assert.equal(await launch({...f.options,ui:true,ttsProvider:'doubao'},runtime),0);
+ assert.equal(await launch({...f.options,ui:true,ttsProvider:'doubao'},runtime),0);
+ assert.equal(opened.filter(Boolean).length,1);
+ assert.equal(opened.filter(Boolean)[0],`http://127.0.0.1:${f.env.OPENNOVA_BOT_PORT}/`);
+ assert.equal(existsSync(join(f.root,'window-ensures')),false);
+ assert.ok(logs.some(x=>x.includes('扩展')));
+ assert.equal(existsSync(join(f.root,'voice.json')),true);
+});
+test('UI launch reconnects the configured paired browser before opening windows and voice',async t=>{
+ const f=await fixture(t);f.env.EXTENSION_OFF='1';
+ f.env.OPENNOVA_BROWSER_EXECUTABLE=join(f.root,'bin/paired-chrome');
+ f.env.OPENNOVA_BROWSER_USER_DATA_DIR=mkdtempSync(join(tmpdir(),'nova launch profile '));
+ t.after(()=>rmSync(f.env.OPENNOVA_BROWSER_USER_DATA_DIR,{recursive:true,force:true}));
+ writeFileSync(f.env.OPENNOVA_BROWSER_EXECUTABLE,`#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(join(f.root,'browser-args'))},JSON.stringify(process.argv.slice(2)));fs.writeFileSync(${JSON.stringify(join(f.root,'browser-ready'))},'ready');`,{mode:0o700});
+ assert.equal(await launch({...f.options,ui:true,ttsProvider:'doubao'},f.runtime),0);
+ const args=JSON.parse(readFileSync(join(f.root,'browser-args'),'utf8'));
+ assert.ok(args.includes('--user-data-dir='+f.env.OPENNOVA_BROWSER_USER_DATA_DIR));
+ assert.ok(args.includes('--load-extension='+join(f.root,'extensions/browser')));
+ assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\n');
+ assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'ui-fallback.json')),false);
+ assert.equal(existsSync(join(f.root,'voice.json')),true);
+});
+test('UI preflight and list-devices never open windows; explicit no-ui overrides UI',async t=>{
+ const f=await fixture(t);const openBrowser=async()=>assert.fail('must not open a browser');
+ assert.equal(parseArgs(['--ui','--no-ui']).ui,false);
+ await launch({...f.options,ui:true,check:true},{...f.runtime,openBrowser});
+ assert.equal(existsSync(join(f.root,'window-ensures')),false);
+ await launch({...f.options,ui:true,listDevices:true},{...f.runtime,openBrowser});
+ assert.equal(existsSync(join(f.root,'window-ensures')),false);
+});
+test('microphone startup failure keeps the text service and reports recovery URL',async t=>{
+ const f=await fixture(t);f.env.VOICE_EXIT='7';const logs=[];
+ assert.equal(await launch({...f.options,ui:true,ttsProvider:'doubao'},{...f.runtime,log:s=>logs.push(s)}),7);
+ assert.ok(logs.some(s=>s.includes('文字对话仍可使用')&&s.includes(f.env.OPENNOVA_BOT_PORT)));
+ assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'voice-launch.lock')),false);
+ f.env.VOICE_EXIT='0';await launch({...f.options,ui:true,ttsProvider:'doubao'},f.runtime);
+ assert.equal(readFileSync(join(f.root,'starts'),'utf8'),'bot\n');
 });
 
  test('Studio deployment path comes from explicit configuration instead of a personal checkout',async t=>{

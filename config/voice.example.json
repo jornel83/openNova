@@ -13,5 +13,9 @@
     "doubao_voice": "zh_female_vv_uranus_bigtts",
     "data_dir": "",
     "url": "http://127.0.0.1:18000"
+  },
+  "desktop": {
+    "browser_executable": "",
+    "browser_user_data_dir": ""
   }
 }

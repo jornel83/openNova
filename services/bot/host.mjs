@@ -1,20 +1,32 @@
+import {randomUUID} from 'node:crypto';
+import {createVoiceChannel} from './desktop/voice.mjs';
+import {createEvents} from './desktop/events.mjs';
 /** Real DeepSeek-Bot runtime, with a small loopback adapter for OpenNova clients. */
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {createDocumentOpener,createDocumentTool,inspectFileReference} from './desktop/documents.mjs';
+import {createWorkContext} from './desktop/context.mjs';
+import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
+import {researchTools} from './research/config.mjs';
+import {createContentFetcher} from '../agent/web-fetch-content.mjs';
+import {installResearch} from './research/runtime.mjs';
 import {Requests} from './requests.mjs';
+import {installModelGate} from './model-gate.mjs';
+import {installModelRetryObserver} from './model-retry.mjs';
+import {MODEL_RETRY_POLICY} from '../agent/model-retry.mjs';
 import {MemoryApprovals} from './memory.mjs';
 import {admitText,withoutNativeChannel,ownResources} from './lifecycle.mjs';
 import {createBridge} from './http.mjs';
 import {createControls} from './controls.mjs';
 import {ALLOWED_TOOLS,INSTRUCTIONS} from './policy.mjs';
 import {completedReply} from '../agent/result.mjs';
-import {toSpeechText} from '../agent/speech-text.mjs';
+import {errorEvent} from '../agent/errors.mjs';
 import {bindProject,settleBot,cancelBot,staleRequest,auditTool,recoverToolRuns,PROJECT_TOOLS,TURN_TIMEOUT_MS} from './project.mjs';
 
 export const name='opennova-bot-spike';
-export const inject=['llm','tools','systemPrompt','sessionController','sessions','sessionTitle','workspaceRegistry','workingDirectory','permissionPresets','connection'];
+export const inject=['shell','llm','tools','systemPrompt','sessionController','sessions','sessionTitle','workspaceRegistry','workingDirectory','permissionPresets','connection'];
 export const textResult=value=>({isError:false,value:JSON.stringify(value),content:[{type:'text',text:JSON.stringify(value)}]});
 
 export async function apply(ctx,config) {
@@ -35,14 +47,27 @@ export async function apply(ctx,config) {
   rt.dropKickoff(bot.id);bot.model='opennova-chatgpt/gpt-6.1-sol';bot.instructions=INSTRUCTIONS;
   await rt.save();await rt.applyModel(bot);resources.assertOpen();
   await bindProject(ctx,rt,bot,config.workspace);resources.assertOpen();
-  const ops=new Operations(config);
+  const events=createEvents();
+  resources.add(()=>events.close());
+  const voice=createVoiceChannel({events});
+  resources.add(()=>voice.close());
+  let requests;
+  const ops=new Operations({...config,events,getRequestId:()=>requests?.active?.id});
   recoverToolRuns(ops);
   resources.add(()=>ops.close());
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
-  const allowed=new Set(ALLOWED_TOOLS),approved=new WeakSet();
-  const requests=new Requests(ops,run);
+  const allowed=new Set(researchTools(ALLOWED_TOOLS,config.research)),approved=new WeakSet();
+  const context=createWorkContext({inspectFile:inspectFileReference,initial:ops.list('context')[0]?.value,
+    onChange:value=>{ops.put({id:'work-context',kind:'context',value});events.publish('work.context',value);}});
+  const documents=createDocumentOpener({workspace:config.workspace,ops,context});
+  let desktop;const runtimeId=randomUUID();
+  requests=new Requests(ops,run,{context,events});
   resources.add(()=>requests.close());
+  const transport=config.research.mode==='legacy'?(await createContentFetcher(config.harnessRoot)).transport:undefined;
+  const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,home:config.home,port:config.port,botId:bot.id,workspace:config.workspace},
+    onObservationError:()=>console.error('Research observation could not be saved; native execution continues.')});
+  resources.add(()=>research.close());
   const memory=new MemoryApprovals(ops,{
     cleanEntry,cleanTopic,
     view:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
@@ -64,20 +89,19 @@ export async function apply(ctx,config) {
     },
   });
   const moduleTools=[
+    research.sourceTool,...research.tools,
+    createDocumentTool({opener:documents,getRequest:()=>requests.active}),
+    ...createBrowserTools({context,ops,getRequest:()=>requests.active,bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}}),
     ['start_test_task','启动用于验证重连的独立计时任务，持续 1 到 120 秒；不是实际计算作业。',{label:{type:'string',required:true},seconds:{type:'number',required:true}},a=>ops.startTask(a.label,Math.round(a.seconds*1000))],
     ['task_status','查询计时任务的真实状态',{id:{type:'string',required:true}},a=>ops.task(a.id)],
     ['cancel_test_task','用户明确要求取消时，取消指定计时任务',{id:{type:'string',required:true}},a=>ops.cancelTask(a.id)],
   ];
-  for(const [name,description,parameters,execute] of moduleTools)ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},async execute(a){return JSON.stringify(execute(a));}})));
+  for(const [name,description,parameters,execute] of moduleTools)ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},async execute(a){return JSON.stringify(await execute(a));}})));
   ctx.tools.guard(exec=>allowed.has(exec.name)?undefined:'Tool is outside the OpenNova experiment scope.');
   ctx.on('agent/pre-step',(payload,next)=>staleRequest(payload.messages,requests.active)?{kind:'reject'}:next(),{prepend:true});
   ctx.on('system-prompt/assemble',async(assembly,context,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
   ctx.systemPrompt.context({name:'opennova-experiment',order:9900,required:true,interpolate:false,text:()=>INSTRUCTIONS});
-  ctx.on('llm/stream',(options,next)=>{
-    if((!requests.active||requests.active.cancelled)&&!rt.ownRequest(options))throw Error('bridge_request_required');
-    if(options.provider!=='opennova-chatgpt'||options.model!=='gpt-6.1-sol')throw Error('bot_model_not_allowed');
-    return next();
-  });
+  installModelGate(ctx,{rt,bot,getActive:()=>requests.active,onMaintenance:record=>console.log('Bot context maintenance',JSON.stringify(record))});
   ctx.on('tools/execute',async(exec,next)=>{
     if(['remember','forget'].includes(exec.name)&&!approved.has(exec.signal))return textResult(await memory.mutate(exec.name,exec.arguments,exec.signal));
     if(requests.active)ops.finish(requests.active.id,{phase:'tool',tool:exec.name});
@@ -91,8 +115,10 @@ export async function apply(ctx,config) {
     if(event.type==='user/message'&&event.data?.source?.rpcId===active.id)active.started=true;
     if(active.started)active.events.push(event);
   });
+  installModelRetryObserver(ctx,{ops,requests,onRetry:record=>console.log('Bot model retry',JSON.stringify(record))});
   async function run(record,active) {
-    const controller=new AbortController();
+    const controller=active.controller;
+    research.begin(active);
     const cancel=async()=>{
       controller.abort();
       await cancelBot(rt,bot);
@@ -104,7 +130,7 @@ export async function apply(ctx,config) {
       if(active.cancelled)return;
       const sessionId=rt.chatOf(bot.id);
       active.sessionId=sessionId;
-      const agent=await admitText({active,resolve:()=>rt.resolveAgent(sessionId),message:createUserMessage({content:[{type:'text',text:record.input}],source:{kind:'user',rpcId:record.id,clientTimeZone:'Asia/Shanghai'}})});
+      const agent=await admitText({active,resolve:()=>rt.resolveAgent(sessionId),message:createUserMessage({content:requestContent(record),source:{kind:'user',rpcId:record.id,clientTimeZone:'Asia/Shanghai'}})});
       active.cancel=cancel;
       if(!agent)return;
       ops.finish(record.id,{status:'running',sessionId,startedAt:Date.now()});
@@ -113,25 +139,31 @@ export async function apply(ctx,config) {
       if(active.cancelled)return;
       const final=events.findLast(e=>e.type==='assistant/message')?.data?.message?.content?.filter(b=>b.type==='text').map(b=>b.text).join('');
       const text=completedReply({events,finalResponse:final});
-      const speech=toSpeechText(text.replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')),speechText=speech.length>600?speech.slice(0,560)+'。完整结果已保留在文字界面。':speech;
-      return {text,speechText,sessionId:rt.chatOf(bot.id),elapsed_ms:Date.now()-record.createdAt};
+      return {...research.reply(text,record.id),sessionId:rt.chatOf(bot.id),elapsed_ms:Date.now()-record.createdAt};
     }catch(error){
       const end=active?.events.findLast(e=>e.type==='turn/end');
-      console.error('Bot turn failure',JSON.stringify({code:error.message,reason:end?.data?.reason?.kind,failureCode:end?.data?.reason?.error?.code}));
+      console.error('Bot turn failure',JSON.stringify({bridgeRequestId:record.id,sessionId:active.sessionId,elapsedMs:Date.now()-record.createdAt,reason:end?.data?.reason?.kind,diagnostic:errorEvent(error,'conversation')}));
       throw error;
     }
-    finally{clearTimeout(timeout);}
+    finally{clearTimeout(timeout);research.finish(record.id);}
   }
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,
-    health:()=>({ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+  const handle=createControls({ops,requests,memory,context,documents,events,voice,research,browserState:()=>desktop?.status()??{connected:false},
+    desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
+    health:()=>({research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
-  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),handle,web:config.webAssets?{assets:config.webAssets}:undefined});
-  resources.add(async()=>{requests.closed=true;server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
+  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),
+    handle:(path,body)=>path.startsWith('/desktop/')&&desktop?desktop.handle(path,body):handle(path,body),
+    extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets,events}:undefined});
+  if(config.desktop){
+    const {createDesktop}=await import('./desktop/controller.mjs');
+    desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/',context});
+  }
+  resources.add(async()=>{requests.closed=true;await desktop?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,'127.0.0.1',resolve);});
   resources.assertOpen();
   console.log(`OpenNova Bot bridge ready on 127.0.0.1:${config.port}; bot ${bot.id}`);

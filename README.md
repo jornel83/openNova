@@ -20,7 +20,7 @@ pnpm test
 pnpm run test:bot
 ```
 
-请使用 **`pnpm run setup`**：`pnpm setup` 是 pnpm 自身的命令。`setup` 安装四个项目各自锁定的依赖；`build` 构建 Harness、Bot、SIWC 和 OpenNova 网页。`doctor` 只检查本地源码与构建，不登录、不访问模型、不打开麦克风。上述测试使用本地模拟模型和临时数据目录。
+请使用 **`pnpm run setup`**：`pnpm setup` 是 pnpm 自身的命令。`setup` 安装根工程、三个引擎和桌面桥接各自锁定的依赖；`build` 构建 Harness、Bot、SIWC 和 OpenNova 网页。`doctor` 只检查本地源码与构建，不登录、不访问模型、不打开麦克风。上述测试使用本地模拟模型和临时数据目录。
 
 当前产品模型适配使用 OpenNova 独立的 Sign in with ChatGPT。SDK 已随默认构建生成；在 macOS 上准备 Keychain helper，再由本人授权：
 
@@ -34,7 +34,7 @@ pnpm start
 
 `--chatgpt` 仅为缺失的 Keychain helper 编译可执行程序，已有程序保持不变，不会触发登录。SIWC 源码、依赖和构建均位于仓库内，工具调用扩展已纳入源码。已有授权会继续复用。实际模型可用性取决于账号权限。
 
-启动后打开 [本地网页聊天](http://127.0.0.1:18560/)。需要代理时通过 `OPENNOVA_PROXY` 设置自己的代理地址。网页和语音共用一个 Bot；默认允许助手在当前 OpenNova 工程工作，文件、Shell 等操作具有当前用户的权限。
+启动后自动打开工作窗口和右侧 OpenNova 对话窗口，网页地址为 [本地网页聊天](http://127.0.0.1:18560/)。首次使用需按终端提示加载工程内 `extensions/browser` 并配对；`pnpm start -- --no-ui` 可仅运行后台服务。需要代理时通过 `OPENNOVA_PROXY` 设置自己的代理地址。网页和语音共用一个 Bot；默认允许助手在当前 OpenNova 工程工作，文件、Shell 等操作具有当前用户的权限。
 
 ## 工程结构
 
@@ -95,3 +95,5 @@ pnpm run start:voice -- --help
 - [MVP PRD](docs/product/opennova-mvp-prd.md)
 
 OpenNova 自有代码采用 [Apache-2.0](LICENSE)。引入组件保留各自许可：Harness 为 MIT，DeepSeek-Bot 为 Apache-2.0，SIWC 使用 **Sign-in with ChatGPT DevKit Noncommercial License v1.0（非商业许可）**；根 Apache-2.0 不覆盖 SIWC。详情见 [第三方声明](THIRD_PARTY_NOTICES.md)。本仓库是 OpenNova 的独立整合项目，不代表上游官方发行版。
+
+桌面交互已与同一个 Bot 和语音会话整合。`./start.command --tts-provider doubao` 自动开窗并启动语音；`pnpm start` 自动开窗，仅启动文字服务。`--check` / `--list-devices` 不开窗。浏览器程序与外部 profile 可在 `desktop.browser_executable`、`desktop.browser_user_data_dir` 中配置，原有环境变量仍可覆盖。配对数据和浏览器 profile 必须保留在工程外。

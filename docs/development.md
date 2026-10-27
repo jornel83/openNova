@@ -4,10 +4,11 @@
 
 `engine/harness/`、`engine/bot/` 和 `engine/siwc/` 是普通 Git 跟踪目录。它们由 `git subtree --squash` 导入，源码压缩包中也完整存在；运行时不会克隆或链接外部 Harness/Bot/SIWC。三个上游各自的 README、测试、许可、开发文档与锁文件均保留。子目录中的 `.github/workflows` 不作为 OpenNova 根目录工作流执行。
 
-根目录是产品编排层，保留四个依赖边界，避免迁移时改写上游整个 workspace：
+根目录是产品编排层，保留独立依赖边界，避免迁移时改写上游整个 workspace：
 
 | 项目 | 依赖锁 | 安装 |
 | --- | --- | --- |
+| 桌面桥接 | `services/bot/desktop/package-lock.json` | 根 setup 自动 npm ci |
 | OpenNova | `pnpm-lock.yaml` | 根目录 pnpm frozen install |
 | Harness | `engine/harness/pnpm-lock.yaml` | Harness 目录 pnpm frozen install |
 | Bot 插件 | `engine/bot/ds-bot/package-lock.json` | Bot 目录 npm ci |
@@ -83,3 +84,5 @@ git subtree pull --prefix=engine/siwc https://github.com/openai/sign-in-with-cha
 SIWC 纳入仓库后的验证和原目录切换记录见[SIWC 整合验证](research/opennova-siwc-subtree-verification.md)。
 
 工程外源码引用复查、检查命令和数据保留结果见[源码独立性验证](research/opennova-source-independence-verification.md)。
+
+桌面交互源码在 `extensions/browser`、`services/bot/desktop` 和 `tools/desktop`。根 setup 安装其锁定依赖，默认测试包含扩展测试；构建摘要包含扩展源码。`pnpm start` 与语音入口默认启用桌面交互并自动开窗；`--no-ui` 用于无窗口运行。

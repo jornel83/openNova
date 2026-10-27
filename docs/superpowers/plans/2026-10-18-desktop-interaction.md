@@ -10,7 +10,7 @@
 
 **Spec:** [双窗口交互技术方案](../specs/2026-10-18-desktop-interaction-design.md)
 
-状态：2026-10-18 开发计划草案，所有任务未实施。此文中的新增接口、文件和命令参数均为计划，不是当前可用功能。实施采用当前会话内逐项执行；本计划不要求自动分派子代理。
+状态：2026-10-18，M0（任务 1、2）已实现并完成独立 Chrome 实测；M1（任务 3、3A）已实现并完成审查与实测；M2（任务 4、5）已实现并完成真实 Bot 与窄窗口验收；M3–M4 已实现；真人语音听感和长期运行待现场验收。测试范围、限制和启动步骤见 [验证记录](../../research/opennova-desktop-interaction-test-cases.md)。已实现接口与验证边界见该记录。
 
 ## Global Constraints
 
@@ -103,11 +103,11 @@
 - Produces: `POST /browser/pair` 与 WebSocket `/browser/bridge`；配对码一次有效、60 秒过期，配对后绑定扩展 Origin；认证首包时限 5 秒。
 - Consumes: 现有 HTTP server 和生命周期清理；`BrowserCommand/BrowserResult`。
 
-- [ ] 写失败测试：非法 Origin、过期配对码、未认证连接不得收到命令；重复命令 ID 不重复执行；已发送动作失联返回 `unknown`。
-- [ ] 运行 `node --test services/bot/tests/desktop-bridge.test.mjs extensions/browser/tests/connection.test.mjs`，确认因新增能力缺失失败。
-- [ ] 实现本机桥接与扩展设置。令牌仅存本机受限文件 / 扩展存储；连接包限制 128 KiB；允许列表内方法校验后分发；服务停止关闭连接。增加心跳、退避、启动事件、alarm 恢复与已配对扩展状态显示。
-- [ ] 运行同一命令至通过；实机手动停止并唤醒 worker，确认恢复后不重放动作。首次安装与站点授权写入设置说明。
-- [ ] 检查 diff，仅提交本任务相关文件，建议提交信息 `feat: connect desktop browser extension`。
+- [x] 写失败测试：非法 Origin、过期配对码、未认证连接不得收到命令；重复命令 ID 不重复执行；已发送动作失联返回 `unknown`。
+- [x] 运行 `node --test services/bot/tests/desktop-bridge.test.mjs extensions/browser/tests/connection.test.mjs`，确认因新增能力缺失失败。
+- [x] 实现本机桥接与扩展设置。令牌仅存本机受限文件 / 扩展存储；连接包限制 128 KiB；允许列表内方法校验后分发；服务停止关闭连接。增加心跳、退避、启动事件、alarm 恢复与已配对扩展状态显示。
+- [x] 运行同一命令至通过；实机手动停止并唤醒 worker，确认恢复后不重放动作。首次安装与站点授权写入设置说明。
+- [x] 检查 diff，仅提交本任务相关文件，建议提交信息 `feat: connect desktop browser extension`。
 
 ## Task 2：绑定工作窗口，取得页面与选区（M0）
 
@@ -120,11 +120,11 @@
 - Produces: `createWorkContext() -> {updateBrowser(pageContext,{activate}), selectFile(fileRef), snapshot(), capture(), clearSelection(), invalidate(reason)}`；`snapshot/capture` 返回 `WorkContext`，`capture()` 为不可变副本。当前为网页引用时同步对应绑定的页面变化；当前为文件引用时，被动浏览器更新只改缓存，主动返回绑定网页才使用 `activate:true` 切换。
 - Produces: `ensureWindows({chatUrl,bounds?}) -> {workWindowId,workTabId,chatWindowId}`；DOM 适配器处理 `read` 并返回 `PageSnapshot`。
 
-- [ ] 写失败测试：右侧聚焦不改变 workTabId；绑定页导航后旧选区清空；重复 ensure 复用窗口；浏览器重启后失效 ID 不误绑；超长正文 / 选区截断可见。
-- [ ] 运行 `node --test services/bot/tests/desktop-context.test.mjs extensions/browser/tests/windows.test.mjs`，确认预期失败。
-- [ ] 实现明确窗口绑定、首次布局、轻量上下文更新和按需 DOM 快照。忽略无关页事件；普通文本框以外的敏感字段不读取；DOM 变化让被替换的目标引用失效，避免页面动画导致所有引用持续失效。
-- [ ] 同一测试通过后，在真实 Chrome 测试 fixture、雪球及一个普通文章页；验证选中文字后点击 Nova 窗口仍保留引用，SPA 跳转可更新，跨域 iframe / 不支持内容有明确状态。记录实际站点结果，不写模拟成功。
-- [ ] 检查 diff 并形成 M0 提交，建议 `feat: bind work pages and capture context`。
+- [x] 写失败测试：右侧聚焦不改变 workTabId；绑定页导航后旧选区清空；重复 ensure 复用窗口；浏览器重启后失效 ID 不误绑；超长正文 / 选区截断可见。
+- [x] 运行 `node --test services/bot/tests/desktop-context.test.mjs extensions/browser/tests/windows.test.mjs`，确认预期失败。
+- [x] 实现明确窗口绑定、首次布局、轻量上下文更新和按需 DOM 快照。忽略无关页事件；普通文本框以外的敏感字段不读取；DOM 变化让被替换的目标引用失效，避免页面动画导致所有引用持续失效。
+- [x] 同一测试通过后，在真实 Chrome 测试 fixture、雪球及一个普通文章页；验证选中文字后点击 Nova 窗口仍保留引用，SPA 跳转可更新，跨域 iframe / 不支持内容有明确状态。记录实际站点结果，不写模拟成功。
+- [x] 检查 diff 并形成 M0 提交，建议 `feat: bind work pages and capture context`。
 
 **M0 关口：** 实际验证打开、读取、选区和重连成立后进入 M1。雪球登录或访问受限单独记录，不能把通用 fixture 通过当作雪球案例通过。
 
@@ -139,12 +139,12 @@
 - Produces: `createBrowserTools({bridge,context,ops})`，返回宿主 `defineTool` 可注册的五个工具定义；工具名、输入输出见 spec 5.4。
 - Produces: 请求记录 `context: WorkContext`；浏览器工具记录 `{kind:'tool',operation:'browser',requestId,commandId,status,...}`。
 
-- [ ] 写失败测试：同一 `/ask` id 重试仍使用第一次引用；语音与网页接入同一会话；切页期间的旧点击返回 `context_changed`；取消后未发送命令不执行。
-- [ ] 写额外失败测试：点击产生的有效新标签页可跟踪，无关弹窗不绑定；网页正文中要求调用 Shell 的文本仅作为引用；断线未知结果不自动重试。
-- [ ] 运行 `node --test services/bot/tests/desktop-tools.test.mjs services/bot/tests/requests.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增断言失败。
-- [ ] 实现工具定义、实际回执、请求引用及五项 DOM 操作。工具列入 `ALLOWED_TOOLS` 并进入现有 provider 配置；用户输入与引用分字段渲染，禁止把引用拼接成高优先级系统指令。
-- [ ] 运行上述测试；用文字实测“打开雪球上的华工科技 → 看最新公告 → 解释选区”。核对真实页面标题和链接；登录 / 验证码由用户在原页面完成，工具如实返回未完成原因。
-- [ ] 检查并提交本任务，建议 `feat: add shared-session browser tools`。
+- [x] 写失败测试：同一 `/ask` id 重试仍使用第一次引用；语音与网页接入同一会话；切页期间的旧点击返回 `context_changed`；取消后未发送命令不执行。
+- [x] 写额外失败测试：点击产生的有效新标签页可跟踪，无关弹窗不绑定；网页正文中要求调用 Shell 的文本仅作为引用；断线未知结果不自动重试。
+- [x] 运行 `node --test services/bot/tests/desktop-tools.test.mjs services/bot/tests/requests.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增断言失败。
+- [x] 实现工具定义、实际回执、请求引用及五项 DOM 操作。工具列入 `ALLOWED_TOOLS` 并进入现有 provider 配置；用户输入与引用分字段渲染，禁止把引用拼接成高优先级系统指令。
+- [x] 运行上述测试；用文字实测“打开雪球上的华工科技 → 看最新公告 → 解释选区”。核对真实页面标题和链接；登录 / 验证码由用户在原页面完成，工具如实返回未完成原因。
+- [x] 检查并提交本任务，建议 `feat: add shared-session browser tools`。
 
 ## Task 3A：定位本地文件并交给应用打开（M1）
 
@@ -158,13 +158,13 @@
 - Produces: `createDocumentTool({opener,getRequest})` 返回 `document_open({path,applicationId?})` 定义，宿主提供 `getRequest() -> {id,signal}`；执行器产生 command id，当前 requestId 由宿主取得。
 - Produces: 文件打开操作记录 `{kind:'tool',operation:'document_open',commandId,requestId,status,file?,error?}`；新增 `/web/api/document-open` 接收 `{id,fileId}`，复用服务端已登记文件重新打开，不接收任意网页提供的路径或 Shell 文本。
 
-- [ ] 写失败测试：中文 / 空格 / 引号 / Shell 特殊字符路径原样作为参数；不存在文件、非本机文件、指定应用缺失有明确错误；脚本执行、安装包、自定义 URL scheme 不走文件打开器。
-- [ ] 写幂等与引用测试：同 id 重试只打开一次，id 对应不同文件报冲突；取消前不启动，发送后取消不关闭应用；超时为 `unknown` 不重放；成功发送才选中文件引用，失败保留旧引用；网页后台更新不覆盖文件，显式返回网页清除文件引用。
-- [ ] 运行 `node --test services/bot/tests/desktop-documents.test.mjs services/bot/tests/desktop-context.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增能力失败。
-- [ ] 实现路径规范化、存在性 / 文件类型检查与应用路由。首版类型覆盖 PDF、PNG/JPEG/WebP、DOC/DOCX、XLS/XLSX、PPT/PPTX、Markdown / TXT 与常见源代码文本；源代码默认加 `-t`，显式应用仅接受编辑器，避免误用脚本执行器。调用 `/usr/bin/open` 使用绝对路径和参数数组，`shell:false`，不使用强制新实例或等待应用退出参数；为子进程提供必要环境，不传递模型密钥。
-- [ ] 实现 10 秒调用超时、明确失败及 `dispatched` 回执；发起调用前保存带 commandId 的运行记录，启动恢复时将未收尾记录标为 `unknown`，不重放。工具注册到允许列表，按现有授权直接执行。同名候选由 Agent 结合当前项目定位；仍有歧义时询问文件选择，不增加批准步骤。文本读取核对磁盘保存版本；PDF / Office 显示“正文未接入”，不生成臆测摘要。
-- [ ] 运行同一测试至通过；使用临时 TXT、PDF 和已安装办公软件支持的文档实测默认应用与指定应用。扩展未连接时仍可打开本地文件；记录人工看到的结果与系统回执的差别。
-- [ ] 检查 diff 并提交本任务，建议 `feat: open local documents in native applications`。
+- [x] 写失败测试：中文 / 空格 / 引号 / Shell 特殊字符路径原样作为参数；不存在文件、非本机文件、指定应用缺失有明确错误；脚本执行、安装包、自定义 URL scheme 不走文件打开器。
+- [x] 写幂等与引用测试：同 id 重试只打开一次，id 对应不同文件报冲突；取消前不启动，发送后取消不关闭应用；超时为 `unknown` 不重放；成功发送才选中文件引用，失败保留旧引用；网页后台更新不覆盖文件，显式返回网页清除文件引用。
+- [x] 运行 `node --test services/bot/tests/desktop-documents.test.mjs services/bot/tests/desktop-context.test.mjs services/bot/tests/web-controls.test.mjs`，确认新增能力失败。
+- [x] 实现路径规范化、存在性 / 文件类型检查与应用路由。首版类型覆盖 PDF、PNG/JPEG/WebP、DOC/DOCX、XLS/XLSX、PPT/PPTX、Markdown / TXT 与常见源代码文本；源代码默认加 `-t`，显式应用仅接受编辑器，避免误用脚本执行器。调用 `/usr/bin/open` 使用绝对路径和参数数组，`shell:false`，不使用强制新实例或等待应用退出参数；为子进程提供必要环境，不传递模型密钥。
+- [x] 实现 10 秒调用超时、明确失败及 `dispatched` 回执；发起调用前保存带 commandId 的运行记录，启动恢复时将未收尾记录标为 `unknown`，不重放。工具注册到允许列表，按现有授权直接执行。同名候选由 Agent 结合当前项目定位；仍有歧义时询问文件选择，不增加批准步骤。文本读取核对磁盘保存版本；PDF / Office 显示“正文未接入”，不生成臆测摘要。
+- [x] 运行同一测试至通过；使用临时 TXT、PDF 和已安装办公软件支持的文档实测默认应用与指定应用。扩展未连接时仍可打开本地文件；记录人工看到的结果与系统回执的差别。
+- [x] 检查 diff 并提交本任务，建议 `feat: open local documents in native applications`。
 
 ## Task 4：增加实时事件与可恢复快照（M2）
 
@@ -177,11 +177,11 @@
 - Produces: `/snapshot` 的既有字段保留，新增 `desktop:{context:WorkContext,browser,voice}`、`cursor`；`POST /web/events` 接受 `{cursor}`，统一引用事件为 `work.context`。
 - Produces: `WebApi.events(cursor,onEvent,{signal})`，失败或游标失效回退到现有 snapshot。
 
-- [ ] 写失败测试：先快照后订阅的时间窗内完成的请求仍能收到；过期 cursor / 新 epoch 触发重新快照；慢客户端断开恢复；外站及无 CSRF 请求无法订阅；恢复历史文件引用不会再次打开文件或宣称原生窗口仍在前台。
-- [ ] 运行 `node --test services/bot/tests/desktop-events.test.mjs services/bot/tests/web.test.mjs`，确认失败位置对应新增能力。
-- [ ] 实现有限事件缓冲、统一发布点、SSE 与客户端恢复。持久请求和操作继续使用现有 SQLite；实时音频状态与转写不另建数据库。断开的 SSE 客户端必须释放监听器。
-- [ ] 同一测试通过；人工刷新网页并中断网络，确认不重复发起任务、无消息倒退，使用轮询仍能看到最终结果。
-- [ ] 检查并提交，建议 `feat: stream recoverable interaction events`。
+- [x] 写失败测试：先快照后订阅的时间窗内完成的请求仍能收到；过期 cursor / 新 epoch 触发重新快照；慢客户端断开恢复；外站及无 CSRF 请求无法订阅；恢复历史文件引用不会再次打开文件或宣称原生窗口仍在前台。
+- [x] 运行 `node --test services/bot/tests/desktop-events.test.mjs services/bot/tests/web.test.mjs`，确认失败位置对应新增能力。
+- [x] 实现有限事件缓冲、统一发布点、SSE 与客户端恢复。持久请求和操作继续使用现有 SQLite；实时音频状态与转写不另建数据库。断开的 SSE 客户端必须释放监听器。
+- [x] 同一测试通过；人工刷新网页并中断网络，确认不重复发起任务、无消息倒退，使用轮询仍能看到最终结果。
+- [x] 检查并提交，建议 `feat: stream recoverable interaction events`。
 
 ## Task 5：实现 Nova 对话界面（M2）
 
@@ -191,11 +191,11 @@
 - Consumes: 扩展后的 snapshot、事件流、现有 `ask/cancel`；语音未接入时显示不可用，不生成模拟倾听状态。
 - Produces: `NovaRing({state,reducedMotion})`、`ContextChip({context,onClear,onOpenFile})`、`OperationCard({record})`；新增 `POST /web/api/context-clear` 仅清除浏览器选区；文件卡片重新打开调用任务 3A 的接口。
 
-- [ ] 以归档原型右侧为参考实现深空样式、环形 Nova、消息区、引用和输入。移除当前左右常驻栏；保留中文输入法、消息发送去重、断网草稿、Markdown、代码与差异展示。
-- [ ] 接入真实请求与工作引用，按 requestId 将操作挂到对话；文件卡片显示名称、所属目录、打开方式 / 回执和“重新打开”，不显示未接入的原生选区。区分 `dispatched` 与内容已读取；详情按需展开，取消仍通过服务端。无语音进程时不显示“正在聆听”。
-- [ ] 运行 `/opt/homebrew/opt/node@24/bin/node services/bot/web/build.mjs`，确认构建成功；运行 `node --test services/bot/tests/web.test.mjs services/bot/tests/web-controls.test.mjs` 验证现有交互接口。
-- [ ] 浏览器人工核对 400 px 宽、中文输入法回车、长代码、旧消息加载、键盘焦点、reduced-motion、离线草稿和消息内操作详情；保存实际截图及结论。纯样式不新增镜像实现的单元测试。
-- [ ] 检查并提交，建议 `feat: add minimal Nova conversation interface`。
+- [x] 以归档原型右侧为参考实现深空样式、环形 Nova、消息区、引用和输入。移除当前左右常驻栏；保留中文输入法、消息发送去重、断网草稿、Markdown、代码与差异展示。
+- [x] 接入真实请求与工作引用，按 requestId 将操作挂到对话；文件卡片显示名称、所属目录、打开方式 / 回执和“重新打开”，不显示未接入的原生选区。区分 `dispatched` 与内容已读取；详情按需展开，取消仍通过服务端。无语音进程时不显示“正在聆听”。
+- [x] 运行 `/opt/homebrew/opt/node@24/bin/node services/bot/web/build.mjs`，确认构建成功；运行 `node --test services/bot/tests/web.test.mjs services/bot/tests/web-controls.test.mjs` 验证现有交互接口。
+- [x] 浏览器人工核对 400 px 宽、中文输入法回车、长代码、旧消息加载、键盘焦点、reduced-motion、离线草稿和消息内操作详情；保存实际截图及结论。纯样式不新增镜像实现的单元测试。
+- [x] 检查并提交，建议 `feat: add minimal Nova conversation interface`。
 
 ## Task 6：连接语音状态与网页控制（M3）
 
@@ -209,13 +209,15 @@
 - Produces: Python `UiBridge(api, instance_id)`，提供 `publish(state_or_transcript)`、`run(commands)`、`ack(command_id,result)`、`close()`。
 - Consumes: `Conversation.control(command)`、现有 retry 流程、原生 generation / played / 清空回执；所有控制回到同一个 asyncio 命令队列。
 
-- [ ] 写失败测试：ASR partial 多次更新只出现一条草稿，final 仅一次 ask；无语音进程返回 `voice_unavailable`；重复 control id 幂等；旧 voiceInstanceId / generation 回执丢弃。
-- [ ] 写取消竞态测试：文本任务执行时网页“停止回复”也能取消当前 Bot；Bot 已完成但 TTS 缓冲 / 播放中仍显示停止按钮，点击后清空队列；旧请求的停止不能取消新请求；静音不意外恢复收音；`/retry` 与 `/end` 交错不自动开始监听。
-- [ ] 运行 `node --test services/bot/tests/desktop-voice.test.mjs` 及 `python3.11 -m unittest discover -s tools/voice/tests -p 'test_ui_bridge.py' -v`，确认新增能力失败。
-- [ ] 实现语音发布与控制桥。后台发布失败不能堵塞音频；状态过期显示离线；播放回执来自原生队列，区分 buffering / playing / paused。增加观察事件，不改变降噪、VAD 或插话阈值。
-- [ ] 让现有 `/cancel` 与新增语音 `stop` 共用协调逻辑，按 requestId 取消对应 Bot 请求并清理该请求的语音输出；纯文字运行也可停止。不得等待整个 TTS 完成后才响应；临时转写只走事件通道；网页收到已完成消息不合成第二份音频。
-- [ ] 运行 Bot 语音测试与 `python3.11 -m unittest discover -s tools/voice/tests -v`。实机完成语音打开页面、打开本地 PRD、文字追问已保存文本、停止、静音、恢复和重连；停止不得关闭已打开的本地应用。无实机听感验证不能声称播报已验证。
-- [ ] 检查并提交，建议 `feat: synchronize native voice with Nova UI`。
+- [x] 写失败测试：ASR partial 多次更新只出现一条草稿，final 仅一次 ask；无语音进程返回 `voice_unavailable`；重复 control id 幂等；旧 voiceInstanceId / generation 回执丢弃。
+- [x] 写取消竞态测试：文本任务执行时网页“停止回复”也能取消当前 Bot；Bot 已完成但 TTS 缓冲 / 播放中仍显示停止按钮，点击后清空队列；旧请求的停止不能取消新请求；静音不意外恢复收音；`/retry` 与 `/end` 交错不自动开始监听。
+- [x] 运行 `node --test services/bot/tests/desktop-voice.test.mjs` 及 `python3.11 -m unittest discover -s tools/voice/tests -p 'test_ui_bridge.py' -v`，确认新增能力失败。
+- [x] 实现语音发布与控制桥。后台发布失败不能堵塞音频；状态过期显示离线；播放回执来自原生队列，区分 buffering / playing / paused。增加观察事件，不改变降噪、VAD 或插话阈值。
+- [x] 让现有 `/cancel` 与新增语音 `stop` 共用协调逻辑，按 requestId 取消对应 Bot 请求并清理该请求的语音输出；纯文字运行也可停止。不得等待整个 TTS 完成后才响应；临时转写只走事件通道；网页收到已完成消息不合成第二份音频。
+- [x] 运行 Bot 语音测试与 `python3.11 -m unittest discover -s tools/voice/tests -v`。实机完成语音打开页面、打开本地 PRD、文字追问已保存文本、停止、静音、恢复和重连；停止不得关闭已打开的本地应用。无实机听感验证不能声称播报已验证。
+- [x] 检查并提交，建议 `feat: synchronize native voice with Nova UI`。
+
+实现记录（2026-10-18）：开发、自动回归及原生控制 / 播放回执验证已完成；真实 ASR 文件输入打开 PRD、网页追问也通过。执行环境实际麦克风返回全零信号，真人语音打开页面、插话听感仍待用户现场验收，未计为通过。详见桌面交互测试文档 M3 章节。
 
 ## Task 7：一键启动、降级与完整验收（M4）
 
@@ -226,12 +228,12 @@
 - Produces: `start.command --ui` / `--no-ui`；新增本机 Bearer `/desktop/open` 让启动器请求扩展开窗，网页“打开浏览器工作窗口”复用同一实现；本地文件另走 `document_open`，不依赖扩展开窗。
 - 新设备参数仍是 `--device`、`--output-device`；TTS 参数仍是 `--tts-provider studio|doubao`，不另造一套配置。
 
-- [ ] 扩展启动测试：重复执行不重复开浏览器窗口或占麦克风，不重放历史文件打开；缺少扩展只降级页面协作，本地文件打开仍可用；TTS / 麦克风失败保留文字入口；`--check` 和 `--list-devices` 无开窗 / 收音副作用。
-- [ ] 运行 `node --test tools/voice/tests/launcher.test.mjs`，确认新增断言失败。
-- [ ] 实现启动顺序、窗口恢复、扩展安装 / 配对引导和清晰失败原因。浏览器窗口布局按 Chrome 实际返回的尺寸校正；用户移动后不反复抢回位置；原生窗口由应用决定，退出启动器不关闭用户应用。保留终端作为首版语音进程入口，不在此任务引入 macOS 常驻后台服务。
-- [ ] 运行启动测试、`node --test services/bot/tests/*.test.mjs` 与 `python3.11 -m unittest discover -s tools/voice/tests -v`；构建网页，并记录通过的命令及结果。
-- [ ] 按下表做真人端到端验收；在部署文档中写入实测命令、扩展设置步骤、未通过项。不要把以下预期命令提前标为当前可用。
-- [ ] 核对产品 PRD 与实现状态，精确提交本任务，建议 `feat: launch the dual-window Nova experience`。用户请求推送后再发布到远端。
+- [x] 扩展启动测试：重复执行不重复开浏览器窗口或占麦克风，不重放历史文件打开；缺少扩展只降级页面协作，本地文件打开仍可用；TTS / 麦克风失败保留文字入口；`--check` 和 `--list-devices` 无开窗 / 收音副作用。
+- [x] 运行 `node --test tools/voice/tests/launcher.test.mjs`，确认新增断言失败。
+- [x] 实现启动顺序、窗口恢复、扩展安装 / 配对引导和清晰失败原因。浏览器窗口布局按 Chrome 实际返回的尺寸校正；用户移动后不反复抢回位置；原生窗口由应用决定，退出启动器不关闭用户应用。保留终端作为首版语音进程入口，不在此任务引入 macOS 常驻后台服务。
+- [x] 运行启动测试、`node --test services/bot/tests/*.test.mjs` 与 `python3.11 -m unittest discover -s tools/voice/tests -v`；构建网页，并记录通过的命令及结果。
+- [ ] 完成人真端到端现场验收（程序控制、两条服务预检和真实窗口已验证；麦克风返回零信号，听感未计通过）；在部署文档中写入实测命令、扩展设置步骤、未通过项。不要把以下预期命令提前标为当前可用。
+- [x] 核对产品 PRD 与实现状态，精确提交本任务，建议 `feat: launch the dual-window Nova experience`。用户请求推送后再发布到远端。
 
 ## 端到端验收清单
 
@@ -253,7 +255,7 @@
 | UI-14 | 打开文件后让网页后台刷新，再主动返回工作网页 | 后台刷新不抢文件引用；显式返回网页恢复网页引用；旧网页选区不混入文件问题 |
 | UI-15 | 文件打开后停止回复、刷新网页或重启 Bot | 已打开应用保持；历史记录不触发重新打开；状态未知时不自动重试 |
 
-实现后的预期命令示例（目前尚未支持 `--ui`）：
+当前已支持的命令示例：
 
 ```bash
 ./start.command --ui --tts-provider studio --device 'SRS-XB100' --output-device 'SRS-XB100'

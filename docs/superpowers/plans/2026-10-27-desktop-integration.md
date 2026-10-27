@@ -5,7 +5,7 @@
 **Goal:** Original OpenNova includes the desktop branch and opens its right-side interaction window from unified startup.
 **Architecture:** Merge desktop source/history into existing engine subtrees. Root orchestration owns dependency/build/test contracts; Bot home and browser profile remain external.
 **Tech Stack:** Node 24, pnpm 11.28.5, Chrome MV3, Python 3.11, Swift, bundled Harness/Bot/SIWC.
-**Spec:** docs/superpowers/specs/2026-10-28-desktop-integration-design.md
+**Spec:** docs/superpowers/specs/2026-10-27-desktop-integration-design.md
 
 ## Global Constraints
 - Preserve original machine settings, SIWC registration, helper trust and live Bot history; backups and browser profile stay outside Git/source.

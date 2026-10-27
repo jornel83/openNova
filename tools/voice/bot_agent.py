@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 import urllib.request
 import urllib.error
+from agent import failure_message
 
 class BotAgent:
     def __init__(self, *, api=None):
@@ -17,7 +18,7 @@ class BotAgent:
         self.closed = False
         self.last_request = None
 
-    async def _api(self, path, body):
+    async def _api(self, path, body, *, timeout=20):
         def send():
             home = Path(os.environ.get('OPENNOVA_BOT_HOME', str(Path.home()/'.local/share/opennova/bot-spike'))).expanduser()
             token = (home/'client.token').read_text().strip()
@@ -26,7 +27,7 @@ class BotAgent:
                 data=json.dumps(body).encode(), headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             try:
-                with opener.open(req,timeout=20) as response: return json.load(response)
+                with opener.open(req,timeout=timeout) as response: return json.load(response)
             except urllib.error.HTTPError as error:
                 try: message=json.load(error).get('error','bot_request_failed')
                 except Exception: message='bot_request_failed'
@@ -44,8 +45,9 @@ class BotAgent:
         ident=str(uuid.uuid4());self.current=self.last_request=ident
         terminal=False
         try:
+            yield {'type':'request','id':ident}
             await self.api('/ask',{'id':ident,'text':text,'source':'voice'})
-            tool=None
+            tool=None; retry_seen=None
             for _ in range(2100):
                 result=await self.api('/result',{'id':ident})
                 status=result['status']
@@ -55,9 +57,27 @@ class BotAgent:
                     return
                 if status not in ('queued','running'):
                     terminal=True
-                    raise ValueError(result.get('error') or status)
-                if result.get('tool') and result['tool']!=tool:
-                    tool=result['tool'];yield {'type':'status','id':ident,'phase':'working','tool':tool}
+                    error=result.get('error') or status
+                    if result.get('diagnostic'):
+                        error=failure_message(result['diagnostic'])
+                    elif error in ('network_error','connection_error','stream_interrupted','incomplete_agent_turn'):
+                        error=failure_message({'code':error,'stage':'conversation'})
+                    raise ValueError(error)
+                retry=result.get('modelRetry') or {}
+                if retry.get('status') in ('waiting','requesting'):
+                    key=(retry.get('retryId'),retry.get('retry'))
+                    if key!=retry_seen:
+                        retry_seen=key
+                        yield {'type':'status','id':ident,'phase':'retrying','retry':retry.get('retry'),'maxRetries':retry.get('maxRetries')}
+                    await asyncio.sleep(.3)
+                    continue
+                research=result.get('research') or {}
+                key=(result.get('tool'),research.get('phase'),research.get('callId'))
+                if result.get('tool') and key!=tool:
+                    tool=key
+                    phase={'searching':'searching','reading':'reading','summarizing':'answering','requesting':'requesting','processing':'processing','verifying':'verifying'}.get(research.get('phase'),'working')
+                    if result.get('tool') not in ('web_search','web_fetch','research_sources','web_request','research_exec','research_derive'): phase='working'
+                    yield {'type':'status','id':ident,'phase':phase,'tool':result['tool'],'callId':research.get('callId')}
                 await asyncio.sleep(.3)
             raise ValueError('Bot 等待超时；可用 /result 查询已提交请求。')
         finally:
@@ -68,7 +88,7 @@ class BotAgent:
                 if self.current==ident:self.current=None
 
     async def cancel(self):
-        if self.current: await self.api('/cancel',{'id':self.current})
+        if self.current: await self.api('/voice/cancel-request',{'id':self.current})
 
     async def control(self,command):
         parts=command.split(maxsplit=1);name=parts[0];ident=parts[1].strip() if len(parts)>1 else None

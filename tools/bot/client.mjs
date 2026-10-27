@@ -4,6 +4,8 @@ import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline/promises';
 import {setTimeout} from 'node:timers/promises';
 import {botSettings} from '../../services/bot/settings.mjs';
+import {diagnosticText} from '../../services/agent/errors.mjs';
+import {modelRetryLabel} from '../../services/agent/model-retry.mjs';
 const b=botSettings();
 export async function api(path,body={}) {
   const token=readFileSync(b.tokenPath,'utf8').trim();
@@ -17,11 +19,13 @@ export async function api(path,body={}) {
   });
 }
 export async function ask(text,{id=randomUUID(),source='text'}={}) {
-  await api('/ask',{id,text,source});process.stderr.write(`请求编号：${id}\n`);let previous;
+  await api('/ask',{id,text,source});process.stderr.write(`请求编号：${id}\n`);let previous,retrySeen;
   for(let i=0;i<2100;i++) {
     const r=await api('/result',{id});
-    if(!['queued','running'].includes(r.status)){if(r.status!=='completed')throw Error(r.error||r.status);return r;}
-    if(r.tool&&previous!==r.tool){process.stderr.write(`工具：${r.tool}\n`);previous=r.tool;}
+    if(!['queued','running'].includes(r.status)){if(r.status!=='completed')throw Error(r.diagnostic?diagnosticText(r.diagnostic):r.error||r.status);return r;}
+    const retryLabel=modelRetryLabel(r),retryKey=r.modelRetry?.retryId+':'+r.modelRetry?.retry;
+    if(retryLabel){if(retryKey!==retrySeen){process.stderr.write(retryLabel+'\n');retrySeen=retryKey;}}
+    else if(r.tool&&previous!==r.tool){process.stderr.write(`工具：${r.tool}\n`);previous=r.tool;}
     await setTimeout(300);
   }
   throw Error('bot_result_timeout');

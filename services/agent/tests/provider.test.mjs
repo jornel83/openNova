@@ -50,7 +50,7 @@ test('a failed Harness turn preserves a known model error without publishing pri
     {type:'turn/end',data:{turn:1,reason:{kind:'error',error:{code:'UNKNOWN',message}}}},
   ]});
   assert.throws(() => completedReply(result('network_error')), /network_error/);
-  assert.throws(() => completedReply(result('private_secret')), /incomplete_agent_turn/);
+  assert.throws(() => completedReply(result('private_secret')), /agent_runtime_failed/);
 });
 
 test('only an uninterrupted assistant message from the completed turn is spoken', () => {

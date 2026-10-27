@@ -1,5 +1,6 @@
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {assessContent} from './web-content-quality.mjs';
 // Raw HTML and model text have separate limits. Preserve the native network and conversion safeguards.
 const HTML_LIMIT=500000;
 const TEXT_LIMIT=11000;
@@ -26,15 +27,18 @@ function withoutNavigation(text) {
   return rest.join('').replace(/[\s*#>·•—_-]/g,'').length>30;
  }).join('\n\n').trim();
 }
-export async function createContentFetcher(root) {
+export async function createContentFetcher(root,resolveAddresses) {
  const {HttpFetchProvider}=await import(pathToFileURL(join(root,'packages/web/web-fetch-http/lib/index.js')));
  const {formatFetchOutput,fetchMetaFromValue}=await import(pathToFileURL(join(root,'packages/web/tool-web/lib/index.js')));
- const transport=new HttpFetchProvider({maxResponseBytes:2000000,maxBodyChars:HTML_LIMIT,timeoutMs:10000,maxRedirects:5,userAgent:'OpenNova/0.1'});
+ const transport=new HttpFetchProvider({maxResponseBytes:2000000,maxBodyChars:2000000,timeoutMs:10000,maxRedirects:5,userAgent:'OpenNova/0.1'},resolveAddresses);
  return {id:'opennova-http',available:()=>true,transport,async fetch(request,signal){
   signal?.throwIfAborted();
-  const result=await this.transport.fetch(request,signal);
+  let result=await this.transport.fetch(request,signal);
   signal?.throwIfAborted();
   if(result.statusCode<200||result.statusCode>=300)return result;
+  if(result.body?.kind==='html'&&result.body.content.length>HTML_LIMIT)result={...result,body:{...result.body,content:result.body.content.slice(0,HTML_LIMIT)},truncated:true};
+  const quality=assessContent(result);
+  if(quality.state!=='usable')throw Error(`web_page_body_unavailable:${quality.state}`);
   // Native rendering guards depth, omits scripts, preserves tables and marks truncation.
   const cap=HTML_LIMIT+4096;
   const prefix=formatFetchOutput({...result,body:{kind:'text',content:''},truncated:false},cap);
@@ -43,7 +47,7 @@ export async function createContentFetcher(root) {
   const content=withoutNavigation(rendered.replace(/\n\n\(Content truncated\.[^\n]*\)$/,''));
   if(!content || content.includes('[HTML content omitted:') || (truncated&&content.length<120))throw Error('web_page_body_unavailable');
   signal?.throwIfAborted();
-  return {...result,body:{kind:'text',content:content.slice(0,TEXT_LIMIT)},truncated:truncated||content.length>TEXT_LIMIT};
+  return {...result,quality,body:{kind:'text',content:content.slice(0,TEXT_LIMIT)},truncated:truncated||content.length>TEXT_LIMIT};
  }};
 }
 export const name='opennova-web-fetch-content';

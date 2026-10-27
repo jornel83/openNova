@@ -59,3 +59,39 @@ test('web and voice share foreground admission and confirmations wait until it i
   release();await requests.active.work;
   assert.equal((await handle('/approve',{id:p.id})).status,'applied');
 });
+test('snapshot exposes a separate work reference without changing user messages',async t=>{
+ const {ops,requests}=fixture(t);const context={capture:()=>({kind:'file',file:{id:'f',name:'方案.md'}})};
+ const handle=createControls({ops,requests,context,health:()=>({ready:true})});
+ const snapshot=await handle('/snapshot',{});assert.equal(snapshot.workContext.file.name,'方案.md');assert.equal(snapshot.messages.length,0);
+});
+test('web document reopen only accepts a server registered file and serializes with model work',async t=>{
+ const {ops,requests,workspace}=fixture(t);
+ const {createDocumentOpener}=await import('../desktop/documents.mjs');const {createWorkContext}=await import('../desktop/context.mjs');
+ const {EventEmitter}=await import('node:events');let launches=0;const context=createWorkContext();
+ const documents=createDocumentOpener({workspace,ops,context,spawnOpen:()=>{launches++;const c=new EventEmitter();c.kill=()=>{};setImmediate(()=>c.emit('close',0,null));return c;}});
+ writeFileSync(join(workspace,'demo.txt'),'内容');const initial=await documents.open({id:'initial',path:'demo.txt'});
+ const handle=createControls({ops,requests,context,documents,health:()=>({ready:true})});
+ await assert.rejects(handle('/document-open',{id:'bad',path:'/tmp/anything.txt'}),/invalid_document_request/);
+ await assert.rejects(handle('/document-open',{id:'bad',fileId:'unknown'}),/unknown_id/);
+ const receipt=await handle('/document-open',{id:'again',fileId:initial.file.id});assert.equal(receipt.status,'dispatched');await handle('/document-open',{id:'again',fileId:initial.file.id});assert.equal(launches,2);
+ let release;requests.run=async()=>new Promise(r=>release=r);requests.submit('busy','hello');await new Promise(r=>setImmediate(r));
+ await assert.rejects(handle('/document-open',{id:'busy-open',fileId:initial.file.id}),/bot_busy/);release({text:'done'});await requests.active.work;
+ assert.equal((await handle('/snapshot',{})).workContext.file.name,'demo.txt');
+});
+test('context-clear removes selection only, resists old refresh, and accepts a new selection identity',async t=>{
+ const {ops,requests}=fixture(t);const {createWorkContext}=await import('../desktop/context.mjs');
+ const context=createWorkContext(),page={bindingId:'b',tabId:1,documentId:'d',revision:1};
+ const selection={id:'s1',text:'讨论这段',documentId:'d',revision:1};context.updateBrowser({page,selection});
+ const handle=createControls({ops,requests,context,health:()=>({ready:true})});
+ await handle('/context-clear',{});assert.equal(context.capture().selection,null);
+ context.updateBrowser({page,selection});assert.equal(context.capture().selection,null);
+ context.updateBrowser({page,selection:{...selection,id:'s2'}});assert.equal(context.capture().selection.text,'讨论这段');
+ context.selectFile({id:'f',name:'report.pdf'});await handle('/context-clear',{});assert.equal(context.capture().file.id,'f');
+});
+test('web desktop-open delegates an empty trusted request; arbitrary URL or bounds are rejected',async t=>{
+ const {ops,requests}=fixture(t);let opened=0;
+ const handle=createControls({ops,requests,desktopOpen:async()=>{opened++;return {status:'completed'};}});
+ assert.equal((await handle('/desktop-open',{})).status,'completed');
+ await assert.rejects(handle('/desktop-open',{chatUrl:'https://evil.example',bounds:{width:100}}),/invalid_desktop_request/);
+ assert.equal(opened,1);
+});

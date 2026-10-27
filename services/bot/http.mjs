@@ -1,10 +1,11 @@
 import {createServer} from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
 import {browserHandler} from './web-http.mjs';
-export function createBridge({token,handle,web}) {
+export function createBridge({token,handle,web,extension}) {
   const browser=web?browserHandler(web,handle):null;
   return createServer(async(req,res)=>{
     res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
+    if(extension&&await extension(req,res))return;
     if(browser&&await browser(req,res))return;
     const reply=(status,value)=>{res.writeHead(status);res.end(JSON.stringify(value));};
     const given=Buffer.from(req.headers.authorization||''),wanted=Buffer.from('Bearer '+token);

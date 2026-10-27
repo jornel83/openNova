@@ -75,6 +75,8 @@ class NativeAudio:
         self.changed = asyncio.Event()
         self.played_segments = set()
         self.closed = False
+        self.playback = 'idle'
+        self.on_state = None
 
     async def start(self):
         binary = await build_helper()
@@ -82,7 +84,9 @@ class NativeAudio:
         self.process = await asyncio.create_subprocess_exec(str(binary), *self.device_args, stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, limit=64*1024, start_new_session=True)
         self.reader = asyncio.create_task(self._read())
-        return await asyncio.wait_for(asyncio.shield(self.ready), 40)
+        info = await asyncio.wait_for(asyncio.shield(self.ready), 40)
+        await self.capture(self.enabled,self.epoch)
+        return info
 
     def deliver(self, event):
         kind = event.get('type')
@@ -103,6 +107,8 @@ class NativeAudio:
             if self.ready and not self.ready.done(): self.ready.set_exception(self.error)
             for future in self.pending.values():
                 if not future.done(): future.set_exception(self.error)
+            self.playback = 'error'
+            if self.on_state: self.on_state()
             self.changed.set()
             return
         if kind == 'ready':
@@ -120,6 +126,12 @@ class NativeAudio:
                 self.changed.set()
             future = self.pending.get(event.get('rid'))
             if future and not future.done(): future.set_result(event)
+
+        if kind in ('ack','played') and event.get('generation') == self.generation:
+            playback = event.get('playback',self.playback)
+            if playback != self.playback:
+                self.playback = playback
+                if self.on_state: self.on_state()
 
     async def _read(self):
         try:
