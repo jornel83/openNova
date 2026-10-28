@@ -39,5 +39,5 @@
 **Interfaces:** original Bot on 18560/18561 remains live history; legacy desktop state backed up separately; bridge/extension profile points at original repo after migration.
 - [x] Independent fresh-context review; fix important findings with RED→GREEN and full suite.
 - [x] Back up original and legacy state externally; stop only idle task-owned instances and preserve browser data before migration.
-- [ ] Fast-forward/install/build/profile migration/startup complete; extension pairing and visible window remain blocked by the locked Mac.
-- [ ] Health/session/records/config verified and evidence recorded; real connected bridge, visible/reused windows and local browser fixture actions require unlocking and pairing.
+- [x] Fast-forward/install/build/profile migration/startup and extension pairing complete; actual right-side window verified after unlock.
+- [x] Health/session/records/config preserved; actual bridge, visible/reused windows, local page open/read/click, Bot restart and browser relaunch verified and recorded.
