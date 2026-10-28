@@ -23,21 +23,21 @@
 ### Task 1: Merge source and preserve standalone dependency contracts
 **Files:** desktop branch merge, services/agent/{provider,settings,dependencies}.mjs, services/bot/{launch,configuration,settings,resolve,setup}.mjs, scripts/{project,test,build-record}.mjs.
 **Interfaces:** runtimeSources/requireBuiltHarness remain the only source roots; commandPlan setup installs services/bot/desktop package lock; runtimePatch accepts desktop/research options; root tests include extensions/browser/tests.
-- [ ] Write and run integration regressions for default UI, desktop composition and dependency setup; observe failures.
-- [ ] Merge branch, resolve content conflicts preserving current engine architecture and imported interaction behavior; remove legacy gitlink/version checker.
-- [ ] Run product/imported tests and bundled runtime smoke; diagnose actual upstream interface differences; build/audit pass; commit merge.
+- [x] Write and run integration regressions for default UI, desktop composition and dependency setup; observe failures.
+- [x] Merge branch, resolve content conflicts preserving current engine architecture and imported interaction behavior; remove legacy gitlink/version checker.
+- [x] Run product/imported tests and bundled runtime smoke; diagnose actual upstream interface differences; build/audit pass; commit merge.
 
 ### Task 2: Unified startup and external browser settings
 **Files:** services/bot/launch.mjs, tools/{voice,desktop}/start.mjs, tools/desktop/settings.mjs, config/voice.example.json, README.md and focused launcher tests.
 **Interfaces:** default UI unless --no-ui or check/list/help; browser executable/profile resolved from explicit env then desktop machine config, profile outside repository. Server path can be started without opening UI by voice orchestrator.
-- [ ] Test default/headless/check, reuse, external profile boundary and CLI/env/config precedence; observe RED.
-- [ ] Implement defaults and root Bot window-opening coordination; preserve authentication/fallback handling and voice synchronizer.
-- [ ] Run focused/default tests and clean archive setup/build/test/audit; commit.
+- [x] Test default/headless/check, reuse, external profile boundary and CLI/env/config precedence; observe RED.
+- [x] Implement defaults and root Bot window-opening coordination; preserve authentication/fallback handling and voice synchronizer.
+- [x] Run focused/default tests and clean archive setup/build/test/audit; commit.
 
 ### Task 3: Review, original deployment and live UI verification
 **Files:** verification report, local deployment/config only.
 **Interfaces:** original Bot on 18560/18561 remains live history; legacy desktop state backed up separately; bridge/extension profile points at original repo after migration.
-- [ ] Independent fresh-context review; fix important findings with RED→GREEN and full suite.
-- [ ] Back up original and legacy state externally; stop only idle task-owned instances and preserve browser data before migration.
-- [ ] Fast-forward original, install/build, migrate profile and pair extension, start desktop Bot and open window through unified entrypoint.
-- [ ] Verify bridge connected, right window visible and reusable, local browser fixture actions, health/session/records/config preservation; record evidence and commit docs.
+- [x] Independent fresh-context review; fix important findings with RED→GREEN and full suite.
+- [x] Back up original and legacy state externally; stop only idle task-owned instances and preserve browser data before migration.
+- [ ] Fast-forward/install/build/profile migration/startup complete; extension pairing and visible window remain blocked by the locked Mac.
+- [ ] Health/session/records/config verified and evidence recorded; real connected bridge, visible/reused windows and local browser fixture actions require unlocking and pairing.

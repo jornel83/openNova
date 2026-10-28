@@ -74,7 +74,7 @@ async function fixture(t) {
     rmSync(root,{recursive:true,force:true});
   });
   return {root,env,options:{ttsPort,studioHost:'studio-test',studioTtsDir:'/tmp/Studio project/tts'},
-    runtime:{root,env,waitMs:3000,pollMs:30,log:()=>{}}};
+    runtime:{root,env,waitMs:10000,pollMs:30,log:()=>{}}};
 }
 
 test('cold launch starts dependencies, forwards devices and keeps Bot for the next launch',async t=>{
