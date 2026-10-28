@@ -15,7 +15,15 @@ export function createBrowserBridge({server,home,onContext=()=>{},now=Date.now,a
  const pending=new Map(),sockets=new Set();
  const persist=()=>write(journalPath,[...journal].map(([key,v])=>[key,{fingerprint:v.fingerprint,deadlineAt:v.deadlineAt,confirmed:v.confirmed}]));
  const wss=new WebSocketServer({noServer:true,maxPayload:MAX_PACKET,perMessageDeflate:false});
- function settle(key,value){const p=pending.get(key);if(!p)return;pending.delete(key);clearTimeout(p.timer);p.signal?.removeEventListener('abort',p.abort);const entry=journal.get(key);entry.result=value;entry.confirmed=value.status==='completed';persist();p.resolve(value);}
+ function settle(key,value){
+   const p=pending.get(key);if(!p)return;
+   pending.delete(key);clearTimeout(p.timer);p.signal?.removeEventListener('abort',p.abort);
+   const entry=journal.get(key);entry.result=value;entry.confirmed=value.status==='completed';
+   // The original reservation is already durable. If completion cannot be
+   // saved, retain that uncertain tombstone but still deliver the known result.
+   try{persist();}catch{entry.confirmed=false;}
+   p.resolve(value);
+ }
  function lost(ws){if(active!==ws)return;active=null;for(const key of pending.keys())settle(key,{id:key,status:'unknown',error:'browser_disconnected_after_send'});onContext({page:null,selection:null},{disconnected:true});}
  function attach(ws,req){
    sockets.add(ws);ws.on('error',()=>lost(ws));let authenticated=false,lastSeen=now();

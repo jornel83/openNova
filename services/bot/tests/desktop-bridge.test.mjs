@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readFileSync,statSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync,statSync,mkdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {once} from 'node:events';
@@ -84,4 +84,14 @@ test('completed commands expire without a lifetime limit; unknown sends remain d
  assert.equal((await f.bridge.execute({id:'new',method:'windows.ensure',deadlineAt:30000})).status,'completed');
  assert.equal((await f.bridge.execute({id:'old-0',method:'read',deadlineAt:10000})).status,'cancelled');assert.equal(sends,2049);
  const journal=JSON.parse(readFileSync(join(f.home,'browser-commands.json'),'utf8'));assert.ok(journal.length<10);
+});
+
+test('completion storage failure settles the caller and keeps the durable reservation uncertain',{timeout:2000},async t=>{
+ const f=await fixture(t),{token}=await (await f.pair(f.bridge.pairing().code)).json(),ws=await f.connect(token);
+ ws.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='command'){
+  mkdirSync(join(f.home,'browser-commands.json.tmp'));
+  ws.send(JSON.stringify({type:'result',result:{id:m.command.id,status:'completed'}}));
+ }});
+ const r=await f.bridge.execute({id:'storage-failure',method:'read'});assert.equal(r.status,'completed');
+ assert.equal(JSON.parse(readFileSync(join(f.home,'browser-commands.json'),'utf8'))[0][1].confirmed,false);
 });
