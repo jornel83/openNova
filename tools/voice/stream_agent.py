@@ -91,8 +91,8 @@ class StreamingAgent:
         if self.closed: return
         self.closed=True
         try:
-            if self.process is not None: await stop_process(self.process)
-        finally:
             if self.reader:
                 self.reader.cancel()
                 await asyncio.gather(self.reader,return_exceptions=True)
+        finally:
+            if self.process is not None: await stop_process(self.process)

@@ -49,9 +49,17 @@ class PreparedSpeech:
 
     async def close(self):
         self.started.set()
-        if not self.task.done(): self.task.cancel()
-        await asyncio.gather(self.task, return_exceptions=True)
+        if not self.task.done() and not self.task.cancelling(): self.task.cancel()
+        # A second close/cancel must not interrupt the TTS iterator's finally
+        # while it reaps its subprocess and drains paused stdout/stderr pipes.
+        cleanup=asyncio.gather(self.task,return_exceptions=True)
+        cancelled=False
+        while not cleanup.done():
+            try: await asyncio.shield(cleanup)
+            except asyncio.CancelledError: cancelled=True
+        await cleanup
         while not self.queue.empty(): self.queue.get_nowait()
+        if cancelled: raise asyncio.CancelledError
 
 
 async def prepare_speech(items, synthesize, valid, make_metrics, *, lookahead=1):

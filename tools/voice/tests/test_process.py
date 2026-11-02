@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
+import textwrap
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -13,6 +15,78 @@ from agent import Agent, stop_process
 
 
 class ProcessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exited_process_pipes_and_cancelled_prefetch_close_before_loop_gc(self):
+        # Run in a separate interpreter so GC occurs AFTER asyncio.run closes
+        # its loop, reproducing the live /quit warning instead of masking it
+        # through IsolatedAsyncioTestCase's own asynchronous cleanup.
+        script=textwrap.dedent('''
+            import asyncio,gc,sys
+            from contextlib import aclosing
+            from unittest.mock import patch
+            sys.path.insert(0,sys.argv[1])
+            from agent import Agent,stop_process
+            from speech_pipeline import prepare_speech
+            import tts_stream
+            held=[]
+            create=asyncio.create_subprocess_exec
+            code='import os,time; [(os.write(1,b"x"*4096),os.write(2,b"y"*4096)) for _ in range(512)];time.sleep(60)'
+            async def start(*args,**kwargs):
+                p=await create(sys.executable,'-c',code,**kwargs)
+                held.append(p)
+                return p
+            def closed(p):
+                assert p.returncode is not None
+                assert p.stdout.at_eof() and p.stderr.at_eof()
+                assert p.stdin.is_closing()
+            async def run():
+                p=await start(stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,
+                              stderr=asyncio.subprocess.PIPE,limit=1024,start_new_session=True)
+                await asyncio.sleep(.15)
+                p.terminate()
+                for _ in range(100):
+                    if p.returncode is not None:break
+                    await asyncio.sleep(.01)
+                assert p.returncode is not None
+                assert not p.stdout.at_eof() and not p.stderr.at_eof()
+                # Agent.close must also clean an already-exited worker.
+                owner=Agent();owner.process=p;await owner.close();closed(p)
+                items=asyncio.Queue()
+                for n in range(3):items.put_nowait((n+1,'sentence',False))
+                items.put_nowait(None)
+                def synth(text,metrics):return tts_stream.synthesize(text,'unused',metrics=metrics)
+                cleanup_started=asyncio.Event();release_cleanup=asyncio.Event()
+                async def delayed_stop(p):
+                    cleanup_started.set()
+                    await release_cleanup.wait()
+                    await stop_process(p)
+                with patch('tts_stream.asyncio.create_subprocess_exec',start),patch('tts_stream.stop_process',delayed_stop):
+                    jobs=prepare_speech(items,synth,lambda:True,lambda item:{})
+                    first=await anext(jobs)
+                    for _ in range(100):
+                        if len(held)==3 and first.queue.full():break
+                        await asyncio.sleep(.01)
+                    assert len(held)==3
+                    assert first.queue.full()
+                    # /quit owns current + lookahead. A second cancellation
+                    # during cleanup must not interrupt process pipe drainage.
+                    closing=asyncio.create_task(jobs.aclose())
+                    await cleanup_started.wait()
+                    closing.cancel()
+                    await asyncio.sleep(0)
+                    release_cleanup.set()
+                    outcome=await asyncio.gather(closing,return_exceptions=True)
+                    assert isinstance(outcome[0],asyncio.CancelledError)
+                    for p in held:closed(p)
+            asyncio.run(run())
+            held.clear();gc.collect()
+            print('pipes-clean')
+        ''')
+        result=await asyncio.to_thread(subprocess.run,[sys.executable,'-W','error::ResourceWarning','-c',script,
+                                        str(Path(__file__).resolve().parents[1])],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('pipes-clean',result.stdout)
+        self.assertEqual(result.stderr,'',result.stderr)
+
     async def test_explicit_node_override_launches_selected_runtime(self):
         agent = Agent()
         with patch.dict(os.environ, {'OPENNOVA_NODE':'/chosen/node'}), \

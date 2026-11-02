@@ -48,27 +48,57 @@ def failure_message(event):
 
 
 async def stop_process(process):
-    # Every caller creates a new session: this group belongs only to this worker.
-    if process.returncode is None:
+    """Reap the owned group AND finish its pipes while the event loop is alive.
+
+    Callers stop any independent stdout reader before entering. A subprocess
+    return code does not imply closed pipes: asyncio may have paused a reader
+    containing cancelled/prefetched PCM before it could observe EOF.
+    """
+    async def discard(reader):
+        if reader is not None:
+            while await reader.read(65536): pass
+
+    async def close_input():
+        if process.stdin is not None:
+            process.stdin.close()
+            try: await process.stdin.wait_closed()
+            except (BrokenPipeError,ConnectionResetError): pass
+
+    # Drain incrementally instead of communicate(), which accumulates all PCM.
+    # Start before wait(): a paused pipe can otherwise keep wait() pending even
+    # after the OS has reported that the process exited.
+    pipes=[asyncio.create_task(discard(reader)) for reader in (process.stdout,process.stderr)]
+    pipes.append(asyncio.create_task(close_input()))
+    try:
+        # Every caller creates a new session; this group belongs to this worker.
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.wait_for(process.wait(), timeout=12)
+            except asyncio.TimeoutError:
+                pass
+        group_exists=True
         try:
-            process.terminate()
+            os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
-            pass
-        try:
-            await asyncio.wait_for(process.wait(), timeout=12)
-        except asyncio.TimeoutError:
-            pass
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    await asyncio.sleep(0.2)
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    if process.returncode is None:
-        await process.wait()
+            group_exists=False
+        if group_exists:
+            await asyncio.sleep(0.2)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.returncode is None:
+            await asyncio.wait_for(process.wait(),3)
+        # This path also runs when the leader AND process group already exited.
+        await asyncio.wait_for(asyncio.gather(*pipes),3)
+    finally:
+        for task in pipes:
+            if not task.done(): task.cancel()
+        await asyncio.gather(*pipes,return_exceptions=True)
 
 
 class Agent:
@@ -109,7 +139,5 @@ class Agent:
         return event
 
     async def close(self):
-        if self.process is not None and self.process.returncode is None:
-            if self.process.stdin:
-                self.process.stdin.close()
+        if self.process is not None:
             await stop_process(self.process)

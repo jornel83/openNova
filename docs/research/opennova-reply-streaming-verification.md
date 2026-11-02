@@ -83,6 +83,12 @@ Playwright 使用实际网页、认证 SSE 和 bundled Harness/Bot，通过可�
 
 试听结束后退出本次语音进程，关闭收音，保留文字窗口和 Bot。未保存原始麦克风录音。此项为现场功能与主观听感确认，不等于测得声学首声、打断延迟或稳定 P95；前面的软件时序仍按原测量口径解释。
 
+退出时额外发现 Python 3.13 的 `BaseSubprocessTransport.__del__ / Event loop is closed` 警告。已确认当时没有残留收音或播放进程；原因是已退出子进程的 stdout/stderr 仍有未排空缓冲，旧清理函数在进程组不存在时提前返回。修复后始终排空管道并关闭 stdin，流式读取者先退出，再回收子进程；预合成清理也不会被重复取消打断。
+
+新增回归在独立解释器内模拟已退出但管道暂停的子进程、当前句与下一句同时取消及清理中的二次取消，随后关闭事件循环并触发 GC。Python 3.11 与实际启动使用的 3.13 均通过，stderr 无资源警告；真实豆包 TTS 的首 PCM 后取消也通过，未打开麦克风或扬声器。
+
+清理修复后的完整语音回归 **124 项通过**，重新构建通过，文字服务已恢复为 `ready: true / hybrid-stream`，语音未连接。日志为 `output/reply-latency/cleanup-voice-tests.log` 与 `cleanup-build.log`。
+
 ## 启用与回退
 
 默认入口和配置不变：
