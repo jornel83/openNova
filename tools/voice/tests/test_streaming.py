@@ -24,3 +24,11 @@ class SegmentTests(unittest.TestCase):
         b=SentenceBuffer()
         self.assertEqual(b.feed('Hello. Next sentence'),['Hello.'])
         self.assertEqual(b.finish(),[' Next sentence'])
+    def test_first_segment_has_smaller_limit_then_returns_to_normal_limit(self):
+        b=SentenceBuffer(limit=12,first_limit=6)
+        self.assertEqual(b.feed('一二三四五六七八九十十一十二十三十四十五'),['一二三四五六','七八九十十一十二十三十四'])
+        self.assertEqual(b.finish(),['十五'])
+    def test_numeric_run_across_length_boundary_is_not_split(self):
+        b=SentenceBuffer(limit=8)
+        self.assertEqual(b.feed('数值123,45'),[])
+        self.assertEqual(b.feed('6.78元。'),['数值123,456.78','元。'])

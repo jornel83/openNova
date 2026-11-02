@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import json
+import time
 from pathlib import Path
 from agent import ROOT, stop_process
 
@@ -74,6 +75,7 @@ class NativeAudio:
         self.error = None
         self.changed = asyncio.Event()
         self.played_segments = set()
+        self.playback_times = {}
         self.closed = False
         self.playback = 'idle'
         self.on_state = None
@@ -119,6 +121,9 @@ class NativeAudio:
             if event.get('generation') == self.generation:
                 self.frames = event['frames']
                 self.played_segments.add(event['segment'])
+                # Receipt is after a native chunk played, not a microphone
+                # measurement of the speaker's first audible sample.
+                self.playback_times.setdefault(event['segment'], time.monotonic())
                 self.changed.set()
         elif kind == 'ack':
             if event.get('generation', self.generation) == self.generation:
@@ -166,6 +171,7 @@ class NativeAudio:
         self.generation = generation
         self.frames = 0
         self.played_segments.clear()
+        self.playback_times.clear()
         self.changed.set()
         await self.command('clear', generation=generation)
 

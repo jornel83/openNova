@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {createVoiceChannel} from './desktop/voice.mjs';
 import {createEvents} from './desktop/events.mjs';
+import {createReplyStream} from './reply-stream.mjs';
 /** Real DeepSeek-Bot runtime, with a small loopback adapter for OpenNova clients. */
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -49,6 +50,8 @@ export async function apply(ctx,config) {
   await bindProject(ctx,rt,bot,config.workspace);resources.assertOpen();
   const events=createEvents();
   resources.add(()=>events.close());
+  const replyStream=createReplyStream({events,enabled:config.replyMode!=='settled'});
+  resources.add(()=>replyStream.close());
   const voice=createVoiceChannel({events});
   resources.add(()=>voice.close());
   let requests;
@@ -62,7 +65,8 @@ export async function apply(ctx,config) {
     onChange:value=>{ops.put({id:'work-context',kind:'context',value});events.publish('work.context',value);}});
   const documents=createDocumentOpener({workspace:config.workspace,ops,context});
   let desktop;const runtimeId=randomUUID();
-  requests=new Requests(ops,run,{context,events});
+  requests=new Requests(ops,run,{context,events,replyStream});
+  ctx.on('opennova/reply-stream',frame=>replyStream.observe(frame,requests.active));
   resources.add(()=>requests.close());
   const transport=config.research.mode==='legacy'?(await createContentFetcher(config.harnessRoot)).transport:undefined;
   const research=installResearch(ctx,{ops,requests,transport,config:{...config.research,home:config.home,port:config.port,botId:bot.id,workspace:config.workspace},
@@ -150,13 +154,13 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,context,documents,events,voice,research,browserState:()=>desktop?.status()??{connected:false},
+  const handle=createControls({ops,requests,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:'settled-answer',executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
-  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),
+  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),events,
     handle:(path,body)=>path.startsWith('/desktop/')&&desktop?desktop.handle(path,body):handle(path,body),
     extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets,events}:undefined});
   if(config.desktop){

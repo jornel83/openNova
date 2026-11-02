@@ -36,6 +36,10 @@ pnpm start
 
 启动后自动打开工作窗口和右侧 OpenNova 对话窗口，网页地址为 [本地网页聊天](http://127.0.0.1:18560/)。首次使用需按终端提示加载工程内 `extensions/browser` 并配对；`pnpm start -- --no-ui` 可仅运行后台服务。需要代理时通过 `OPENNOVA_PROXY` 设置自己的代理地址。网页和语音共用一个 Bot；默认允许助手在当前 OpenNova 工程工作，文件、Shell 等操作具有当前用户的权限。
 
+默认支持增量回答：模型明确标记的最终答案会提前显示在右侧窗口，并按稳定语句开始合成；播放当前句时最多预合成下一句。未提供可靠回答标记的响应继续等待完整结果。工具执行、来源和会话提交仍以完整校验后的结果为准；取消或失败后的部分文字会标明未完成。启动已有 Bot 时沿用该进程的模式，更新后需在结束当前工作并退出语音后重启 Bot。
+
+回退时，在停止现有 Bot 后使用 `OPENNOVA_REPLY_MODE=settled OPENNOVA_TTS_PREFETCH=0 ./start.command --tts-provider doubao`。实现、测速命令和验证边界见 [回复速度与流式播报验收](docs/research/opennova-reply-streaming-verification.md)。
+
 ## 工程结构
 
 | 目录 | 职责 |

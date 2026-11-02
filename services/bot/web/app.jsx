@@ -13,6 +13,7 @@ import {OperationCard} from './operation-card.jsx';
 import {ResearchSources} from './research-sources.jsx';
 import {researchPhaseLabel} from './research-view.mjs';
 import {modelRetryLabel} from '../../agent/model-retry.mjs';
+import {emptyReplyStream,receiveReplyEvent,receiveReplySnapshot,replyPresentation} from './reply-stream.mjs';
 import {Icon} from './icons.jsx';
 import './app.css';
 
@@ -30,13 +31,14 @@ function App(){
   const [snapshot,setSnapshot]=useState(null),[online,setOnline]=useState(false),[draft,setDraft]=useState(savedDraft),[error,setError]=useState(''),[sending,setSending]=useState(false),[limit,setLimit]=useState(50),[outbox,setOutbox]=useState(storage.get);
   const [openingWork,setOpeningWork]=useState(false);
   const [voicePending,setVoicePending]=useState(false),[lastControl,setLastControl]=useState(null);
+  const [replyStream,setReplyStream]=useState(emptyReplyStream);
   const inflight=useRef(false),outgoing=useRef(outbox),count=useRef(0),applied=useRef(0),scroll=useRef(),stick=useRef(true),input=useRef();
   const setOutgoing=value=>{outgoing.current=value;storage.set(value);setOutbox(value);};
   async function refresh(){
     const order=++count.current;
     try{
       const next=await api.call('snapshot',{limit});
-      if(order<applied.current)return null;applied.current=order;setSnapshot(next);setOnline(true);
+      if(order<applied.current)return null;applied.current=order;setSnapshot(next);setReplyStream(current=>receiveReplySnapshot(current,next));setOnline(true);
       const pending=outgoing.current;
       if(pending&&next.messages.some(m=>m.id===pending.id)){setOutgoing(null);setDraft(value=>value===pending.text?'':value);}
       return next;
@@ -46,7 +48,12 @@ function App(){
     let stopped=false,pollTimer,retryTimer,eventTimer;const controller=new AbortController();
     const poll=async()=>{try{await refresh();}catch{}if(!stopped)pollTimer=setTimeout(poll,document.hidden?15000:5000);};
     const invalidate=()=>{if(stopped||eventTimer)return;eventTimer=setTimeout(()=>{eventTimer=null;if(!stopped)void refresh().catch(()=>{});},40);};
-    const connect=async()=>{try{const next=await refresh();if(!stopped&&next?.cursor)await api.events(next.cursor,invalidate,{signal:controller.signal});}catch{}if(!stopped)retryTimer=setTimeout(connect,2000);};
+    const onEvent=event=>{
+      if(stopped)return;
+      if(event.type==='reply.stream')setReplyStream(current=>receiveReplyEvent(current,event));
+      else invalidate();
+    };
+    const connect=async()=>{try{const next=await refresh();if(!stopped&&next?.cursor)await api.events(next.cursor,onEvent,{signal:controller.signal});}catch{}if(!stopped)retryTimer=setTimeout(connect,2000);};
     void connect();pollTimer=setTimeout(poll,5000);
     return()=>{stopped=true;controller.abort();clearTimeout(pollTimer);clearTimeout(retryTimer);clearTimeout(eventTimer);};
   },[limit]);
@@ -64,7 +71,7 @@ function App(){
   const busy=!!snapshot?.busy;
   useEffect(()=>{try{sessionStorage.setItem('opennova.web.draft',draft);}catch{}},[draft]);
   const actions={openSession:()=>{},quote:(_id,text)=>{setDraft(text.split('\n').map(line=>'> '+line).join('\n')+'\n\n');input.current?.focus();}};
-  useEffect(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[messages.length,messages.at(-1)?.status,messages.at(-1)?.text,approvals.length]);
+  useEffect(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[messages.length,messages.at(-1)?.status,messages.at(-1)?.text,approvals.length,replyStream.draft?.text]);
   useEffect(()=>{
     const content=scroll.current?.firstElementChild;if(!content)return;
     const observer=new ResizeObserver(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;});
@@ -114,14 +121,20 @@ function App(){
     <div className="chat-scroll" ref={scroll} onClickCapture={e=>{if(e.target.closest('summary'))stick.current=false;}} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
       {snapshot?.hasMore&&limit<500&&<Button className="history-more nova-secondary" onClick={()=>{stick.current=false;setLimit(Math.min(500,limit+50));}}>加载更早的对话</Button>}
       {snapshot&&!messages.length&&<div className="welcome"><span className="eyebrow">LET’S BUILD TOGETHER</span><h2>一起把想法变成现实</h2><p>聊聊你的想法，或从工作窗口里的一段内容开始。</p></div>}
-      {messages.map(message=><section className="exchange" key={message.id} data-request-id={message.id}>
+      {messages.map(message=>{const preview=replyPresentation(message,replyStream);return <section className="exchange" key={message.id} data-request-id={message.id}>
         <div className="message-meta">{message.source==='voice'?'语音':message.source==='web'?'文字':'终端'} · {new Date(message.createdAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
         <UserMessageCell node={{data:{content:[{type:'text',text:message.input}],time:message.createdAt}}} sessionId={sessionId} useRoster={select=>select(roster)} actions={actions}/>
         <div className="assistant-message"><div className="speaker-label"><span/> NOVA</div>
           {!!operationsFor(message.id).length&&<div className="inline-operations" aria-label="本轮操作">{operationsFor(message.id).map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</div>}
-          {message.status==='completed'?<><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/><ResearchSources sources={message.sources} derivations={message.derivations}/></>:<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(modelRetryLabel(message)||researchPhaseLabel(message)||(message.phase==='tool'?'正在处理工作内容…':'正在思考…')):errorText({message:message.error||message.status,code:message.status,diagnostic:message.diagnostic})}</p>}
+          {message.status==='completed'?<><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/><ResearchSources sources={message.sources} derivations={message.derivations}/></>:<>
+            {preview&&<div className={'reply-draft'+(preview.interrupted?' interrupted':'')} aria-label={preview.interrupted?'未完成的回答':'生成中的回答'} aria-busy={!preview.interrupted}>
+              <Bubbles texts={[preview.text]} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/>
+              <p className={'turn-status '+(preview.interrupted?'':'working')} role="status">{preview.label}</p>
+            </div>}
+            {(!preview||preview.interrupted)&&<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(modelRetryLabel(message)||researchPhaseLabel(message)||(message.phase==='tool'?'正在处理工作内容…':'正在思考…')):errorText({message:message.error||message.status,code:message.status,diagnostic:message.diagnostic})}</p>}
+          </>}
         </div>
-      </section>)}
+      </section>;})}
       {speechDraft&&<div className="speech-draft" role="status" aria-label="实时语音转写"><span>语音 · {voice.recognition==='recognizing'?'识别中':'正在提交'}</span><p>{speechDraft.text||'正在听你说…'}</p></div>}
       {!!unlinked.length&&<details className="other-operations"><summary>其他操作记录 · {unlinked.length}</summary>{unlinked.map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</details>}
     </div></div>

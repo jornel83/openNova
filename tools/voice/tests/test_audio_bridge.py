@@ -87,6 +87,11 @@ class NativeProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(states[-1],'paused')
         audio.deliver({'type':'played','generation':0,'segment':1,'frames':0,'playback':'idle'})
         self.assertEqual(states[-1],'idle')
+        first=audio.playback_times[1]
+        audio.deliver({'type':'played','generation':0,'segment':1,'frames':0,'playback':'idle'})
+        self.assertEqual(audio.playback_times[1],first)
         audio.generation=1
         audio.deliver({'type':'ack','generation':0,'frames':2400,'playback':'playing'})
         self.assertEqual(states[-1],'idle')
+        audio.deliver({'type':'played','generation':0,'segment':2,'frames':0,'playback':'idle'})
+        self.assertNotIn(2,audio.playback_times)

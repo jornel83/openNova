@@ -1,7 +1,7 @@
 import {createServer} from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
-import {browserHandler} from './web-http.mjs';
-export function createBridge({token,handle,web,extension}) {
+import {browserHandler,streamEvents} from './web-http.mjs';
+export function createBridge({token,handle,web,extension,events}) {
   const browser=web?browserHandler(web,handle):null;
   return createServer(async(req,res)=>{
     res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
@@ -15,7 +15,8 @@ export function createBridge({token,handle,web,extension}) {
       const raw=Buffer.concat(chunks).toString('utf8');
       const body=JSON.parse(raw||'{}');
       if(!body||typeof body!=='object'||Array.isArray(body))throw Error('invalid_request');
+      if(req.url==='/events'){if(!events)throw Error('events_not_enabled');streamEvents(events,body.cursor,res);return;}
       reply(200,await handle(req.url,body));
-    }catch(error){reply(400,{error:String(error.message||'bot_error').slice(0,300)});}
+    }catch(error){reply(error.message==='cursor_reset'?409:400,{error:String(error.message||'bot_error').slice(0,300)});}
   });
 }

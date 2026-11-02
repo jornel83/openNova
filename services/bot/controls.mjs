@@ -14,7 +14,7 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
     if(path==='/research/http'){if(!research?.httpFromScript)throw Error('research_helper_disabled');return research.httpFromScript(body);}
     if(path==='/voice/publish')return voice.publish(body);
@@ -33,11 +33,16 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,d
       return desktopOpen();
     }
     if(path==='/health')return health();
+    if(path==='/stream-snapshot'){
+      if(!events)throw Error('events_not_enabled');
+      const {state,cursor}=events.snapshot(()=>({result:research?.refresh(ops.request(body.id))??ops.request(body.id),stream:replyStream?.snapshot(body.id)??null}));
+      return {...state,cursor};
+    }
     if(path==='/snapshot'){
       const limit=Number.isInteger(body.limit)?Math.max(20,Math.min(500,body.limit)):50;
       const readState=()=>{const records=ops.list('request'),approvals=operationRecords(ops);
       const workContext=context?.capture()??{kind:'none'};
-      return {workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
+      return {replyStream:replyStream?.snapshot()??null,workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
         messages:records.slice(0,limit).reverse().map(r=>research?.refresh(r)??r),hasMore:records.length>limit,
         approvals:approvals.filter((r,i)=>i<30||records.slice(0,limit).some(m=>m.id===r.requestId)||['pending','applying','running'].includes(r.status)).map(approvalPreview)};};
       if(!events)return readState();

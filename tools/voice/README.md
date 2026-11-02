@@ -1,5 +1,7 @@
 # OpenNova 语音与桌面交互
 
+> 2026-11-03：共享 Bot 已接入 `hybrid-stream`。明确的最终回答增量可提前播报，未知回答类型保留完整结果模式；当前句首段音频优先，最多预合成下一句。下文“Bot 等待完整答复”和“尚无跨句预合成”是旧版记录。当前实现、回退、真实测速及验收边界见[流式播报验收](../../docs/research/opennova-reply-streaming-verification.md)。
+
 当前统一入口默认打开工作窗口和右侧 Nova 对话窗口，然后连接共享 Bot 语音。公司网络可以运行 `./start.command --tts-provider doubao`；`--no-ui` 关闭自动开窗，`--ui` 保留为兼容参数。`--check` 和 `--list-devices` 不开窗口或麦克风。
 
 首次使用需加载本工程 `extensions/browser` 扩展并与同一 Bot 配对，启动器会给出步骤。已配对浏览器会自动重连并复用窗口；语音未就绪时文字窗口仍保留。浏览器程序与外部 profile 由 `desktop.browser_executable` / `desktop.browser_user_data_dir` 或对应 `OPENNOVA_BROWSER_*` 环境变量配置。profile、授权、会话和记忆均应保存在仓库外。

@@ -6,6 +6,7 @@ import { responseChunks } from './provider-core.mjs';
 import { responseToolChunks } from './responses-protocol.mjs';
 import {errorEvent} from './errors.mjs';
 import {MODEL_RETRY_POLICY} from './model-retry.mjs';
+import {randomUUID} from 'node:crypto';
 
 export const name = 'opennova-chatgpt';
 export const inject = ['llm'];
@@ -15,10 +16,11 @@ export async function apply(ctx, config) {
   const llm = await import(pathToFileURL(join(config.harnessRoot, 'packages/llm/llm/lib/index.js')).href);
   const client = await createClient({capabilities:config.enableTools?'tools':'text'});
   const filter=config.requestFilter?(await import(pathToFileURL(config.requestFilter).href)).filterRequest:options=>options;
-  ctx.effect(() => ctx.llm.registerAdapter(['opennova-chatgpt'], createSubscriptionAdapter(llm,client,config,filter)));
+  ctx.effect(() => ctx.llm.registerAdapter(['opennova-chatgpt'], createSubscriptionAdapter(llm,client,config,filter,
+    frame=>ctx.emit('opennova/reply-stream',frame))));
 }
 
-export function createSubscriptionAdapter({LlmAdapter,LlmError},client,config,filter=options=>options){
+export function createSubscriptionAdapter({LlmAdapter,LlmError},client,config,filter=options=>options,onPreview){
   return new class SubscriptionAdapter extends LlmAdapter {
     providerRetryPolicy(provider){
       return provider==='opennova-chatgpt'?MODEL_RETRY_POLICY:undefined;
@@ -38,7 +40,9 @@ export function createSubscriptionAdapter({LlmAdapter,LlmError},client,config,fi
     async *stream(options) {
       try{
         const request=filter(options,config);
-        yield* config.enableTools?responseToolChunks(client,request,config.allowedTools):responseChunks(client,request);
+        const attemptId=randomUUID();
+        const preview=onPreview?event=>onPreview({sessionId:options.sessionId,purpose:options.purpose,attemptId,...event}):undefined;
+        yield* config.enableTools?responseToolChunks(client,request,config.allowedTools,preview,{enabled:config.replyMode!=='settled'}):responseChunks(client,request);
       }catch(error){
         // Native LlmError preserves safe provider facts through finish and turn/end.
         const {code,status,requestId}=errorEvent(error,'conversation');

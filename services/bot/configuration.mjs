@@ -14,7 +14,7 @@ return [
   {id:'preset-standard',config:{id:'standard',order:1,plugins:PROJECT_PLUGINS}},
   {insert:[
     ...researchPlugins({harnessRoot:s.harnessRoot,enabled:research.httpAvailable,searchAvailable:research.available,mode:research.mode,limits:research.limits}),
-    {id:'opennova-chatgpt',name:join(root,'services/agent/provider.mjs'),config:{harnessRoot:s.harnessRoot,enableTools:true,allowedTools:researchTools(ALLOWED_TOOLS,research),modelBudget:MODEL_BUDGET,requestFilter:join(root,'services/bot/model-policy.mjs'),retiredMemoryPath:join(b.home,'retired.json')}},
+    {id:'opennova-chatgpt',name:join(root,'services/agent/provider.mjs'),config:{harnessRoot:s.harnessRoot,enableTools:true,replyMode:b.replyMode??'streaming',allowedTools:researchTools(ALLOWED_TOOLS,research),modelBudget:MODEL_BUDGET,requestFilter:join(root,'services/bot/model-policy.mjs'),retiredMemoryPath:join(b.home,'retired.json')}},
     {id:'opennova-bot',name:join(root,'services/bot/host.mjs'),config:{...b,research:publicResearchConfig(research),harnessRoot:s.harnessRoot,webAssets,desktop}},
   ]},
 ];

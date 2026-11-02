@@ -1,5 +1,6 @@
 /** Stateless Responses projection. Only completed output is executable by Harness. */
 import {safeError} from './errors.mjs';
+import {createResponsePreview} from './response-preview.mjs';
 const FORMAT='opennova-responses-v1';
 const DEFAULT_TOOLS=['web_search','web_fetch'];
 const textOf=content => {
@@ -49,10 +50,12 @@ export function projectToolRequest(options, allowedTools=DEFAULT_TOOLS) {
   return {model:options.model,input,...(options.system?{instructions:options.system}:{}),
     ...(tools.length&&options.purpose!=='compaction'?{tools:[{type:'namespace',name:'opennova',description:'OpenNova tools',tools}]}:{})};
 }
-export async function* responseToolChunks(client, options, allowedTools=DEFAULT_TOOLS) {
+export async function* responseToolChunks(client, options, allowedTools=DEFAULT_TOOLS, onPreview, previewOptions) {
   const request=projectToolRequest(options,allowedTools);
+  const preview=onPreview&&options.purpose!=='compaction'?createResponsePreview(onPreview,previewOptions):undefined;
+  try {
   let result;
-  try { result=await client.streamItems({...request,signal:options.signal}); }
+  try { result=await client.streamItems({...request,signal:options.signal,...(preview?{onEvent:event=>preview.event(event)}:{})}); }
   catch(error) {
     throw safeError(error);
   }
@@ -77,6 +80,7 @@ export async function* responseToolChunks(client, options, allowedTools=DEFAULT_
   }
   if (!blocks.length) throw Error('incomplete_model_response');
   if (pending.length) replay.at(-1).items.push(...pending);
+  preview?.settle(result.output);
   for (const [index,block] of blocks.entries()) {
     yield {type:'block-start',index,blockType:block.type};
     if(block.type==='text')yield {type:'text-delta',index,text:block.text};
@@ -84,4 +88,5 @@ export async function* responseToolChunks(client, options, allowedTools=DEFAULT_
     yield {type:'block-end',index,block};
   }
   yield {type:'finish',reason:{kind:ids.size?'tool-calls':'stop'},replayState:{response:{format:FORMAT},blocks:replay}};
+  } finally { preview?.abandon(options.signal?.aborted?'cancelled':'response_interrupted'); }
 }

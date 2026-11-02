@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 import sys
+import time
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from continuous import Conversation
@@ -46,6 +47,16 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         await self.event('final',ident,text=text)
     async def settle(self):
         await self.controller.wait_idle()
+    async def test_accepted_asr_final_is_timed_separately_from_vad_endpoint(self):
+        ended=time.monotonic()-.05
+        await self.event('start')
+        await self.event('end',time=ended)
+        await self.event('final',text='你好',time=ended+.03)
+        await self.settle()
+        record=self.controller.records[-1]
+        self.assertAlmostEqual(record['latency_ms']['asr_finalize_ms'],30,places=2)
+        self.assertGreaterEqual(record['latency_ms']['input_end_to_first_pcm_ms'],30)
+        self.assertIn('not acoustic first sound',record['latency_notes']['playbackFeedback'])
     async def test_ui_draft_revisions_final_once_and_native_playback_state(self):
         observed=[];self.controller.on_state=observed.append
         await self.event('start')

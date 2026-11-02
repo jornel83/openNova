@@ -1,8 +1,10 @@
 """Continuous conversation state: input, generation and playback have separate lifetimes."""
 import asyncio
 from contextlib import aclosing
+import os
 import time
 from segments import SentenceBuffer
+from speech_pipeline import prepare_speech
 from tts_stream import synthesize as synthesize_pcm
 from barge_in import BargeInCandidate, PAUSE_TIMEOUT
 
@@ -12,12 +14,13 @@ def effective(text):
 
 
 class Conversation:
-    def __init__(self, agent, audio, tts_url, *, synthesize=synthesize_pcm, log=print, reset_input=None, render_text=None, tts_speed=1.5, on_state=None):
+    def __init__(self, agent, audio, tts_url, *, synthesize=synthesize_pcm, log=print, reset_input=None, render_text=None, tts_speed=1.5, on_state=None, prefetch=None):
         self.agent, self.audio, self.tts_url = agent, audio, tts_url
         self.on_state = on_state
         self.draft = None
         self.audio_failed = False
         self.tts_speed = tts_speed
+        self.prefetch = os.environ.get('OPENNOVA_TTS_PREFETCH','1')!='0' if prefetch is None else bool(prefetch)
         self.synthesize, self.log, self.reset_input = synthesize, log, reset_input
         self.render_text = render_text or log
         self.active, self.muted, self.quit = True, False, False
@@ -66,12 +69,21 @@ class Conversation:
                 self.interrupted = True
                 if not record.get('admitted'): self.unsubmitted = record['input']
                 record['segments_with_played_chunks'] = sorted(getattr(self.audio, 'played_segments', set()))
+                self.capture_playback_metrics(record)
             if not response.cancelling(): response.cancel()
         # Stop locally before waiting for model/HTTP cleanup, which runs in the cancelled task.
         if not getattr(self.audio,'closed',False):
             await self.audio.clear(self.generation)
             if record: record['local_clear_ack_at'] = time.monotonic()
         self.notify()
+
+    def capture_playback_metrics(self, record):
+        receipts = getattr(self.audio,'playback_times',{})
+        for segment in record.get('segments',[]):
+            if segment['id'] in receipts:
+                segment.setdefault('first_playback_feedback_at',receipts[segment['id']])
+                if segment['kind']=='answer':
+                    record.setdefault('first_playback_feedback_at',receipts[segment['id']])
 
     def trace_candidate(self, turn, action):
         record = turn.get('record')
@@ -137,7 +149,7 @@ class Conversation:
         if kind == 'final':
             # Once interruption was confirmed, keep ASR revisions of that utterance.
             keep = effective(turn['text']) and (accepted or turn['confirmed'])
-            turn.update(finished=True, final=turn['text'] if keep else None)
+            turn.update(finished=True, final=turn['text'] if keep else None, final_at=now)
             if candidate and not keep: self.trace_candidate(turn, 'filtered_final')
         elif kind == 'failed':
             turn.update(finished=True, final=None)
@@ -148,16 +160,17 @@ class Conversation:
             turn['ended_at'] = event.get('time', time.monotonic())
         if self.inputs and all(turn['finished'] for turn in self.inputs.values()):
             texts = [turn['final'] for _,turn in sorted(self.inputs.items()) if turn['final']]
-            ended = max((turn.get('ended_at',time.monotonic()) for turn in self.inputs.values()))
             if texts:
+                ended = max(turn.get('ended_at',turn['final_at']) for turn in self.inputs.values() if turn['final'])
+                asr_final = max(turn['final_at'] for turn in self.inputs.values() if turn['final'])
                 self.inputs.clear()
-                await self.ask('\n'.join(texts), ended)
+                await self.ask('\n'.join(texts), ended, asr_final_at=asr_final)
             else:
                 await self.resume_candidate('unconfirmed')
                 self.inputs.clear()
                 self.draft = None
 
-    async def ask(self, text, ended_at=None):
+    async def ask(self, text, ended_at=None, *, asr_final_at=None):
         await self.invalidate('replacement')
         original = text
         if self.unsubmitted:
@@ -169,6 +182,7 @@ class Conversation:
         record = {'input':original,'text':'','status':'running','generation':self.generation,
                   'submitted_at':time.monotonic(),'input_ended_at':ended_at,'segments':[], 'admitted':False,
                   'output_mode':getattr(self.agent,'output_mode','incremental'),'speech_text':'','sources':[],'tool_events':[]}
+        if asr_final_at is not None: record['asr_final_at']=asr_final_at
         self.records.append(record)
         self.response_record = record
         task = asyncio.create_task(self._respond(text, record))
@@ -183,6 +197,8 @@ class Conversation:
         generation = record['generation']
         queue = asyncio.Queue(maxsize=8)
         settled = record['output_mode'] == 'settled-answer'
+        hybrid = record['output_mode'] == 'hybrid-stream'
+        record['tts_prefetch'] = self.prefetch
         answer_ready = asyncio.Event()
         async def delayed_notice():
             await asyncio.sleep(self.notice_delay)
@@ -211,12 +227,36 @@ class Conversation:
                                 self.log(f"模型暂时繁忙，正在自动重试（{event['retry']}/{event['maxRetries']}）……")
                             if phase in ('searching','reading','requesting','processing','verifying'):
                                 self.log({'searching':'正在联网搜索。','reading':'正在读取资料。','requesting':'正在获取数据。','processing':'正在处理数据。','verifying':'正在核对结果。'}[phase])
-                                if settled and notice_task is None: notice_task = asyncio.create_task(delayed_notice())
+                                if (settled or hybrid) and notice_task is None: notice_task = asyncio.create_task(delayed_notice())
                         elif event['type'] == 'sources':
                             # Pending evidence is not presented as a completed answer.
                             record['sources_received_at'] = time.monotonic()
+                        elif event['type'] == 'draft':
+                            if not hybrid: raise ValueError('当前模式不支持回答草稿。')
+                            draft = event['text']
+                            if len(draft)>16000: raise ValueError('模型回复过长，已停止本轮。')
+                            if draft:
+                                if 'first_delta_at' not in record:
+                                    record['first_delta_at']=time.monotonic()
+                                    self.render_text('OpenNova：')
+                                self.render_text(draft[len(record['text']):] if draft.startswith(record['text']) else '\nOpenNova：'+draft)
+                            record['text']=draft
+                            if event.get('timings'): record['model_timings']=event['timings']
+                        elif event['type'] == 'speech-delta':
+                            if not hybrid: raise ValueError('当前模式不支持增量播报。')
+                            current_attempt=event.get('attemptId')
+                            if attempt and attempt!=current_attempt:
+                                raise ValueError('模型重新生成了本轮回复，已停止旧播报，请重新说话。')
+                            attempt=current_attempt
+                            record.setdefault('first_speech_delta_at',time.monotonic())
+                            record['speech_text']+=event['text']
+                            if len(record['speech_text'])>6000: raise ValueError('播报内容过长。')
+                            answer_ready.set()
+                            for part in buffer.feed(event['text']):
+                                seq+=1
+                                await queue.put((seq,part,False))
                         elif event['type'] == 'delta':
-                            if settled: raise ValueError('联网模式不应提前播报未完成的模型文本。')
+                            if settled or hybrid: raise ValueError('当前模式不应提前播报未确认的模型文本。')
                             current_attempt = event.get('attemptId')
                             if attempt and attempt != current_attempt:
                                 raise ValueError('模型重新生成了本轮回复，已停止旧播报，请重新说话。')
@@ -234,7 +274,19 @@ class Conversation:
                             record['agent_complete_at'] = time.monotonic()
                             record['agent'] = event
                             answer_ready.set()
-                            if settled:
+                            if hybrid:
+                                speech=event.get('speechText')
+                                if (not isinstance(speech,str) or not speech.strip() or len(speech)>6000
+                                        or len(event['text'])>16000 or not speech.startswith(record['speech_text'])
+                                        or not event['text'].startswith(record['text'])):
+                                    raise ValueError('流式回答与最终结果不一致，已停止剩余播报。')
+                                if not record['text']: self.render_text('OpenNova：')
+                                self.render_text(event['text'][len(record['text']):]+'\n')
+                                parts=buffer.feed(speech[len(record['speech_text']):])+buffer.finish()
+                                record.update(text=event['text'],speech_text=speech,sources=event.get('sources',[]))
+                                for source in record['sources']:
+                                    self.log(f"来源 {source['id']}：{source['title']} {source['url']}")
+                            elif settled:
                                 speech = event.get('speechText')
                                 if not isinstance(speech,str) or not speech.strip() or len(speech)>6000 or len(event['text'])>16000:
                                     raise ValueError('完整答案或播报内容无效。')
@@ -266,53 +318,54 @@ class Conversation:
             if 'agent_complete_at' not in record: raise ValueError('模型回复未完整结束。')
             await queue.put(None)
 
-        async def play_segment(seq, part, notice):
-            if generation != self.generation or (notice and answer_ready.is_set()): return
-            segment = {'id':seq,'text':part,'kind':'status' if notice else 'answer','requested_at':time.monotonic()}
+        def segment_metrics(item):
+            seq,part,notice=item
+            segment = {'id':seq,'text':part,'kind':'status' if notice else 'answer'}
             record['segments'].append(segment)
             record['tts_started'] = True
             self.notify()
-            pending = b''
-            async with aclosing(self.synthesize(part,self.tts_url,speed=self.tts_speed,metrics=segment)) as stream:
+            return segment
+
+        def prepare(part,segment):
+            return self.synthesize(part,self.tts_url,speed=self.tts_speed,metrics=segment)
+
+        async def play_segment(job):
+            seq,notice,segment=job.seq,job.notice,job.metrics
+            if generation != self.generation or (notice and answer_ready.is_set()): return
+            async with aclosing(job.pcm()) as stream:
                 async for pcm in stream:
                     if generation != self.generation: return
                     if notice and answer_ready.is_set() and 'notice_first_pcm_at' not in record: return
-                    pending += pcm
-                    size = len(pending)//2*2
-                    if not size: continue
-                    # Native chunks stay below the 8192-byte IPC limit.
-                    for offset in range(0,size,4096):
-                        chunk = pending[offset:min(offset+4096,size)]
-                        if notice: record.setdefault('notice_first_pcm_at',time.monotonic())
-                        else:
-                            record.setdefault('first_pcm_at', time.monotonic())
-                            record.setdefault('answer_first_pcm_at',record['first_pcm_at'])
-                        if not await self.audio.write(chunk,generation,seq): return
-                        record.setdefault('notice_first_enqueue_at' if notice else 'first_enqueue_at', time.monotonic())
-                    pending = pending[size:]
-            if pending: raise ValueError('合成音频尾部不完整。')
-            segment['http_closed_at'] = time.monotonic()
+                    if notice: record.setdefault('notice_first_pcm_at',segment['first_pcm_at'])
+                    else:
+                        record.setdefault('first_pcm_at',segment['first_pcm_at'])
+                        record.setdefault('answer_first_pcm_at',record['first_pcm_at'])
+                    if not await self.audio.write(pcm,generation,seq): return
+                    segment.setdefault('first_enqueue_at',time.monotonic())
+                    record.setdefault('notice_first_enqueue_at' if notice else 'first_enqueue_at',segment['first_enqueue_at'])
         async def speak():
-            while item := await queue.get():
-                seq, part, notice = item
-                if not notice:
-                    await play_segment(seq,part,False)
-                    continue
-                if answer_ready.is_set(): continue
-                playing = asyncio.create_task(play_segment(seq,part,True))
-                ready = asyncio.create_task(answer_ready.wait())
-                try:
-                    await asyncio.wait((playing,ready),return_when=asyncio.FIRST_COMPLETED)
-                    if ready.done() and 'notice_first_pcm_at' not in record: playing.cancel()
-                    try: await playing
-                    except asyncio.CancelledError:
-                        if not answer_ready.is_set(): raise
-                finally:
-                    ready.cancel()
-                    if not playing.done(): playing.cancel()
-                    await asyncio.gather(playing,ready,return_exceptions=True)
+            prepared=prepare_speech(queue,prepare,lambda:generation==self.generation,segment_metrics,lookahead=1 if self.prefetch else 0)
+            async with aclosing(prepared) as jobs:
+                async for job in jobs:
+                    if not job.notice:
+                        await play_segment(job)
+                        continue
+                    if answer_ready.is_set(): continue
+                    playing=asyncio.create_task(play_segment(job))
+                    ready=asyncio.create_task(answer_ready.wait())
+                    try:
+                        await asyncio.wait((playing,ready),return_when=asyncio.FIRST_COMPLETED)
+                        if ready.done() and 'notice_first_pcm_at' not in record: playing.cancel()
+                        try: await playing
+                        except asyncio.CancelledError:
+                            if not answer_ready.is_set(): raise
+                    finally:
+                        ready.cancel()
+                        if not playing.done(): playing.cancel()
+                        await asyncio.gather(playing,ready,return_exceptions=True)
             await self.audio.drained(generation)
             record['playback_drained_at'] = time.monotonic()
+            self.capture_playback_metrics(record)
 
         async def fail_output(error):
             if record['status'] != 'running': return
@@ -349,6 +402,21 @@ class Conversation:
             await fail_output(error)
         finally:
             record['pipeline_closed_at'] = time.monotonic()
+            durations={}
+            for name,start,end in (
+                ('asr_finalize_ms','input_ended_at','asr_final_at'),
+                ('asr_to_submit_ms','asr_final_at','submitted_at'),
+                ('submit_to_first_text_ms','submitted_at','first_delta_at'),
+                ('submit_to_first_pcm_ms','submitted_at','first_pcm_at'),
+                ('input_end_to_first_pcm_ms','input_ended_at','first_pcm_at'),
+                ('input_end_to_first_enqueue_ms','input_ended_at','first_enqueue_at'),
+                ('input_end_to_first_playback_feedback_ms','input_ended_at','first_playback_feedback_at'),
+            ):
+                if isinstance(record.get(start),(int,float)) and isinstance(record.get(end),(int,float)):
+                    durations[name]=round(max(0,record[end]-record[start])*1000,3)
+            record['latency_ms']=durations
+            record['latency_notes']={'inputEnd':'VAD endpoint after configured silence window; not acoustic last speech sample',
+                                     'playbackFeedback':'first native PCM chunk playback receipt; not acoustic first sound'}
             if generation == self.generation:
                 if not self.inputs: self.draft = None
                 self.notify()

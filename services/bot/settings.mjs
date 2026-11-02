@@ -9,6 +9,8 @@ export function botSettings(env=process.env) {
   const home=resolve(env.OPENNOVA_BOT_HOME||join(homedir(),'.local/share/opennova/bot-spike'));
   const port=Number(env.OPENNOVA_BOT_PORT||18560),webPort=Number(env.OPENNOVA_BOT_WEB_PORT||18561);
   if(![port,webPort].every(n=>Number.isInteger(n)&&n>1024&&n<65536)||port===webPort)throw Error('invalid_bot_ports');
-  return {home,port,webPort,workspace:ROOT,legacyWorkspace:join(home,'project'),tokenPath:join(home,'client.token'),
+  const replyMode=env.OPENNOVA_REPLY_MODE||'streaming';
+  if(!['streaming','settled'].includes(replyMode))throw Error('invalid_reply_mode');
+  return {home,port,webPort,replyMode,workspace:ROOT,legacyWorkspace:join(home,'project'),tokenPath:join(home,'client.token'),
     plugin:runtimeSources().botRoot,url:`http://127.0.0.1:${port}`};
 }

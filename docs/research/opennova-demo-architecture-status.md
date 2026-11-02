@@ -1,5 +1,7 @@
 # OpenNova Demo 技术架构与功能进展
 
+> 2026-11-03 更新：桌面源码整合与原目录合并已完成；Bot 增量回答、稳定语句播报、下一句预合成、取消与重连已接入。当前证据见[桌面整合验收](opennova-desktop-integration-verification.md)和[流式播报验收](opennova-reply-streaming-verification.md)。下文保留 10 月开发阶段快照，旧的“尚未合并 / Bot 等待完整回复 / 无预合成”不再代表当前默认路径。
+
 > 历史分支记录。当前整合版使用 `engine/` 内的完整源码和根目录 setup/build；下文旧 submodule、缓存及测试工作区路径不作为当前启动依赖。以 [开发说明](../development.md) 为准。
 
 > 2026-10-25 联网接入更新：默认改为 DSH 原生 web_search / web_fetch / bash；OpenNova 监听进度、保存来源和处理语音交互。旧版研究预算和 web_request / research_exec / research_derive 只在显式 legacy 回退模式启用。启动与验收见 [原生联网验收](opennova-native-research-test-cases.md)。文末旧阶段记录保留用于历史追溯。
