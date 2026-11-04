@@ -25,3 +25,5 @@ M4 使用根目录 `start.command --ui` 统一启动：Bot → 扩展及双窗�
 通用研究结果额外包含 `api_response` 来源和独立 `derivations[]` 脚本记录；接口卡显示真实 HTTP 状态、编码和获取时间，脚本卡引用输入 observation，文件变化显示提醒。界面不把正常退出或收到 HTTP 200 标为业务已核验。详见 [验收说明](../../../docs/research/opennova-research-execution-test-cases.md)。
 
 研究 Shell 的 HTTP 辅助命令仅能在活跃执行中通过本机认证桥调用 `/research/http`；普通网页 API 不开放该路由。请求结束或取消后 executionId 失效。脚本原始响应和产物位于 Git 忽略的 `output/research/requests/`。
+
+后台任务第一阶段在同一窗口增加“对话 / 任务”切换。任务列表支持状态筛选、未读结果、分页和直接提交命令；详情展示执行尝试、增量日志、取消、显式重试和结果文件。刷新保留选中的任务，后台作业不占用前台请求。任务更新通过原 SSE 通知，日志独立按游标读取；数据仍在仓库外。实现、命令与验证边界见 [后台任务验收](../../../docs/research/opennova-background-tasks-verification.md)。

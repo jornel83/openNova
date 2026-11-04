@@ -14,8 +14,19 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,tasks,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
+    if(path==='/background-tasks')return tasks.list(body);
+    if(path==='/background-task')return tasks.detail(body.id);
+    if(path==='/background-task-start')return tasks.create(body,{source:'web'});
+    if(path==='/background-task-cancel')return tasks.cancel(body.id,body.runId);
+    if(path==='/background-task-retry')return tasks.retry(body);
+    if(path==='/background-task-read')return tasks.read(body);
+    if(path==='/background-task-log')return tasks.log(body);
+    if(path==='/background-task-open'){
+      const file=tasks.artifact(body);
+      return requests.exclusive(()=>documents.open({id:body.actionId,path:file.path}));
+    }
     if(path==='/research/http'){if(!research?.httpFromScript)throw Error('research_helper_disabled');return research.httpFromScript(body);}
     if(path==='/voice/publish')return voice.publish(body);
     if(path==='/voice/poll')return voice.poll(body.voiceInstanceId);
@@ -42,7 +53,7 @@ export function createControls({ops,requests,memory,health,memoryView,shutdown,d
       const limit=Number.isInteger(body.limit)?Math.max(20,Math.min(500,body.limit)):50;
       const readState=()=>{const records=ops.list('request'),approvals=operationRecords(ops);
       const workContext=context?.capture()??{kind:'none'};
-      return {replyStream:replyStream?.snapshot()??null,workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
+      return {tasks:tasks?.list({limit:50})??null,replyStream:replyStream?.snapshot()??null,workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
         messages:records.slice(0,limit).reverse().map(r=>research?.refresh(r)??r),hasMore:records.length>limit,
         approvals:approvals.filter((r,i)=>i<30||records.slice(0,limit).some(m=>m.id===r.requestId)||['pending','applying','running'].includes(r.status)).map(approvalPreview)};};
       if(!events)return readState();

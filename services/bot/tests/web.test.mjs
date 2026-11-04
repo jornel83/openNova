@@ -85,6 +85,17 @@ test('document-open route retains same origin Cookie and CSRF requirements',asyn
  assert.deepEqual(calls[0],{path:'/document-open',body:{id:'one',fileId:'file-1'}});
 });
 
+test('background task commands and logs require the existing browser credentials',async t=>{
+ const {post,calls}=await fixture(t);const login=await post('/web/session'),{csrf}=await login.json();
+ const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ for(const route of ['background-tasks','background-task','background-task-start','background-task-cancel','background-task-retry','background-task-read','background-task-log','background-task-open']){
+   assert.equal((await post('/web/api/'+route)).status,401);
+   assert.equal((await post('/web/api/'+route,{}, {Cookie:headers.Cookie})).status,403);
+   assert.equal((await post('/web/api/'+route,{},headers)).status,200);
+   assert.equal(calls.at(-1).path,'/'+route);
+ }
+});
+
 test('event stream requires all browser credentials and replays snapshot gap before live delivery',async t=>{
  const events=createEvents(),{post}=await fixture(t,events),cursor=events.snapshot(()=>null).cursor;
  const login=await post('/web/session'),{csrf}=await login.json(),headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};

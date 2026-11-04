@@ -40,6 +40,8 @@ pnpm start
 
 回退时，在停止现有 Bot 后使用 `OPENNOVA_REPLY_MODE=settled OPENNOVA_TTS_PREFETCH=0 ./start.command --tts-provider doubao`。实现、测速命令和验证边界见 [回复速度与流式播报验收](docs/research/opennova-reply-streaming-verification.md)。
 
+支持把明确的测试、构建和脚本命令放到后台运行。右侧“任务”页可以查看排队状态、增量日志、结果文件，取消作业或重试失败的执行；后台运行时仍可继续聊天。任务记录和日志默认保存在仓库外，刷新不重复提交，服务重启不自动重跑已经启动的命令。使用方法与恢复边界见 [后台任务第一阶段验收](docs/research/opennova-background-tasks-verification.md)。
+
 ## 工程结构
 
 | 目录 | 职责 |

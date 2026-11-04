@@ -15,6 +15,7 @@ import {researchPhaseLabel} from './research-view.mjs';
 import {modelRetryLabel} from '../../agent/model-retry.mjs';
 import {emptyReplyStream,receiveReplyEvent,receiveReplySnapshot,replyPresentation} from './reply-stream.mjs';
 import {Icon} from './icons.jsx';
+import {TaskCard,TaskPanel} from './tasks.jsx';
 import './app.css';
 
 // The upstream components use a small locale service; retain their own Chinese copy.
@@ -30,6 +31,9 @@ const storage={get(){try{return JSON.parse(sessionStorage.getItem('opennova.web.
 function App(){
   const [snapshot,setSnapshot]=useState(null),[online,setOnline]=useState(false),[draft,setDraft]=useState(savedDraft),[error,setError]=useState(''),[sending,setSending]=useState(false),[limit,setLimit]=useState(50),[outbox,setOutbox]=useState(storage.get);
   const [openingWork,setOpeningWork]=useState(false);
+  const [view,setView]=useState(()=>{try{return sessionStorage.getItem('opennova.web.view')==='tasks'?'tasks':'chat';}catch{return 'chat';}}),[selectedTask,setSelectedTask]=useState(()=>{try{return sessionStorage.getItem('opennova.web.task')||null;}catch{return null;}});
+  useEffect(()=>{try{sessionStorage.setItem('opennova.web.view',view);selectedTask?sessionStorage.setItem('opennova.web.task',selectedTask):sessionStorage.removeItem('opennova.web.task');}catch{}},[view,selectedTask]);
+  const openTask=id=>{setSelectedTask(id);setView('tasks');};
   const [voicePending,setVoicePending]=useState(false),[lastControl,setLastControl]=useState(null);
   const [replyStream,setReplyStream]=useState(emptyReplyStream);
   const inflight=useRef(false),outgoing=useRef(outbox),count=useRef(0),applied=useRef(0),scroll=useRef(),stick=useRef(true),input=useRef();
@@ -51,7 +55,7 @@ function App(){
     const onEvent=event=>{
       if(stopped)return;
       if(event.type==='reply.stream')setReplyStream(current=>receiveReplyEvent(current,event));
-      else invalidate();
+      else if(event.type!=='task.log')invalidate();
     };
     const connect=async()=>{try{const next=await refresh();if(!stopped&&next?.cursor)await api.events(next.cursor,onEvent,{signal:controller.signal});}catch{}if(!stopped)retryTimer=setTimeout(connect,2000);};
     void connect();pollTimer=setTimeout(poll,5000);
@@ -118,13 +122,16 @@ function App(){
       <div className="nova-identity"><NovaRing state={novaState}/><h1>NOVA</h1><p role="status">{novaStatus}</p></div>
     </header>
     {!online&&<div className="connection-banner" role="status">连接中断时可以继续编辑，草稿会保留。正在自动重连…</div>}
-    <div className="chat-scroll" ref={scroll} onClickCapture={e=>{if(e.target.closest('summary'))stick.current=false;}} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
+    <nav className="workspace-tabs" aria-label="交流与任务"><button type="button" aria-pressed={view==='chat'} onClick={()=>setView('chat')}>对话</button><button type="button" aria-pressed={view==='tasks'} onClick={()=>setView('tasks')}>任务{snapshot?.tasks?.activeCount>0&&<span>{snapshot.tasks.activeCount} 项进行中</span>}{snapshot?.tasks?.unreadCount>0&&<i aria-label="有未读任务结果"/>}</button></nav>
+    {view==='tasks'&&<TaskPanel api={api} summary={snapshot?.tasks} selectedId={selectedTask} onSelect={setSelectedTask} online={online} busy={busy}/>}
+    <div hidden={view!=='chat'} className="chat-scroll" ref={scroll} onClickCapture={e=>{if(e.target.closest('summary'))stick.current=false;}} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
+      {!!snapshot?.tasks?.unreadCount&&<div className="task-notice" role="status"><p>后台任务有新结果</p>{snapshot.tasks.tasks.filter(t=>t.unread).slice(0,3).map(task=><TaskCard key={task.id} task={task} onOpen={openTask}/>)}</div>}
       {snapshot?.hasMore&&limit<500&&<Button className="history-more nova-secondary" onClick={()=>{stick.current=false;setLimit(Math.min(500,limit+50));}}>加载更早的对话</Button>}
       {snapshot&&!messages.length&&<div className="welcome"><span className="eyebrow">LET’S BUILD TOGETHER</span><h2>一起把想法变成现实</h2><p>聊聊你的想法，或从工作窗口里的一段内容开始。</p></div>}
       {messages.map(message=>{const preview=replyPresentation(message,replyStream);return <section className="exchange" key={message.id} data-request-id={message.id}>
         <div className="message-meta">{message.source==='voice'?'语音':message.source==='web'?'文字':'终端'} · {new Date(message.createdAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
         <UserMessageCell node={{data:{content:[{type:'text',text:message.input}],time:message.createdAt}}} sessionId={sessionId} useRoster={select=>select(roster)} actions={actions}/>
-        <div className="assistant-message"><div className="speaker-label"><span/> NOVA</div>
+        <div className="assistant-message">{snapshot?.tasks?.tasks.filter(t=>t.requestId===message.id).map(task=><TaskCard key={task.id} task={task} onOpen={openTask}/>)}<div className="speaker-label"><span/> NOVA</div>
           {!!operationsFor(message.id).length&&<div className="inline-operations" aria-label="本轮操作">{operationsFor(message.id).map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</div>}
           {message.status==='completed'?<><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/><ResearchSources sources={message.sources} derivations={message.derivations}/></>:<>
             {preview&&<div className={'reply-draft'+(preview.interrupted?' interrupted':'')} aria-label={preview.interrupted?'未完成的回答':'生成中的回答'} aria-busy={!preview.interrupted}>

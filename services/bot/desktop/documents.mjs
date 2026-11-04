@@ -4,7 +4,7 @@ import {realpathSync,statSync,accessSync,constants} from 'node:fs';
 import {resolve,extname,basename} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 const documents=new Set(['.pdf','.png','.jpg','.jpeg','.webp','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.md','.txt']);
-const sources=new Set(['.js','.mjs','.cjs','.ts','.tsx','.jsx','.py','.sh','.bash','.zsh','.json','.yaml','.yml','.toml','.xml','.html','.css','.scss','.c','.h','.cpp','.hpp','.rs','.go','.java','.swift','.sql','.rb','.php']);
+const sources=new Set(['.log','.csv','.js','.mjs','.cjs','.ts','.tsx','.jsx','.py','.sh','.bash','.zsh','.json','.yaml','.yml','.toml','.xml','.html','.css','.scss','.c','.h','.cpp','.hpp','.rs','.go','.java','.swift','.sql','.rb','.php']);
 const editors=new Set(['com.apple.TextEdit','com.microsoft.VSCode','com.microsoft.VSCodeInsiders','com.todesktop.230313mzl4w4u92','com.sublimetext.4','com.sublimetext.3','com.barebones.bbedit','dev.zed.Zed']);
 const errorCode=e=>e.code==='ENOENT'?'file_not_found':['EACCES','EPERM'].includes(e.code)?'file_access_denied':e.message;
 export function inspectFileReference(file){

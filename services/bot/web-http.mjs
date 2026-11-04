@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 
 const routes=new Set(['desktop-open','voice-control','snapshot','context-clear','document-open','ask','result','cancel','approvals','approve','reject']);
+for(const name of ['background-tasks','background-task','background-task-start','background-task-cancel','background-task-retry','background-task-read','background-task-log','background-task-open'])routes.add(name);
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.svg':'image/svg+xml'};
 const equal=(a,b)=>typeof a==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};

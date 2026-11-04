@@ -14,9 +14,15 @@ export async function apply(ctx,config) {
     async resolveModel(){return this.info();}
     async *stream(options){
       // Harness also injects runtime-context messages with the user role.
-      const input=options.messages.filter(m=>m.role==='user').flatMap(m=>m.content.filter(b=>b.type==='text').map(b=>b.text)).findLast(text=>['hello','slow','stream','cancel-stream','stream-fail'].includes(text))||'';
+      const matches=text=>['hello','slow','stream','cancel-stream','stream-fail'].includes(text)||text.startsWith('background:');
+      const inputIndex=options.messages.findLastIndex(m=>m.role==='user'&&m.content.some(b=>b.type==='text'&&matches(b.text)));
+      const input=options.messages[inputIndex]?.content.find(b=>b.type==='text'&&matches(b.text))?.text||'';
+      if(input.startsWith('background:')&&!options.messages.slice(inputIndex+1).some(m=>m.role==='tool')){
+        const item={type:'function_call',id:'fc_'+randomUUID(),call_id:'call_'+randomUUID(),name:'background_task_start',namespace:'opennova',arguments:input.slice('background:'.length),status:'completed'};
+        yield* responseToolChunks({streamItems:async()=>({output:[item]})},options,config.allowedTools);return;
+      }
       if(input==='slow')await setTimeout(30000,undefined,{signal:options.signal});
-      const parts=input.includes('stream')?['第一句已经生成。','第二句稍后完成。']:['offline:'+input];
+      const parts=input.startsWith('background:')?['后台任务已提交，你可以继续聊天。']:input.includes('stream')?['第一句已经生成。','第二句稍后完成。']:['offline:'+input];
       const attemptId=randomUUID();
       const client={async streamItems({onEvent,signal}){
         const message={type:'message',id:'offline-message',role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:parts.join(''),annotations:[]}]};

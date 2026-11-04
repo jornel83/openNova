@@ -10,6 +10,7 @@ import {createDocumentOpener,createDocumentTool,inspectFileReference} from './de
 import {createWorkContext} from './desktop/context.mjs';
 import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
+import {TaskManager,taskTools} from './tasks/manager.mjs';
 import {researchTools} from './research/config.mjs';
 import {createContentFetcher} from '../agent/web-fetch-content.mjs';
 import {installResearch} from './research/runtime.mjs';
@@ -58,6 +59,8 @@ export async function apply(ctx,config) {
   const ops=new Operations({...config,events,getRequestId:()=>requests?.active?.id});
   recoverToolRuns(ops);
   resources.add(()=>ops.close());
+  const tasks=new TaskManager({ops,home:config.home,workspace:config.workspace,events});
+  resources.add(()=>tasks.close());
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
   const allowed=new Set(researchTools(ALLOWED_TOOLS,config.research)),approved=new WeakSet();
@@ -93,6 +96,7 @@ export async function apply(ctx,config) {
     },
   });
   const moduleTools=[
+    ...taskTools(tasks,()=>requests.active),
     research.sourceTool,...research.tools,
     createDocumentTool({opener:documents,getRequest:()=>requests.active}),
     ...createBrowserTools({context,ops,getRequest:()=>requests.active,bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}}),
@@ -154,9 +158,9 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
+  const handle=createControls({ops,requests,tasks,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({backgroundTasks:{version:1,concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

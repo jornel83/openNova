@@ -35,7 +35,7 @@ async function main() {
   const flag=process.argv.indexOf('--ask');
   if(flag>=0){console.log(JSON.stringify(await ask(process.argv[flag+1]),null,2));return;}
   if(process.argv.includes('--check'))return;
-  console.log('真实工程文件、Shell 和记忆直接执行，无需确认。/operations 查看操作记录；/tasks 查询；/cancel-task ID 取消；/memory 查看记忆；/quit 断开客户端。');
+  console.log('真实工程文件、Shell 和记忆直接执行，无需确认。/operations 查看操作记录；/tasks 后台任务；/task ID 详情；/task-log ID 日志；/cancel-task ID 取消；/memory 查看记忆；/quit 断开客户端。');
   const cli=createInterface({input:process.stdin,output:process.stdout});
   try{while(true){const text=(await cli.question('你：')).trim();if(!text)continue;if(text==='/quit')break;
     try{const [command,id]=text.split(/\s+/);let result;
@@ -43,8 +43,10 @@ async function main() {
       else if(command==='/pending')result=(await api('/approvals')).filter(r=>['pending','applying','failed','conflict'].includes(r.status));
       else if(command==='/approve')result=await api('/approve',{id});
       else if(command==='/reject')result=await api('/reject',{id});
-      else if(command==='/tasks')result=await api('/tasks');
-      else if(command==='/cancel-task')result=await api('/cancel-task',{id});
+      else if(command==='/tasks')result=await api('/background-tasks');
+      else if(command==='/task')result=await api('/background-task',{id});
+      else if(command==='/task-log')result=await api('/background-task-log',{id});
+      else if(command==='/cancel-task')result=await api('/background-task-cancel',{id});
       else if(command==='/memory')result=await api('/memory');
       else if(command==='/result')result=await api('/result',{id});
       else if(command==='/cancel')result=await api('/cancel',{id});

@@ -8,6 +8,9 @@ Object.assign(labels,{timeout:'本次检索超时，已保留取得的资料。'
 Object.assign(labels,{network_error:'无法连接 ChatGPT，请检查当前网络或代理后重试。',connection_error:'无法连接 ChatGPT，请检查当前网络或代理后重试。',stream_interrupted:'ChatGPT 连接在回复完成前中断，请稍后重试。',incomplete_agent_turn:'本轮模型回复未完整完成，请重试；已执行的操作可在记录中查看。'});
 Object.assign(labels,{title_only:'页面只有标题，没有可用正文。',encoding_error:'来源编码异常，未作为有效证据。',invalid_json:'接口响应不是有效 JSON。',http_failed:'脚本中的取数未完成，请查看 HTTP 记录。',script_failed:'研究脚本未成功完成。',input_artifact_changed:'输入文件已变化，请重新核对。'});
 export const errorText=error=>error?.diagnostic?diagnosticText(error.diagnostic):(labels[error?.code]||labels[error?.message]||'操作未完成：'+(error?.message||'请检查 Bot 服务后重试。'));
+Object.assign(labels,{unsupported_file_type:'当前文件类型暂不支持直接打开，请按结果路径查看。',open_failed:'本机应用未能打开文件，请检查文件类型与默认应用。',open_timeout:'打开请求暂未确认，请检查本机应用。'});
+
+Object.assign(labels,{invalid_task_command:'请填写任务名称和命令。',invalid_task_workdir:'请选择当前项目内存在的目录。',invalid_task_timeout:'运行时限应在 1 秒到 2 小时之间。',invalid_task_artifacts:'结果文件请使用项目内相对路径，最多 20 项。',task_id_conflict:'这次提交与已有任务不一致，请查看原任务。',task_run_changed:'任务已经开始新的执行，请刷新后操作。',task_retry_unavailable:'当前任务尚不能重试，请先核对是否已停止。',task_queue_full:'待处理任务已达上限，请先完成或取消部分任务。',unknown_task:'没有找到这项任务。',task_artifact_missing:'结果文件尚未生成或不可读取。',task_artifact_changed:'结果文件已发生变化，请重新核对后打开。'});
 
 export class WebApi {
   constructor(base=''){this.base=base;}

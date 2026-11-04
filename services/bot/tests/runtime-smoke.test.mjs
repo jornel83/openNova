@@ -55,6 +55,17 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
   await api('/ask',{id:'first',text:'hello',source:'text'});
   const result=await waitFor(async()=>{const r=await api('/result',{id:'first'});if(r.status==='failed')throw Error(JSON.stringify(r));return r.status==='completed'&&r;});
   assert.equal(result.text,'offline:hello');
+  // A real Harness tool call must hand off a command and finish its turn while
+  // the command is still running, so the next user message is admitted.
+  await api('/ask',{id:'background-tool',text:'background:'+JSON.stringify({title:'后台验证',command:"printf 'task started\\n'; sleep 5; printf 'done\\n'"}),source:'voice'});
+  await waitFor(async()=>(await api('/result',{id:'background-tool'})).status==='completed');
+  const task=await waitFor(async()=>{const {tasks}=await api('/background-tasks');return tasks.find(t=>t.requestId==='background-tool'&&t.status==='running');});
+  assert.equal((await api('/snapshot')).busy,false);
+  await api('/ask',{id:'chat-during-task',text:'hello',source:'web'});
+  await waitFor(async()=>(await api('/result',{id:'chat-during-task'})).status==='completed');
+  assert.equal((await api('/background-task',{id:task.id})).task.status,'running');
+  await api('/background-task-cancel',{id:task.id,runId:task.runId});
+  await waitFor(async()=>(await api('/background-task',{id:task.id})).task.status==='cancelled');
   assert.equal(health.outputMode,'hybrid-stream');
   await api('/ask',{id:'streamed',text:'stream',source:'voice'});
   const early=await waitFor(async()=>{const s=await api('/stream-snapshot',{id:'streamed'});return s.stream?.speechText&&s;});
@@ -77,4 +88,5 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
   assert.equal((await api('/result',{id:'first'})).text,'offline:hello');
   assert.equal((await api('/result',{id:'failed-stream'})).partialText,'第一句已经生成。');
   assert.ok((await api('/snapshot')).messages.some(m=>m.id==='first'));
+  assert.equal((await api('/background-task',{id:task.id})).task.status,'cancelled');
 });
