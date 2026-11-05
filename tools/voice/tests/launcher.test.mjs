@@ -41,7 +41,7 @@ async function fixture(t) {
       if(!tts){
         fs.appendFileSync(root+'/requests',req.url+'\\n');
         if(req.url==='/desktop/status')return res.end(JSON.stringify({paired:true,connected:process.env.EXTENSION_OFF!=='1'||fs.existsSync(root+'/browser-ready')}));
-        if(req.url==='/desktop/open'){fs.appendFileSync(root+'/window-ensures','ensure\\n');return res.end(JSON.stringify({status:'completed',windows:{workWindowId:1,chatWindowId:2}}));}
+        if(req.url==='/desktop/chat'){fs.appendFileSync(root+'/window-ensures','ensure\\n');return res.end(JSON.stringify({status:'completed',windows:{chatWindowId:2}}));}
         if(req.url==='/snapshot')return res.end(JSON.stringify({desktop:{voice:{connected:process.env.EXISTING_VOICE==='1'}}}));
       }
       const data=tts?{paths:{'/v1/audio/speech':{post:{}}}}:
@@ -236,11 +236,12 @@ test('root command works outside the project and help needs no services',()=>{
 });
 
 
-test('UI startup opens windows before TTS and voice, enables desktop on a cold Bot',async t=>{
+test('UI startup opens only Nova before TTS and voice, enables desktop on a cold Bot',async t=>{
  const f=await fixture(t);f.env.SSH_FAIL='255';const logs=[];
  await assert.rejects(launch({...f.options,ui:true},{...f.runtime,log:s=>logs.push(s)}),/Studio/);
  assert.deepEqual(JSON.parse(readFileSync(join(f.root,'bot-args'),'utf8')),['--no-ui']);
  assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\n');
+ assert.ok(!readFileSync(join(f.root,'requests'),'utf8').includes('/desktop/open'));
  assert.equal(existsSync(join(f.root,'voice.json')),false);
  assert.ok(logs.some(x=>x.includes('文字')&&x.includes('http://127.0.0.1:')));
  assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'voice-launch.lock')),false);
@@ -274,7 +275,7 @@ test('missing extension keeps text and voice, opens fallback once per Bot boot w
  assert.ok(logs.some(x=>x.includes('扩展')));
  assert.equal(existsSync(join(f.root,'voice.json')),true);
 });
-test('UI launch reconnects the configured paired browser before opening windows and voice',async t=>{
+test('UI launch reconnects the configured paired browser before opening Nova and voice',async t=>{
  const f=await fixture(t);f.env.EXTENSION_OFF='1';
  f.env.OPENNOVA_BROWSER_EXECUTABLE=join(f.root,'bin/paired-chrome');
  f.env.OPENNOVA_BROWSER_USER_DATA_DIR=mkdtempSync(join(tmpdir(),'nova launch profile '));
@@ -285,6 +286,7 @@ test('UI launch reconnects the configured paired browser before opening windows 
  assert.ok(args.includes('--user-data-dir='+f.env.OPENNOVA_BROWSER_USER_DATA_DIR));
  assert.ok(args.includes('--load-extension='+join(f.root,'extensions/browser')));
  assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\n');
+ assert.ok(!readFileSync(join(f.root,'requests'),'utf8').includes('/desktop/open'));
  assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'ui-fallback.json')),false);
  assert.equal(existsSync(join(f.root,'voice.json')),true);
 });

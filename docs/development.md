@@ -85,4 +85,4 @@ SIWC 纳入仓库后的验证和原目录切换记录见[SIWC 整合验证](rese
 
 工程外源码引用复查、检查命令和数据保留结果见[源码独立性验证](research/opennova-source-independence-verification.md)。
 
-桌面交互源码在 `extensions/browser`、`services/bot/desktop` 和 `tools/desktop`。根 setup 安装其锁定依赖，默认测试包含扩展测试；构建摘要包含扩展源码。`pnpm start` 与语音入口默认启用桌面交互并自动开窗；`--no-ui` 用于无窗口运行。
+桌面交互源码在 `extensions/browser`、`services/bot/desktop` 和 `tools/desktop`。根 setup 安装其锁定依赖，默认测试包含扩展测试；构建摘要包含扩展源码。`pnpm start` 与语音入口默认只打开右侧 Nova 面板，工作窗口按需打开；`--no-ui` 用于无窗口运行。

@@ -20,7 +20,7 @@ export function researchStartupNotice(health,desired={}){
 
 const HELP=`OpenNova 一键语音启动（自动使用共享 Bot）
 用法：./start.command [选项]
-  --ui                  自动打开工作窗口和 Nova 对话窗口（默认）
+  --ui                  自动打开 Nova 对话窗口（默认，工作窗口按需打开）
   --no-ui               仅终端语音，不自动开窗
   --device 名称          麦克风；省略使用系统默认输入
   --output-device 名称   播放设备；省略使用系统默认输出

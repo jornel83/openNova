@@ -283,6 +283,8 @@ uv run tools/voice/conversation.py --continuous --bot --tts-provider doubao \
 
 ## M4：一键启动与双窗口
 
+2026-11-05 启动策略更新：`pnpm start`、`./start.command` 和 `--ui` 默认只打开或恢复右侧 Nova 对话窗口。工作窗口在点击“打开工作窗口”或要求助手浏览网页时创建。以下双窗口冷启动记录为此前版本的验收结果。
+
 2026-10-19：M4 代码已实现，继续保留在 `codex/desktop-browser-m0` 隔离分支。日常主工作区未切换，未推送 GitHub。Chrome 扩展、宿主和网页资源应一起更新；本次开发预览为 `http://127.0.0.1:18564/`。
 
 ### 当前这台机器直接启动

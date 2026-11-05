@@ -28,7 +28,7 @@ export async function openChrome(url,{signal,root,env=process.env}={}){
 export async function prepareDesktop({config,root,health,signal,log,env=process.env,openBrowser=url=>openChrome(url,{signal,root,env}),waitMs=8000}){
  const call=(path,body={})=>desktopApi(path,body,false,{config,signal});
  const url=config.url+'/',marker=join(config.home,'ui-fallback.json');
- log('检查浏览器扩展与双窗口……');
+ log('检查浏览器扩展与 Nova 对话窗口……');
  let state;
  try{state=await call('/desktop/status');}
  catch{signal?.throwIfAborted();log('当前 Bot 尚未启用浏览器接入；请结束当前任务后 tools/bot/run.command --stop，再用 start.command --ui 启动。');}
@@ -41,8 +41,8 @@ export async function prepareDesktop({config,root,health,signal,log,env=process.
   }
  }
  if(state?.connected){
-  const result=await call('/desktop/open',{activate:true});
-  if(result.status==='completed'){log(`工作窗口和 Nova 对话窗口已就绪：${url}`);return result;}
+  const result=await call('/desktop/chat');
+  if(result.status==='completed'){log(`Nova 对话窗口已就绪：${url}；需要浏览网页时可打开工作窗口。`);return result;}
   // Delivery may have succeeded. Do not open a second chat after an ambiguous reply.
   if(result.status==='unknown'){log(`开窗回执未确认，请查看 Chrome。可重新运行 --ui 补齐窗口；文字入口：${url}`);return result;}
   log('浏览器开窗未完成，暂用文字入口；扩展连接恢复后可点击「打开工作窗口」。');
