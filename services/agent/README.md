@@ -31,7 +31,7 @@ node services/agent/worker.mjs --check
 - `voice.patch.yml`：中文语音交互提示词，关闭 Bash、PowerShell、工作目录工具和自动重试；保留运行时所需的工作目录服务。
 - `worker.mjs`：校验授权和模型权限，维持单个 Harness 会话，退出时清理子进程。
 - `result.mjs`：只接受当前轮次完整结束且未被中断的已提交回复。
-- `authorize.mjs`：独立 OpenNova 登录入口，已连接时不重新发起授权。
+- `authorize.mjs`：独立 OpenNova 登录入口；默认已连接时不重新授权。`--add-account` 添加并切换账号、保留旧账号，`--list-accounts` 列出账号，`--select-account ID` 选择已保存账号或接续其未完成授权。账号注册与凭据由 SIWC 分别保存，完成 OAuth 校验后才激活新账号。参见 [OpenAI 官方账号与会话说明](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)。
 
 默认模式仍是文字对话适配，拒绝模型工具和图片输入。2026-10-13 新增的 `--web` 模式仅开放下面两种只读 Web 工具。视觉、文件和命令执行仍需另行接入。原轮流模式只朗读完整回复；默认持续模式按增量文本分句朗读；联网持续模式等待整轮完成后朗读。
 
