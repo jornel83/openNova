@@ -14,11 +14,11 @@ export async function apply(ctx,config) {
     async resolveModel(){return this.info();}
     async *stream(options){
       // Harness also injects runtime-context messages with the user role.
-      const matches=text=>['hello','slow','stream','cancel-stream','stream-fail'].includes(text)||text.startsWith('background:');
+      const matches=text=>['hello','slow','stream','cancel-stream','stream-fail'].includes(text)||(text.startsWith('background:')||text.startsWith('agent:'));
       const inputIndex=options.messages.findLastIndex(m=>m.role==='user'&&m.content.some(b=>b.type==='text'&&matches(b.text)));
       const input=options.messages[inputIndex]?.content.find(b=>b.type==='text'&&matches(b.text))?.text||'';
-      if(input.startsWith('background:')&&!options.messages.slice(inputIndex+1).some(m=>m.role==='tool')){
-        const item={type:'function_call',id:'fc_'+randomUUID(),call_id:'call_'+randomUUID(),name:'background_task_start',namespace:'opennova',arguments:input.slice('background:'.length),status:'completed'};
+      if((input.startsWith('background:')||input.startsWith('agent:'))&&!options.messages.slice(inputIndex+1).some(m=>m.role==='tool')){
+        const item={type:'function_call',id:'fc_'+randomUUID(),call_id:'call_'+randomUUID(),name:input.startsWith('agent:')?'background_agent_start':'background_task_start',namespace:'opennova',arguments:input.slice(input.indexOf(':')+1),status:'completed'};
         yield* responseToolChunks({streamItems:async()=>({output:[item]})},options,config.allowedTools);return;
       }
       if(input==='slow')await setTimeout(30000,undefined,{signal:options.signal});

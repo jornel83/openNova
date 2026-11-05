@@ -1,11 +1,12 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {AgentTaskForm,AgentTaskDetail} from './agent-tasks.jsx';
 import {errorText} from './api.mjs';
 import {taskLabels,activeTask,taskReason,taskDuration,appendTaskLog} from './task-view.mjs';
 
 export function TaskCard({task,onOpen}){
   return <button type="button" className="task-card" onClick={()=>onOpen(task.id)}>
     <span className="task-card-title">{task.title}{task.unread&&<i aria-label="未读结果"/>}</span>
-    <span className={'task-status '+task.status}>{taskLabels[task.status]||task.status} · {taskDuration(task)}</span>
+    <span className={'task-status '+task.status}>{task.kind==='agent'?'Agent · ':''}{taskLabels[task.status]||task.status} · {taskDuration(task)}</span>
     <span className="task-card-hint">{taskReason(task)||'查看详情与日志'}<span aria-hidden="true"> →</span></span>
   </button>;
 }
@@ -16,7 +17,8 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
   const [filter,setFilter]=useState('all'),[page,setPage]=useState(null),[pageLimit,setPageLimit]=useState(50);
   const [runId,setRunId]=useState(null),[log,setLog]=useState(null),[clock,setClock]=useState(Date.now());
   const [form,setForm]=useState({title:'',command:'',workdir:'.',artifacts:'',minutes:'30'});
-  const submission=useRef(null),retryAction=useRef(null),logRef=useRef(null);
+  const submission=useRef(null),retryAction=useRef(null),logRef=useRef(null),selectedRef=useRef(selectedId);
+  selectedRef.current=selectedId;
   useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[]);
   useEffect(()=>{
     let stopped=false;
@@ -69,7 +71,7 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
         if(value.status!=='dispatched')throw Error(value.error||'open_failed');
         setNotice('已向本机应用发送打开请求。');
       }
-      if(value.task)setDetail(value);return value;
+      if(value.task&&value.task.id===selectedRef.current)setDetail(value);return value;
     }
     catch(e){if(name==='background-task-start'&&e.code!=='network')submission.current=null;setError(errorText(e));}finally{setPending(false);}
   }
@@ -85,7 +87,7 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
     const value=await action('background-task-retry',retryAction.current);if(value)setRunId(null);
   }
   const tasks=(page??summary)?.tasks??[];
-  const filtered=tasks.filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||['failed','interrupted'].includes(t.status)));
+  const filtered=tasks.filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||['failed','interrupted','waiting_input','paused'].includes(t.status)));
   return <section className="task-panel" aria-label="后台任务">
     <div className="task-heading"><h2>{selectedId?'任务详情':'后台任务'}</h2>{selectedId&&<button type="button" onClick={()=>onSelect(null)}>返回列表</button>}</div>
     {(error||connectionError)&&<p className="error" role="alert">{error||connectionError}</p>}
@@ -96,6 +98,7 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
       <div className="task-filters" aria-label="任务筛选">{[['all','全部'],['active','进行中'],['attention','需要关注']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div>
       <div className="task-list">{filtered.map(task=><TaskCard key={task.id} task={task} onOpen={onSelect}/>)}{!filtered.length&&<p className="task-empty">{tasks.length?'这里暂时没有任务。':'还没有后台任务。'}</p>}</div>
       {page?.hasMore&&<button className="task-more" type="button" onClick={()=>setPageLimit(n=>n+50)}>加载更多任务</button>}
+      <AgentTaskForm action={action} onSelect={onSelect} disabled={!online||pending}/>
       <details className="task-create"><summary>直接运行命令</summary>
         <form onSubmit={submit}>
           <label>任务名称<input required maxLength={160} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label>
@@ -115,16 +118,17 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
         {activeTask(detail.task)&&<button type="button" disabled={!online||pending||detail.task.status==='cancelling'} onClick={()=>void action('background-task-cancel',{id:detail.task.id,runId:detail.task.runId})}>{detail.task.status==='cancelling'?'正在停止…':'取消任务'}</button>}
         {detail.task.canRetry&&<button type="button" disabled={!online||pending} onClick={()=>void retry()}>重新执行</button>}
       </div>
-      <details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>
+      {detail.task.kind!=='agent'&&<details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>}
       <label className="task-attempt">执行记录<select value={logRun||''} onChange={e=>setRunId(e.target.value)}>{detail.runs.map(run=><option key={run.id} value={run.id}>第 {run.number} 次 · {taskLabels[run.status]}</option>)}</select></label>
+      {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>}
       <h4>运行日志</h4>
       {log?.earlier&&<p className="subtle">显示最近的日志；完整已保存日志可按下方路径查看。</p>}
       {(log?.truncated||currentRun?.job.truncated)&&<p className="subtle">日志已达到 8 MB 保存上限，后续输出仍会读取，命令继续执行。</p>}
       <pre className="task-log" aria-label="任务日志">{log?.text||'暂时没有输出。'}</pre>
       <details className="task-command"><summary>已保存日志的位置</summary><p>{currentRun?.job.logPath}</p></details>
       {currentRun?.job.exitCode!=null&&<p className="subtle">退出码：{currentRun.job.exitCode}</p>}
-      <h4>结果文件</h4>
-      {currentRun?.job.artifacts?.length?<ul className="task-artifacts">{currentRun.job.artifacts.map(file=><li key={file.id}><span>{file.name}</span>{file.status==='available'?<button type="button" disabled={!online||busy||pending} onClick={()=>void action('background-task-open',{id:detail.task.id,runId:currentRun.id,artifactId:file.id,actionId:crypto.randomUUID()})}>打开文件</button>:<small>未生成或不可读取</small>}</li>)}</ul>:<p className="subtle">{detail.task.artifacts.length?'任务结束后核对结果文件。':'未指定结果文件。执行结果可查看上方日志。'}</p>}
+      {detail.task.kind!=='agent'&&<><h4>结果文件</h4>
+      {currentRun?.job.artifacts?.length?<ul className="task-artifacts">{currentRun.job.artifacts.map(file=><li key={file.id}><span>{file.name}</span>{file.status==='available'?<button type="button" disabled={!online||busy||pending} onClick={()=>void action('background-task-open',{id:detail.task.id,runId:currentRun.id,artifactId:file.id,actionId:crypto.randomUUID()})}>打开文件</button>:<small>未生成或不可读取</small>}</li>)}</ul>:<p className="subtle">{detail.task.artifacts.length?'任务结束后核对结果文件。':'未指定结果文件。执行结果可查看上方日志。'}</p>}</>}
     </>:<p className="task-empty">正在读取任务…</p>}
   </section>;
 }

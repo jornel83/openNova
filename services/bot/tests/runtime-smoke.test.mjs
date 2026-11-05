@@ -7,6 +7,7 @@ import {createServer} from 'node:net';
 import {spawn} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 import {once} from 'node:events';
+import {git} from '../tasks/workspace.mjs';
 import {ROOT,requireBuiltHarness} from '../../runtime/sources.mjs';
 import {botSettings} from '../settings.mjs';
 import {runtimePatch} from '../configuration.mjs';
@@ -17,9 +18,10 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
   const sources=requireBuiltHarness(),home=mkdtempSync(join(tmpdir(),'nova-runtime-'));
   const port=await freePort();let webPort=await freePort();while(webPort===port)webPort=await freePort();
   const b={...botSettings({OPENNOVA_BOT_HOME:home,OPENNOVA_BOT_PORT:String(port),OPENNOVA_BOT_WEB_PORT:String(webPort)}),workspace:join(home,'workspace')};
-  mkdirSync(b.workspace);writeFileSync(b.tokenPath,'offline-fixture-token');
+  mkdirSync(b.workspace);await git(b.workspace,['init','-q']);await git(b.workspace,['config','user.name','Test']);await git(b.workspace,['config','user.email','test@localhost']);writeFileSync(join(b.workspace,'sample.txt'),'original\n');await git(b.workspace,['add','.']);await git(b.workspace,['commit','-qm','fixture']);writeFileSync(b.tokenPath,'offline-fixture-token');
   const patch=runtimePatch({bot:b,agent:{harnessRoot:sources.harnessRoot},webAssets:join(ROOT,'output/bot/web'),desktop:true});
   patch.find(row=>row.insert).insert.find(p=>p.id==='opennova-chatgpt').name=join(ROOT,'services/bot/tests/fixtures/mock-provider.mjs');
+  patch.find(row=>row.insert).insert.find(p=>p.id==='opennova-bot').config.agentProviderModule=join(ROOT,'services/bot/tests/fixtures/task-provider.mjs');
   const patchPath=join(home,'test.patch.json');writeFileSync(patchPath,JSON.stringify(patch));
   let child,logs='';
   async function stop(){
@@ -66,6 +68,15 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
   assert.equal((await api('/background-task',{id:task.id})).task.status,'running');
   await api('/background-task-cancel',{id:task.id,runId:task.runId});
   await waitFor(async()=>(await api('/background-task',{id:task.id})).task.status==='cancelled');
+  await api('/ask',{id:'agent-tool',text:'agent:'+JSON.stringify({title:'独立开发会话',goal:'FIXTURE_COMMAND REMEMBER_ALPHA',mode:'edit',timeoutMs:60000}),source:'web'});
+  await waitFor(async()=>(await api('/result',{id:'agent-tool'})).status==='completed');
+  const agentTask=await waitFor(async()=>{const {tasks}=await api('/background-tasks');return tasks.find(t=>t.requestId==='agent-tool'&&t.status==='running');});
+  await waitFor(async()=>{const d=await api('/background-task',{id:agentTask.id});return d.runs[0].jobs?.some(j=>j.tool==='task_command');});
+  assert.equal((await api('/snapshot')).busy,false);
+  await api('/ask',{id:'chat-during-agent',text:'hello',source:'voice'});
+  assert.equal((await waitFor(async()=>{const r=await api('/result',{id:'chat-during-agent'});return r.status==='completed'&&r;})).text,'offline:hello');
+  await api('/background-task-pause',{id:agentTask.id,runId:agentTask.runId});
+  await waitFor(async()=>(await api('/background-task',{id:agentTask.id})).task.status==='paused');
   assert.equal(health.outputMode,'hybrid-stream');
   await api('/ask',{id:'streamed',text:'stream',source:'voice'});
   const early=await waitFor(async()=>{const s=await api('/stream-snapshot',{id:'streamed'});return s.stream?.speechText&&s;});
@@ -89,4 +100,8 @@ test('included Harness hosts the tracked Bot plugin, shared requests, cancellati
   assert.equal((await api('/result',{id:'failed-stream'})).partialText,'第一句已经生成。');
   assert.ok((await api('/snapshot')).messages.some(m=>m.id==='first'));
   assert.equal((await api('/background-task',{id:task.id})).task.status,'cancelled');
+  assert.equal((await api('/background-task',{id:agentTask.id})).task.status,'paused');
+  await api('/background-task-continue',{id:agentTask.id,runId:agentTask.runId,actionId:'continue-after-restart',text:'RESUME_ONLY'});
+  const resumed=await waitFor(async()=>{const d=await api('/background-task',{id:agentTask.id});return d.task.status==='completed'&&d;});
+  assert.match(resumed.runs[1].result.text,/remembered=true/);
 });

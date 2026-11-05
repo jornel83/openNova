@@ -59,7 +59,7 @@ export async function apply(ctx,config) {
   const ops=new Operations({...config,events,getRequestId:()=>requests?.active?.id});
   recoverToolRuns(ops);
   resources.add(()=>ops.close());
-  const tasks=new TaskManager({ops,home:config.home,workspace:config.workspace,events});
+  const tasks=new TaskManager({ops,home:config.home,workspace:config.workspace,events,agentProviderModule:config.agentProviderModule,bridge:{url:config.url,tokenPath:config.tokenPath}});
   resources.add(()=>tasks.close());
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
@@ -160,7 +160,7 @@ export async function apply(ctx,config) {
   resources.assertOpen();
   const handle=createControls({ops,requests,tasks,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({backgroundTasks:{version:1,concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({backgroundTasks:{version:2,agentSessions:true,concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

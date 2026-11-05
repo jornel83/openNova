@@ -4,19 +4,21 @@ import {randomUUID,createHash} from 'node:crypto';
 import {mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync} from 'node:fs';
 import {join,resolve,relative,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {readJson,saveJson,readSteps} from './agent-files.mjs';
+import {workspaceDiff,applyWorkspace} from './workspace.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
-const live=new Set(['queued','running','cancelling']);
-const terminal=new Set(['completed','failed','cancelled','interrupted']);
+const live=new Set(['queued','running','pausing','cancelling']);
+const terminal=new Set(['completed','failed','cancelled','interrupted','paused','waiting_input']);
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const MAX_LOG=8*1024*1024;
 export class TaskManager {
-  constructor({ops,home,workspace,events,spawnWorker=spawn}){
-    Object.assign(this,{db:ops.db,workspace:realpathSync(workspace),events,spawnWorker});
+  constructor({ops,home,workspace,events,spawnWorker=spawn,agentProviderModule,agentPluginModule,bridge}){
+    Object.assign(this,{db:ops.db,workspace:realpathSync(workspace),events,spawnWorker,agentProviderModule,agentPluginModule,bridge});
     this.root=join(home,'tasks');mkdirSync(this.root,{recursive:true,mode:0o700});
     this.workers=new Map();this.closed=false;
-    for(const table of ['background_task','background_run','background_job'])
+    for(const table of ['background_task','background_run','background_job','background_message'])
       this.db.exec(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, body TEXT NOT NULL)`);
     // A restart never replays commands, including a launch whose delivery was
     // uncertain. A surviving supervisor will publish its cleanup receipt.
@@ -26,6 +28,7 @@ export class TaskManager {
       this.finish(task,run,job,receipt??{status:'interrupted',cleanupConfirmed:false,error:'host_interrupted_checking_cleanup'});
     }
     this.timer=setInterval(()=>this.tick(),250);this.timer.unref();
+    for(const task of this.all())if(task.kind==='agent')this.syncInbox(task);
     queueMicrotask(()=>this.tick());
   }
   row(kind,id){
@@ -41,7 +44,9 @@ export class TaskManager {
     const run=this.row('run',task.runId),job=this.row('job',run.jobId);
     return {...task,runNumber:run.number,startedAt:run.startedAt,finishedAt:run.finishedAt,exitCode:job.exitCode,error:job.error,
       cleanupConfirmed:job.cleanupConfirmed,logTruncated:job.truncated??false,
-      canRetry:['failed','cancelled','interrupted'].includes(task.status)&&job.cleanupConfirmed===true};
+      canContinue:task.kind==='agent'&&terminal.has(task.status)&&job.cleanupConfirmed===true,
+      question:job.agentResult?.question,
+      canRetry:task.kind!=='agent'&&['failed','cancelled','interrupted'].includes(task.status)&&job.cleanupConfirmed===true};
   }
   list({limit=50,offset=0}={}){
     if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(offset)||offset<0)throw Error('invalid_task_page');
@@ -50,6 +55,14 @@ export class TaskManager {
       activeCount:all.filter(t=>live.has(t.status)).length,unreadCount:all.filter(t=>t.unread).length,hasMore:offset+limit<all.length};
   }
   spec(input){
+    if(input.kind==='agent'){
+      const {title,goal,constraints='',mode='analysis',timeoutMs=1800000,maxSteps=32,tokenBudget=200000}=input;
+      if(typeof title!=='string'||!title.trim()||title.length>160||typeof goal!=='string'||!goal.trim()||goal.length>8000||typeof constraints!=='string'||constraints.length>4000)throw Error('invalid_agent_task');
+      if(!['analysis','edit'].includes(mode)||!Number.isInteger(maxSteps)||maxSteps<1||maxSteps>128||!Number.isInteger(tokenBudget)||tokenBudget<1000||tokenBudget>1000000)throw Error('invalid_agent_budget');
+      if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>7200000)throw Error('invalid_task_timeout');
+      return {kind:'agent',title:title.trim(),goal,constraints,mode,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[]};
+    }
+    if(input.kind&&input.kind!=='command')throw Error('invalid_task_kind');
     const {title,command}=input;
     if(typeof title!=='string'||!title.trim()||title.length>160||typeof command!=='string'||!command.trim()||command.length>16000||command.includes('\0'))throw Error('invalid_task_command');
     const workdir=input.workdir??'.';
@@ -72,23 +85,85 @@ export class TaskManager {
     if(old){const task=JSON.parse(old.body);if(task.fingerprint!==fingerprint)throw Error('task_id_conflict');return this.detail(id);}
     if(this.all().filter(t=>live.has(t.status)).length>=100)throw Error('task_queue_full');
     const now=Date.now(),task={id,...spec,fingerprint,requestId,source,status:'queued',createdAt:now,updatedAt:now,unread:false};
+    if(task.kind==='agent')task.sessionId='session-'+randomUUID().replaceAll('-','');
     this.atomic(()=>this.newRun(task,1));this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
   }
-  newRun(task,number){
-    const run={id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID()};
-    const job={id:run.jobId,runId:run.id,taskId:task.id,status:'queued',cleanupConfirmed:true,createdAt:run.createdAt};
+  newRun(task,number,instruction){
+    const run={id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction};
+    const job={id:run.jobId,runId:run.id,taskId:task.id,status:'queued',cleanupConfirmed:true,createdAt:run.createdAt,kind:task.kind??'command'};
     task.runId=run.id;task.status='queued';task.updatedAt=run.createdAt;task.unread=false;
     this.put('job',job);this.put('run',run);this.put('task',task);
   }
   detail(id){
     const task=this.row('task',id),runs=this.db.prepare("SELECT body FROM background_run WHERE json_extract(body,'$.taskId')=? ORDER BY rowid").all(id).map(r=>JSON.parse(r.body));
-    return {task:this.summary(task),runs:runs.map(run=>({...run,job:{...this.row('job',run.jobId),logPath:join(this.root,run.jobId,'output.log')}}))};
+    return {task:this.summary(task),runs:runs.map(run=>{
+      const job=this.row('job',run.jobId),directory=this.directory(job);
+      return {...run,job:{...job,logPath:join(directory,'output.log')},...(task.kind==='agent'?{
+        jobs:readSteps(directory),progress:readJson(join(directory,'progress.json')),result:job.agentResult??readJson(join(directory,'agent-result.json')),
+      }:{})};
+    }),...(task.kind==='agent'?{workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};
+  }
+  agentHome(task){return join(this.root,'agents',hash(task.id));}
+  messages(task){
+    const acks=readJson(join(this.agentHome(task),'delivered.json'),{});
+    return this.db.prepare("SELECT body FROM background_message WHERE json_extract(body,'$.taskId')=? ORDER BY rowid").all(task.id).map(r=>JSON.parse(r.body)).map(m=>({...m,delivery:acks[m.id]?.status==='sending'&&(!live.has(task.status)||acks[m.id].runId!==task.runId)?{...acks[m.id],status:'unknown'}:acks[m.id]??{status:'pending'}}));
+  }
+  syncInbox(task){saveJson(join(this.agentHome(task),'inbox.json'),this.messages(task).map(({delivery,...m})=>m));}
+  message({id,messageId,text}){
+    if(this.closed)throw Error('host_stopping');const task=this.row('task',id);
+    if(task.kind!=='agent'||!idOk(messageId)||typeof text!=='string'||!text.trim()||text.length>4000)throw Error('invalid_task_message');
+    const old=this.db.prepare('SELECT body FROM background_message WHERE id=?').get(messageId);
+    if(old){const m=JSON.parse(old.body);if(m.taskId!==id||m.text!==text)throw Error('task_id_conflict');return this.detail(id);}
+    if(this.messages(task).length>=100)throw Error('task_message_limit');
+    this.put('message',{id:messageId,taskId:id,text,createdAt:Date.now()});this.syncInbox(task);this.changed(task);return this.detail(id);
+  }
+  pause({id,runId}){
+    const task=this.row('task',id);if(task.kind!=='agent')throw Error('not_agent_task');
+    if(task.runId!==runId)throw Error('task_run_changed');
+    if(!live.has(task.status)||task.status==='cancelling')return this.detail(id);
+    const run=this.row('run',runId),job=this.row('job',run.jobId);
+    if(task.status==='queued')this.finish(task,run,job,{status:'paused',cleanupConfirmed:true});
+    else{
+      task.status='pausing';task.stopIntent='paused';this.atomic(()=>{this.put('task',task);this.put('run',{...run,status:'pausing'});this.put('job',{...job,status:'pausing'});});this.changed(task);
+      const child=this.workers.get(job.id);if(child?.connected)child.send({type:'stop',reason:'interrupted'},()=>{});
+    }
+    return this.detail(id);
+  }
+  continue({id,runId,actionId,text=''}){
+    if(this.closed)throw Error('host_stopping');if(this.applying)throw Error('task_workspace_busy');
+    const task=this.row('task',id);
+    if(!idOk(actionId)||typeof text!=='string'||text.length>4000)throw Error('invalid_task_message');
+    if(task.lastContinueAction===actionId){if(task.lastContinueText!==text)throw Error('task_id_conflict');return this.detail(id);}
+    if(task.runId!==runId)throw Error('task_run_changed');
+    if(!this.summary(task).canContinue)throw Error('task_retry_unavailable');
+    task.lastContinueAction=actionId;task.lastContinueText=text;delete task.stopIntent;
+    this.atomic(()=>this.newRun(task,this.row('run',runId).number+1,text||'请继续完成原任务，先核对已有结果。'));
+    this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
+  }
+  async diff({id,runId}){
+    const task=this.row('task',id);if(task.runId!==runId)throw Error('task_run_changed');
+    if(task.kind!=='agent'||!this.summary(task).canContinue||this.workers.size||this.applying)throw Error('task_workspace_busy');
+    this.applying=true;try{return await workspaceDiff(this.agentHome(task));}finally{this.applying=false;}
+  }
+  async applyChanges(body){
+    if(!idOk(body.actionId)||typeof body.revision!=='string')throw Error('invalid_task_id');
+    const task=this.row('task',body.id);if(task.runId!==body.runId)throw Error('task_run_changed');
+    if(task.kind!=='agent'||task.mode!=='edit'||!this.summary(task).canContinue||this.workers.size||this.applying)throw Error('task_workspace_busy');
+    this.applying=true;try{const application=await applyWorkspace(this.agentHome(task),body);return {...this.detail(task.id),application};}finally{this.applying=false;}
   }
   directory(job){return join(this.root,job.id);}
   receipt(job){
     try{
       const value=JSON.parse(readFileSync(join(this.directory(job),'result.json'),'utf8'));
       if(value.jobId!==job.id||value.runId!==job.runId||!terminal.has(value.status)||typeof value.cleanupConfirmed!=='boolean')return null;
+      if(job.kind==='agent'&&value.cleanupConfirmed){
+        for(const step of readSteps(this.directory(job)).filter(s=>s.tool==='task_command')){
+          const directory=join(this.directory(job),'commands',step.id);
+          if(!readJson(join(directory,'intent.json')))continue;
+          const receipt=readJson(join(directory,'result.json'));
+          if(receipt?.jobId!==step.id||receipt?.runId!==job.runId||!receipt?.cleanupConfirmed)return {...value,status:'interrupted',cleanupConfirmed:false,error:'task_command_cleanup_unconfirmed'};
+        }
+      }
       return value;
     }catch{return null;}
   }
@@ -96,9 +171,16 @@ export class TaskManager {
     // Stale workers can never overwrite a replacement Run.
     if(this.row('task',task.id).runId!==run.id)return;
     const finishedAt=result.finishedAt??Date.now();
-    const status=task.status==='cancelling'&&result.cleanupConfirmed?'cancelled':result.status;
+    const agentResult=job.kind==='agent'?readJson(join(this.directory(job),'agent-result.json')):null;
+    const status=task.stopIntent&&result.cleanupConfirmed?task.stopIntent:task.status==='cancelling'&&result.cleanupConfirmed?'cancelled':
+      result.status==='completed'&&job.kind==='agent'?(agentResult?.runId===run.id&&['completed','waiting_input'].includes(agentResult.status)?agentResult.status:'failed'):result.status;
+    if(job.kind==='agent'&&result.cleanupConfirmed)for(const step of readSteps(this.directory(job)).filter(s=>s.status==='running'||s.tool==='task_command')){
+      const receipt=step.tool==='task_command'?readJson(join(this.directory(job),'commands',step.id,'result.json')):null;
+      if(!receipt&&step.status!=='running')continue;
+      saveJson(join(this.directory(job),'steps',step.id+'.json'),{...step,...(receipt??{status:'interrupted',error:'tool_outcome_unknown'}),id:step.id,finishedAt});
+    }
     this.atomic(()=>{
-      this.put('job',{...job,...result,id:job.id,status,finishedAt,artifacts:this.artifacts(task,job)});
+      this.put('job',{...job,...result,id:job.id,status,finishedAt,agentResult,artifacts:this.artifacts(task,job)});
       this.put('run',{...run,status,finishedAt});
       task={...task,status,updatedAt:finishedAt,unread:true};this.put('task',task);
     });
@@ -125,7 +207,7 @@ export class TaskManager {
       }
       this.lastError=null;
       // One active project command. Unconfirmed cleanup also holds the slot.
-      if(this.workers.size||this.all().some(t=>['running','cancelling'].includes(t.status)||this.row('job',this.row('run',t.runId).jobId).cleanupConfirmed===false))return;
+      if(this.applying||this.workers.size||this.all().some(t=>['running','pausing','cancelling'].includes(t.status)||this.row('job',this.row('run',t.runId).jobId).cleanupConfirmed===false))return;
       const next=this.all().reverse().filter(t=>t.status==='queued').sort((a,b)=>this.row('run',a.runId).createdAt-this.row('run',b.runId).createdAt)[0];if(next)this.launch(next);
     }catch(error){this.lastError=String(error.message);}
   }
@@ -136,6 +218,16 @@ export class TaskManager {
     this.atomic(()=>{this.put('task',task);this.put('run',run);this.put('job',job);});this.changed(task);
     let child;
     try{
+      let command=task.command;
+      if(task.kind==='agent'){
+        this.syncInbox(task);
+        const specPath=join(this.directory(job),'agent-spec.json');
+        saveJson(specPath,{taskId:task.id,runId:run.id,runNumber:run.number,runDir:this.directory(job),agentHome:this.agentHome(task),source:task.cwd,
+          sessionId:task.sessionId,goal:task.goal,constraints:task.constraints,mode:task.mode,maxSteps:task.maxSteps,tokenBudget:task.tokenBudget,
+          timeoutMs:task.timeoutMs,instruction:run.instruction,bridge:this.bridge,providerModule:this.agentProviderModule,agentPluginModule:this.agentPluginModule});
+        const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
+        command=[process.execPath,fileURLToPath(new URL('./agent-runner.mjs',import.meta.url)),specPath].map(quote).join(' ');
+      }
       child=this.spawnWorker(process.execPath,[worker,this.directory(job)],{cwd:task.cwd,detached:true,
         env:{...process.env,NODE_OPTIONS:''},stdio:['ignore','ignore','ignore','ipc']});
       this.workers.set(job.id,child);
@@ -156,7 +248,7 @@ export class TaskManager {
         this.workers.delete(job.id);
         if(!this.closed)this.finish(this.row('task',task.id),run,job,{status:'failed',cleanupConfirmed:true,error:'worker_spawn_failed'});
       });
-      child.send({type:'start',spec:{jobId:job.id,runId:run.id,command:task.command,cwd:task.cwd,timeoutMs:task.timeoutMs,logLimit:MAX_LOG}},()=>{});
+      child.send({type:'start',spec:{jobId:job.id,runId:run.id,command,cwd:task.cwd,timeoutMs:task.timeoutMs,logLimit:MAX_LOG}},()=>{});
     }catch{
       this.workers.delete(job.id);this.finish(task,run,job,{status:'failed',cleanupConfirmed:!child?.pid,error:'worker_spawn_failed'});
     }
@@ -164,10 +256,11 @@ export class TaskManager {
   cancel(id,expectedRunId){
     const task=this.row('task',id),run=this.row('run',task.runId),job=this.row('job',run.jobId);
     if(expectedRunId&&expectedRunId!==task.runId)throw Error('task_run_changed');
+    if(['paused','waiting_input'].includes(task.status)){delete task.stopIntent;this.finish(task,run,job,{status:'cancelled',cleanupConfirmed:true});return this.detail(id);}
     if(!live.has(task.status))return this.detail(id);
     if(task.status==='queued')this.finish(task,run,job,{status:'cancelled',cleanupConfirmed:true});
     else{
-      task.status='cancelling';task.updatedAt=Date.now();
+      task.status='cancelling';task.stopIntent='cancelled';task.updatedAt=Date.now();
       this.atomic(()=>{this.put('task',task);this.put('run',{...run,status:'cancelling'});this.put('job',{...job,status:'cancelling'});});this.changed(task);
       const child=this.workers.get(job.id);if(child?.connected)child.send({type:'stop',reason:'cancelled'},()=>{});
     }
@@ -181,22 +274,27 @@ export class TaskManager {
     if(task.runId!==runId)throw Error('task_run_changed');
     if(!this.summary(task).canRetry)throw Error('task_retry_unavailable');
     const number=this.row('run',task.runId).number+1;
-    task.lastRetryAction=actionId;this.atomic(()=>this.newRun(task,number));this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
+    task.lastRetryAction=actionId;delete task.stopIntent;this.atomic(()=>this.newRun(task,number));this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
   }
   read({id,runId}){
     const task=this.row('task',id);if(task.runId===runId&&terminal.has(task.status)){task.unread=false;this.put('task',task);this.changed(task);}return this.summary(task);
   }
   jobFor(id,runId){const task=this.row('task',id),run=this.row('run',runId??task.runId);if(run.taskId!==id)throw Error('unknown_task');return this.row('job',run.jobId);}
-  log({id,runId,offset=0,limit=32768}){
+  log({id,runId,stepId,offset=0,limit=32768}){
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isInteger(limit)||limit<4||limit>65536)throw Error('invalid_log_range');
-    const job=this.jobFor(id,runId),path=join(this.directory(job),'output.log');let fd;
+    const job=this.jobFor(id,runId);let directory=this.directory(job);
+    if(stepId!==undefined){
+      if(!idOk(stepId)||job.kind!=='agent'||!readSteps(directory).some(s=>s.id===stepId&&s.tool==='task_command'))throw Error('unknown_task_step');
+      directory=join(directory,'commands',stepId);
+    }
+    const path=join(directory,'output.log'),receipt=stepId?readJson(join(directory,'result.json')):job;let fd;
     try{
       fd=openSync(path,'r');const size=statSync(path).size;
       if(offset>size)throw Error('invalid_log_range');
       const buffer=Buffer.alloc(Math.min(limit,size-offset));let length=readSync(fd,buffer,0,buffer.length,offset);
       // Keep the cursor on UTF-8 boundaries. The worker writes complete strings.
       if(offset+length<size&&length){const tail=Buffer.alloc(1);readSync(fd,tail,0,1,offset+length);if((tail[0]&0xc0)===0x80){length--;while(length>0&&(buffer[length]&0xc0)===0x80)length--;}}
-      return {text:buffer.subarray(0,length).toString('utf8'),offset,nextOffset:offset+length,size,hasMore:offset+length<size,runId:job.runId,truncated:job.truncated??false};
+      return {text:buffer.subarray(0,length).toString('utf8'),offset,nextOffset:offset+length,size,hasMore:offset+length<size,runId:job.runId,stepId,truncated:receipt?.truncated??false};
     }catch(error){if(error.code==='ENOENT')return {text:'',offset:0,nextOffset:0,size:0,hasMore:false,runId:job.runId};throw error;}
     finally{if(fd!==undefined)closeSync(fd);}
   }
@@ -214,7 +312,7 @@ export class TaskManager {
         const timer=setTimeout(resolveDone,6500);child.once('exit',()=>{clearTimeout(timer);resolveDone();});
         if(child.connected){child.send({type:'stop',reason:'interrupted'},()=>{});child.disconnect();}
       })));
-      for(const task of this.all())if(['running','cancelling'].includes(task.status)){
+      for(const task of this.all())if(['running','pausing','cancelling'].includes(task.status)){
         const run=this.row('run',task.runId),job=this.row('job',run.jobId);
         this.finish(task,run,job,this.receipt(job)??{status:'interrupted',cleanupConfirmed:false,error:'cleanup_unconfirmed'});
       }
@@ -223,7 +321,16 @@ export class TaskManager {
 }
 
 export function taskTools(tasks,getRequest){
+  const request=()=>{const r=getRequest();if(!r||r.cancelled||r.signal?.aborted)throw Error('bridge_request_required');return r;};
   return [
+    ['background_agent_start','创建独立后台 Agent 工作会话，完成分析或修改验证等多步骤任务。mode=analysis 只读；edit 在独立 Git 工作区修改。提交后立即结束本轮等待，主对话仍可交流。',{
+      title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},mode:{type:'string',enum:['analysis','edit']},timeoutMs:{type:'number'},maxSteps:{type:'number'},tokenBudget:{type:'number'},
+    },a=>{const r=request(),input={...a,kind:'agent'};return tasks.create({...input,id:hash(r.id+'\0'+JSON.stringify(tasks.spec(input)))},{requestId:r.id,source:'assistant'});}],
+    ['background_agent_message','向指定后台 Agent 任务补充要求。只表示消息已保存，不能声称正在执行的操作已经按新要求修改。',{id:{type:'string',required:true},text:{type:'string',required:true}},a=>tasks.message({...a,messageId:hash(request().id+'\0'+a.id+'\0'+a.text)})],
+    ['background_agent_pause','暂停后台 Agent，停止模型和工具，保留工作区和会话供继续。先查询当前 runId。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>{request();return tasks.pause(a);}],
+    ['background_agent_continue','用户要求继续、回答任务问题或接着修改时，沿用同一任务会话和工作目录创建新 Run。',{id:{type:'string',required:true},runId:{type:'string',required:true},text:{type:'string'}},a=>tasks.continue({...a,actionId:hash(request().id+'\0'+a.id+'\0'+a.runId+'\0'+(a.text||''))})],
+    ['background_agent_diff','查看已停止 Agent 任务的文件差异和版本，用于审阅或应用到原工程。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>tasks.diff(a)],
+    ['background_agent_apply','按用户明确要求将已检查的任务差异应用到原工程；必须使用刚查询的 revision，冲突时停止。',{id:{type:'string',required:true},runId:{type:'string',required:true},revision:{type:'string',required:true}},a=>tasks.applyChanges({...a,actionId:hash(request().id+'\0'+a.id+'\0'+a.revision)})],
     ['background_task_start','将明确的测试、构建或脚本交给后台执行，立即返回任务编号；随后结束本轮等待，用户可继续聊天。不要循环等待。命令在项目内目录运行，不能守护化；结束交流或停止播报不会取消任务。',{
       title:{type:'string',required:true},command:{type:'string',required:true},workdir:{type:'string'},timeoutMs:{type:'number'},artifacts:{type:'array',items:{type:'string'},description:'需要展示的结果文件，相对执行目录；最多 20 项。'},
     },args=>{
@@ -232,7 +339,7 @@ export function taskTools(tasks,getRequest){
     }],
     ['background_task_list','查询后台任务的真实状态与结果；不执行或重跑命令。',{},()=>tasks.list({limit:30})],
     ['background_task_status','查询指定后台任务及每次执行的实际结果。',{id:{type:'string',required:true}},a=>tasks.detail(a.id)],
-    ['background_task_log','读取后台任务日志，nextOffset 可用于继续读取。',{id:{type:'string',required:true},runId:{type:'string'},offset:{type:'number'}},a=>tasks.log(a)],
+    ['background_task_log','读取后台任务日志，nextOffset 可用于继续读取。',{id:{type:'string',required:true},runId:{type:'string'},stepId:{type:'string',description:'Agent 命令步骤编号，可读取该步骤的实时日志。'},offset:{type:'number'}},a=>tasks.log(a)],
     ['background_task_cancel','用户要求取消指定后台任务时使用；取消中不代表进程已停止，也不撤销已保存文件。',{id:{type:'string',required:true}},a=>tasks.cancel(a.id)],
     ['background_task_retry','用户明确要求重试已停止的失败、取消或中断任务时，创建新的执行尝试。先查询当前 runId。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>{
       const request=getRequest();if(!request||request.cancelled)throw Error('bridge_request_required');

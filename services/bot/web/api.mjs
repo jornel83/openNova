@@ -37,3 +37,5 @@ export class WebApi {
     return value;
   }
 }
+
+Object.assign(labels,{task_step_budget_exhausted:"本轮步骤预算已用尽，已保留进度；核对结果后可接续任务。",task_token_budget_exhausted:"本轮 Token 预算不足，已停止进一步调用；核对已有结果后可接续。",task_policy_not_ready:"任务规则未能加载，本轮未启动。请检查构建与任务日志。",unknown_task_step:"没有找到该命令步骤，请核对任务与执行记录。",invalid_agent_task:"请填写任务名称、目标和有效约束。",invalid_agent_budget:"请检查执行模式、步骤和 Token 预算。",invalid_task_message:"请填写有效的补充说明（最多 4000 字）。",task_message_limit:"补充记录已达上限。",task_workspace_busy:"请等待当前作业停止后再操作工作目录。",task_apply_conflict:"原工程中的文件已经变化，无法直接应用。请保留修改并手动核对。",task_diff_changed:"文件差异已变化，请重新查看差异后再应用。",task_diff_empty:"没有待应用的修改。",task_apply_unknown:"上次应用结果尚未确认，请先检查原工程文件。",task_apply_unsupported_file:"此修改包含符号链接或特殊文件，请在工作目录中手动审阅处理。",task_workspace_not_ready:"独立工作目录尚未准备完成。",workspace_preparation_interrupted:"工作目录准备曾中断，请核对目录与任务日志。"});

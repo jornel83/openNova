@@ -23,6 +23,12 @@ export function createControls({ops,requests,tasks,memory,health,memoryView,shut
     if(path==='/background-task-retry')return tasks.retry(body);
     if(path==='/background-task-read')return tasks.read(body);
     if(path==='/background-task-log')return tasks.log(body);
+    if(path==='/background-task-admission')return {foregroundBusy:!!(requests.active||requests.mutation)};
+    if(path==='/background-task-message')return tasks.message(body);
+    if(path==='/background-task-pause')return tasks.pause(body);
+    if(path==='/background-task-continue')return tasks.continue(body);
+    if(path==='/background-task-diff')return tasks.diff(body);
+    if(path==='/background-task-apply')return requests.exclusive(()=>tasks.applyChanges(body));
     if(path==='/background-task-open'){
       const file=tasks.artifact(body);
       return requests.exclusive(()=>documents.open({id:body.actionId,path:file.path}));
