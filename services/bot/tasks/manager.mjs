@@ -5,21 +5,23 @@ import {mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync
 import {join,resolve,relative,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {readJson,saveJson,readSteps} from './agent-files.mjs';
+import {TaskEventEngine} from './event-engine.mjs';
 import {workspaceDiff,applyWorkspace} from './workspace.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
 const live=new Set(['queued','running','pausing','cancelling']);
-const terminal=new Set(['completed','failed','cancelled','interrupted','paused','waiting_input']);
+const terminal=new Set(['completed','failed','cancelled','interrupted','paused','waiting_input','waiting_event']);
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const MAX_LOG=8*1024*1024;
 export class TaskManager {
-  constructor({ops,home,workspace,events,spawnWorker=spawn,agentProviderModule,agentPluginModule,bridge}){
+  constructor({ops,home,workspace,events,spawnWorker=spawn,agentProviderModule,agentPluginModule,bridge,eventOptions}){
     Object.assign(this,{db:ops.db,workspace:realpathSync(workspace),events,spawnWorker,agentProviderModule,agentPluginModule,bridge});
     this.root=join(home,'tasks');mkdirSync(this.root,{recursive:true,mode:0o700});
     this.workers=new Map();this.closed=false;
     for(const table of ['background_task','background_run','background_job','background_message'])
       this.db.exec(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, body TEXT NOT NULL)`);
+    this.automation=new TaskEventEngine(this,eventOptions);
     // A restart never replays commands, including a launch whose delivery was
     // uncertain. A surviving supervisor will publish its cleanup receipt.
     for(const task of this.all())if(live.has(task.status)&&task.status!=='queued'){
@@ -54,21 +56,22 @@ export class TaskManager {
     return {tasks:all.slice(offset,offset+limit).map(t=>this.summary(t)),total:all.length,problem:this.lastError?'task_scheduler_failed':null,
       activeCount:all.filter(t=>live.has(t.status)).length,unreadCount:all.filter(t=>t.unread).length,hasMore:offset+limit<all.length};
   }
-  spec(input){
+  spec(input,root=this.workspace){
     if(input.kind==='agent'){
-      const {title,goal,constraints='',mode='analysis',timeoutMs=1800000,maxSteps=32,tokenBudget=200000}=input;
+      const {title,goal,constraints='',mode='analysis',timeoutMs=1800000,maxSteps=32,tokenBudget=200000,autoContinue=0}=input;
+      if(!Number.isInteger(autoContinue)||autoContinue<0||autoContinue>5||autoContinue&&mode!=='edit')throw Error('invalid_event_budget');
       if(typeof title!=='string'||!title.trim()||title.length>160||typeof goal!=='string'||!goal.trim()||goal.length>8000||typeof constraints!=='string'||constraints.length>4000)throw Error('invalid_agent_task');
       if(!['analysis','edit'].includes(mode)||!Number.isInteger(maxSteps)||maxSteps<1||maxSteps>128||!Number.isInteger(tokenBudget)||tokenBudget<1000||tokenBudget>1000000)throw Error('invalid_agent_budget');
       if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>7200000)throw Error('invalid_task_timeout');
-      return {kind:'agent',title:title.trim(),goal,constraints,mode,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[]};
+      return {kind:'agent',title:title.trim(),goal,constraints,mode,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[],...(autoContinue?{autoContinue}:{})};
     }
     if(input.kind&&input.kind!=='command')throw Error('invalid_task_kind');
     const {title,command}=input;
     if(typeof title!=='string'||!title.trim()||title.length>160||typeof command!=='string'||!command.trim()||command.length>16000||command.includes('\0'))throw Error('invalid_task_command');
     const workdir=input.workdir??'.';
     if(typeof workdir!=='string'||!workdir||workdir.includes('\0'))throw Error('invalid_task_workdir');
-    let cwd;try{cwd=realpathSync(resolve(this.workspace,workdir));}catch{throw Error('invalid_task_workdir');}
-    const rel=relative(this.workspace,cwd);
+    let cwd;try{cwd=realpathSync(resolve(root,workdir));}catch{throw Error('invalid_task_workdir');}
+    const rel=relative(root,cwd);
     if(rel==='..'||rel.startsWith('../')||isAbsolute(rel)||!statSync(cwd).isDirectory())throw Error('invalid_task_workdir');
     const timeoutMs=input.timeoutMs??1800000;
     if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>7200000)throw Error('invalid_task_timeout');
@@ -76,20 +79,21 @@ export class TaskManager {
     if(!Array.isArray(artifacts)||artifacts.length>20||artifacts.some(p=>typeof p!=='string'||!p||p.length>1000||p.includes('\0')||isAbsolute(p)||p.split(/[\\/]/).includes('..')))throw Error('invalid_task_artifacts');
     return {title:title.trim(),command,cwd,timeoutMs,artifacts};
   }
-  create(input,{requestId,source='web'}={}){
+  create(input,{requestId,source='web',check}={}){
     if(this.closed)throw Error('host_stopping');
-    const spec=this.spec(input),id=input.id;
+    const spec=this.spec(input,check?.workspace??this.workspace),id=input.id;
     if(!idOk(id))throw Error('invalid_task_id');
     const fingerprint=hash(JSON.stringify(spec));
     const old=this.db.prepare('SELECT body FROM background_task WHERE id=?').get(id);
     if(old){const task=JSON.parse(old.body);if(task.fingerprint!==fingerprint)throw Error('task_id_conflict');return this.detail(id);}
     if(this.all().filter(t=>live.has(t.status)).length>=100)throw Error('task_queue_full');
     const now=Date.now(),task={id,...spec,fingerprint,requestId,source,status:'queued',createdAt:now,updatedAt:now,unread:false};
+    if(check)Object.assign(task,{parentTaskId:check.taskId,parentRunId:check.runId});
     if(task.kind==='agent')task.sessionId='session-'+randomUUID().replaceAll('-','');
-    this.atomic(()=>this.newRun(task,1));this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
+    this.atomic(()=>{this.newRun(task,1);if(task.autoContinue)this.automation.add({id:'check-'+hash(task.id).slice(0,40),taskId:task.id,type:'check',enabled:true,maxRuns:task.autoContinue,instruction:'根据本轮测试或构建的真实结果继续原任务。失败时在原任务范围内分析修复，成功时汇总。不要重复已完成或状态不明的操作，不自动应用到原工程。'},{atomic:false});});this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
   }
-  newRun(task,number,instruction){
-    const run={id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction};
+  newRun(task,number,instruction,extra={}){
+    const run={id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
     const job={id:run.jobId,runId:run.id,taskId:task.id,status:'queued',cleanupConfirmed:true,createdAt:run.createdAt,kind:task.kind??'command'};
     task.runId=run.id;task.status='queued';task.updatedAt=run.createdAt;task.unread=false;
     this.put('job',job);this.put('run',run);this.put('task',task);
@@ -101,8 +105,25 @@ export class TaskManager {
       return {...run,job:{...job,logPath:join(directory,'output.log')},...(task.kind==='agent'?{
         jobs:readSteps(directory),progress:readJson(join(directory,'progress.json')),result:job.agentResult??readJson(join(directory,'agent-result.json')),
       }:{})};
-    }),...(task.kind==='agent'?{workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};
+    }),...(task.kind==='agent'?{automation:this.automation.view(task),checks:this.all().filter(t=>t.parentTaskId===id).map(t=>this.summary(t)),workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};
   }
+  ruleCreate(body){this.automation.add(body);this.changed(this.row('task',body.taskId));return this.detail(body.taskId);}
+  ruleToggle(body){const rule=this.automation.setEnabled(body);return this.detail(rule.taskId);}
+  automationPause(body){this.automation.setPaused(body);return this.detail(body.id);}
+  createCheck({taskId,runId,stepId,title,command,workdir='.',timeoutMs=600000}){
+    if(!idOk(stepId))throw Error('invalid_task_id');
+    const task=this.row('task',taskId);
+    if(task.runId!==runId)throw Error('task_run_changed');
+    if(task.kind!=='agent'||task.mode!=='edit'||task.status!=='running'||!this.automation.canCheck(taskId))throw Error('task_check_unavailable');
+    if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000)throw Error('invalid_task_timeout');
+    const workspace=readJson(join(this.agentHome(task),'workspace.json'));
+    if(!workspace)throw Error('task_workspace_not_ready');
+    const id='check-'+hash(runId+'\0'+stepId).slice(0,48);
+    const existing=this.all().find(t=>t.parentRunId===runId&&t.id!==id);
+    if(existing)throw Error('task_check_already_submitted');
+    return this.create({id,title:title||'任务验证',command,workdir,timeoutMs},{source:'agent-check',check:{taskId,runId,workspace:workspace.path}});
+  }
+  stopChecks(task){for(const child of this.all().filter(t=>t.parentTaskId===task.id&&live.has(t.status)))this.cancel(child.id,child.runId);}
   agentHome(task){return join(this.root,'agents',hash(task.id));}
   messages(task){
     const acks=readJson(join(this.agentHome(task),'delivered.json'),{});
@@ -120,7 +141,9 @@ export class TaskManager {
   pause({id,runId}){
     const task=this.row('task',id);if(task.kind!=='agent')throw Error('not_agent_task');
     if(task.runId!==runId)throw Error('task_run_changed');
-    if(!live.has(task.status)||task.status==='cancelling')return this.detail(id);
+    task.automationPaused=true;this.put('task',task);this.stopChecks(task);
+    if(!live.has(task.status)){if(task.status==='waiting_event'){const r=this.row('run',runId);this.finish(task,r,this.row('job',r.jobId),{status:'paused',cleanupConfirmed:true});}this.changed(task);return this.detail(id);}
+    if(task.status==='cancelling')return this.detail(id);
     const run=this.row('run',runId),job=this.row('job',run.jobId);
     if(task.status==='queued')this.finish(task,run,job,{status:'paused',cleanupConfirmed:true});
     else{
@@ -171,9 +194,16 @@ export class TaskManager {
     // Stale workers can never overwrite a replacement Run.
     if(this.row('task',task.id).runId!==run.id)return;
     const finishedAt=result.finishedAt??Date.now();
-    const agentResult=job.kind==='agent'?readJson(join(this.directory(job),'agent-result.json')):null;
+    let agentResult=job.kind==='agent'?readJson(join(this.directory(job),'agent-result.json')):null;
+    // The durable check receipt wins if HTTP delivery was lost after acceptance.
+    // Interrupted Runs still require manual review; never replay uncertain work.
+    const check=job.kind==='agent'&&this.all().find(t=>t.parentRunId===run.id);
+    if(check&&result.cleanupConfirmed&&['completed','failed'].includes(result.status)&&agentResult?.status!=='waiting_input'){
+      agentResult={...agentResult,runId:run.id,status:'waiting_event',awaiting:{taskId:check.id,runId:check.runId},text:agentResult?.text||'检查已提交，等待结果事件接续。'};
+      result={...result,status:'completed'};
+    }
     const status=task.stopIntent&&result.cleanupConfirmed?task.stopIntent:task.status==='cancelling'&&result.cleanupConfirmed?'cancelled':
-      result.status==='completed'&&job.kind==='agent'?(agentResult?.runId===run.id&&['completed','waiting_input'].includes(agentResult.status)?agentResult.status:'failed'):result.status;
+      result.status==='completed'&&job.kind==='agent'?(agentResult?.runId===run.id&&['completed','waiting_input','waiting_event'].includes(agentResult.status)?agentResult.status:'failed'):result.status;
     if(job.kind==='agent'&&result.cleanupConfirmed)for(const step of readSteps(this.directory(job)).filter(s=>s.status==='running'||s.tool==='task_command')){
       const receipt=step.tool==='task_command'?readJson(join(this.directory(job),'commands',step.id,'result.json')):null;
       if(!receipt&&step.status!=='running')continue;
@@ -183,6 +213,7 @@ export class TaskManager {
       this.put('job',{...job,...result,id:job.id,status,finishedAt,agentResult,artifacts:this.artifacts(task,job)});
       this.put('run',{...run,status,finishedAt});
       task={...task,status,updatedAt:finishedAt,unread:true};this.put('task',task);
+      this.automation.recordCompletion(task,{...run,status},{...job,...result,status});
     });
     this.changed(task);
   }
@@ -205,7 +236,7 @@ export class TaskManager {
           if(receipt&&(live.has(task.status)||receipt.cleanupConfirmed!==job.cleanupConfirmed||receipt.error!==job.error))this.finish(task,run,job,receipt);
         }
       }
-      this.lastError=null;
+      this.automation.tick();this.lastError=null;
       // One active project command. Unconfirmed cleanup also holds the slot.
       if(this.applying||this.workers.size||this.all().some(t=>['running','pausing','cancelling'].includes(t.status)||this.row('job',this.row('run',t.runId).jobId).cleanupConfirmed===false))return;
       const next=this.all().reverse().filter(t=>t.status==='queued').sort((a,b)=>this.row('run',a.runId).createdAt-this.row('run',b.runId).createdAt)[0];if(next)this.launch(next);
@@ -213,6 +244,7 @@ export class TaskManager {
   }
   launch(task){
     const run=this.row('run',task.runId),job=this.row('job',run.jobId),startedAt=Date.now();
+    if(run.trigger){const rule=this.automation.find('rule',run.trigger.ruleId);if(task.automationPaused||!rule?.enabled||rule.expiresAt<=this.automation.now()){task.automationPaused=true;this.finish(task,run,job,{status:'paused',cleanupConfirmed:true});return;}}
     try{mkdirSync(this.directory(job),{mode:0o700});}catch{this.finish(task,run,job,{status:'failed',error:'task_directory_failed',cleanupConfirmed:true});return;}
     task={...task,status:'running',updatedAt:startedAt};run.status='running';run.startedAt=startedAt;job.status='running';job.cleanupConfirmed=false;
     this.atomic(()=>{this.put('task',task);this.put('run',run);this.put('job',job);});this.changed(task);
@@ -224,7 +256,7 @@ export class TaskManager {
         const specPath=join(this.directory(job),'agent-spec.json');
         saveJson(specPath,{taskId:task.id,runId:run.id,runNumber:run.number,runDir:this.directory(job),agentHome:this.agentHome(task),source:task.cwd,
           sessionId:task.sessionId,goal:task.goal,constraints:task.constraints,mode:task.mode,maxSteps:task.maxSteps,tokenBudget:task.tokenBudget,
-          timeoutMs:task.timeoutMs,instruction:run.instruction,bridge:this.bridge,providerModule:this.agentProviderModule,agentPluginModule:this.agentPluginModule});
+          timeoutMs:task.timeoutMs,instruction:run.instruction,eventContext:run.eventContext,checksEnabled:this.automation.canCheck(task.id),bridge:this.bridge,providerModule:this.agentProviderModule,agentPluginModule:this.agentPluginModule});
         const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
         command=[process.execPath,fileURLToPath(new URL('./agent-runner.mjs',import.meta.url)),specPath].map(quote).join(' ');
       }
@@ -256,7 +288,8 @@ export class TaskManager {
   cancel(id,expectedRunId){
     const task=this.row('task',id),run=this.row('run',task.runId),job=this.row('job',run.jobId);
     if(expectedRunId&&expectedRunId!==task.runId)throw Error('task_run_changed');
-    if(['paused','waiting_input'].includes(task.status)){delete task.stopIntent;this.finish(task,run,job,{status:'cancelled',cleanupConfirmed:true});return this.detail(id);}
+    if(task.kind==='agent'){task.automationPaused=true;this.put('task',task);this.stopChecks(task);}
+    if(['paused','waiting_input','waiting_event'].includes(task.status)){delete task.stopIntent;this.finish(task,run,job,{status:'cancelled',cleanupConfirmed:true});return this.detail(id);}
     if(!live.has(task.status))return this.detail(id);
     if(task.status==='queued')this.finish(task,run,job,{status:'cancelled',cleanupConfirmed:true});
     else{
@@ -308,6 +341,7 @@ export class TaskManager {
     if(this.closing)return this.closing;
     this.closed=true;clearInterval(this.timer);
     return this.closing=(async()=>{
+      await this.automation.close();
       await Promise.all([...this.workers.values()].map(child=>new Promise(resolveDone=>{
         const timer=setTimeout(resolveDone,6500);child.once('exit',()=>{clearTimeout(timer);resolveDone();});
         if(child.connected){child.send({type:'stop',reason:'interrupted'},()=>{});child.disconnect();}
@@ -323,8 +357,10 @@ export class TaskManager {
 export function taskTools(tasks,getRequest){
   const request=()=>{const r=getRequest();if(!r||r.cancelled||r.signal?.aborted)throw Error('bridge_request_required');return r;};
   return [
+    ['background_agent_rule','只有用户明确要求时，为指定任务配置事件接续规则。type=check/task/file/github；source 必须按类型精确指定。默认停用，enabled=true 表示用户授权启用。',{taskId:{type:'string',required:true},type:{type:'string',enum:['check','task','file','github'],required:true},instruction:{type:'string',required:true},source:{type:'object',additionalProperties:false,properties:{taskId:{type:'string'},runId:{type:'string'},paths:{type:'array',items:{type:'string'}},repository:{type:'string'},number:{type:'integer'},authors:{type:'array',items:{type:'string'}}},description:'task: taskId/runId；file: paths；github: repository/number/authors（仅 /opennova 前缀评论）。'},maxRuns:{type:'number'},ttlHours:{type:'number'},enabled:{type:'boolean'}},a=>tasks.ruleCreate({...a,id:hash(request().id+'\0rule\0'+JSON.stringify(a))})],
+    ['background_agent_automation','按用户要求暂停或恢复该任务的自动接续。暂停自动接续不停止已运行的轮次；要立即停止请用 background_agent_pause。',{id:{type:'string',required:true},paused:{type:'boolean',required:true}},a=>{request();return tasks.automationPause(a);}],
     ['background_agent_start','创建独立后台 Agent 工作会话，完成分析或修改验证等多步骤任务。mode=analysis 只读；edit 在独立 Git 工作区修改。提交后立即结束本轮等待，主对话仍可交流。',{
-      title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},mode:{type:'string',enum:['analysis','edit']},timeoutMs:{type:'number'},maxSteps:{type:'number'},tokenBudget:{type:'number'},
+      title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},mode:{type:'string',enum:['analysis','edit']},timeoutMs:{type:'number'},maxSteps:{type:'number'},tokenBudget:{type:'number'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
     },a=>{const r=request(),input={...a,kind:'agent'};return tasks.create({...input,id:hash(r.id+'\0'+JSON.stringify(tasks.spec(input)))},{requestId:r.id,source:'assistant'});}],
     ['background_agent_message','向指定后台 Agent 任务补充要求。只表示消息已保存，不能声称正在执行的操作已经按新要求修改。',{id:{type:'string',required:true},text:{type:'string',required:true}},a=>tasks.message({...a,messageId:hash(request().id+'\0'+a.id+'\0'+a.text)})],
     ['background_agent_pause','暂停后台 Agent，停止模型和工具，保留工作区和会话供继续。先查询当前 runId。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>{request();return tasks.pause(a);}],

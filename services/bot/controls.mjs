@@ -24,6 +24,10 @@ export function createControls({ops,requests,tasks,memory,health,memoryView,shut
     if(path==='/background-task-read')return tasks.read(body);
     if(path==='/background-task-log')return tasks.log(body);
     if(path==='/background-task-admission')return {foregroundBusy:!!(requests.active||requests.mutation)};
+    if(path==='/background-task-rule')return tasks.ruleCreate(body);
+    if(path==='/background-task-rule-toggle')return tasks.ruleToggle(body);
+    if(path==='/background-task-automation')return tasks.automationPause(body);
+    if(path==='/background-task-check')return tasks.createCheck(body);
     if(path==='/background-task-message')return tasks.message(body);
     if(path==='/background-task-pause')return tasks.pause(body);
     if(path==='/background-task-continue')return tasks.continue(body);

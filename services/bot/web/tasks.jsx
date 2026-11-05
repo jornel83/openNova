@@ -63,7 +63,7 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
     };
     void refresh();return()=>{stopped=true;clearTimeout(timer);};
   },[selectedId,logRun]);
-  async function action(name,body){
+  async function action(name,body,{rethrow=false}={}){
     setPending(true);setError('');setNotice('');
     try{
       const value=await api.call(name,body);
@@ -73,7 +73,7 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
       }
       if(value.task&&value.task.id===selectedRef.current)setDetail(value);return value;
     }
-    catch(e){if(name==='background-task-start'&&e.code!=='network')submission.current=null;setError(errorText(e));}finally{setPending(false);}
+    catch(e){if(name==='background-task-start'&&e.code!=='network')submission.current=null;setError(errorText(e));if(rethrow)throw e;}finally{setPending(false);}
   }
   async function submit(event){
     event.preventDefault();
@@ -87,7 +87,7 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
     const value=await action('background-task-retry',retryAction.current);if(value)setRunId(null);
   }
   const tasks=(page??summary)?.tasks??[];
-  const filtered=tasks.filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||['failed','interrupted','waiting_input','paused'].includes(t.status)));
+  const filtered=tasks.filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||['failed','interrupted','waiting_input','waiting_event','paused'].includes(t.status)));
   return <section className="task-panel" aria-label="后台任务">
     <div className="task-heading"><h2>{selectedId?'任务详情':'后台任务'}</h2>{selectedId&&<button type="button" onClick={()=>onSelect(null)}>返回列表</button>}</div>
     {(error||connectionError)&&<p className="error" role="alert">{error||connectionError}</p>}
@@ -118,9 +118,9 @@ export function TaskPanel({api,summary,selectedId,onSelect,online,busy}){
         {activeTask(detail.task)&&<button type="button" disabled={!online||pending||detail.task.status==='cancelling'} onClick={()=>void action('background-task-cancel',{id:detail.task.id,runId:detail.task.runId})}>{detail.task.status==='cancelling'?'正在停止…':'取消任务'}</button>}
         {detail.task.canRetry&&<button type="button" disabled={!online||pending} onClick={()=>void retry()}>重新执行</button>}
       </div>
-      {detail.task.kind!=='agent'&&<details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>}
+      {detail.task.kind!=='agent'&&<details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>任务 ID：{detail.task.id}</p><p>执行 ID：{detail.task.runId}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>}
       <label className="task-attempt">执行记录<select value={logRun||''} onChange={e=>setRunId(e.target.value)}>{detail.runs.map(run=><option key={run.id} value={run.id}>第 {run.number} 次 · {taskLabels[run.status]}</option>)}</select></label>
-      {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>}
+      {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy} onSelect={onSelect}/>}
       <h4>运行日志</h4>
       {log?.earlier&&<p className="subtle">显示最近的日志；完整已保存日志可按下方路径查看。</p>}
       {(log?.truncated||currentRun?.job.truncated)&&<p className="subtle">日志已达到 8 MB 保存上限，后续输出仍会读取，命令继续执行。</p>}

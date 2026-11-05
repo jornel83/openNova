@@ -44,6 +44,8 @@ pnpm start
 
 第二阶段支持独立 Agent 工作任务：在仓库外 Git 工作目录中分析、修改并验证，后台执行时仍可继续交流；支持补充要求、暂停、接续原会话、查看执行步骤和文件差异，再显式应用到原工程。使用方法与边界见 [独立 Agent 任务验收](docs/research/opennova-agent-tasks-verification.md)。
 
+第三阶段支持事件驱动接续：在明确启用、次数和期限受限的规则下，测试／构建完成、指定文件变化或 GitHub 讨论评论可以接续同一任务。面板提供暂停、来源与消费记录，文件修改仍需审阅后应用。使用方式见 [事件接续说明与验收](docs/research/opennova-event-continuation-verification.md)。
+
 ## 工程结构
 
 | 目录 | 职责 |

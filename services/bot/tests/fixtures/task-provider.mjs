@@ -20,7 +20,15 @@ export async function apply(ctx,config){
       if(prompt.includes('RESUME_ONLY')){yield* responseToolChunks({streamItems:async()=>({output:[{type:'message',id:'msg_'+randomUUID(),role:'assistant',status:'completed',content:[{type:'output_text',text:'resumed; remembered='+history.includes('REMEMBER_ALPHA'),annotations:[]}]}]})},options,config.allowedTools);return;}
       if(prompt.includes('FIXTURE_DELAY'))await delay(1200,undefined,{signal:options.signal});
       if(prompt.includes('FIXTURE_SLOW'))await delay(30000,undefined,{signal:options.signal});
-      if(prompt.includes('FIXTURE_COMMAND')&&!prior){tool='task_command';args={command:"node -e \"require('fs').writeFileSync('started',String(process.pid));console.log('command running');setInterval(()=>{},1000)\"",timeoutMs:60000};}
+      if(prompt.includes('FIXTURE_EVENT_SLOW_CHECK')&&!prior){tool='task_check';args={command:"node -e \"require('fs').writeFileSync('check-pid',String(process.pid));setInterval(()=>{},1000)\"",timeoutMs:60000};}
+      else if(prompt.includes('FIXTURE_EVENT_LOOP')){
+        const event=prompt.includes('"type":"command.finished"');
+        const failed=event&&prompt.includes('"status":"failed"');
+        const command="node -e \"if(require('fs').readFileSync('sample.txt','utf8')!=='updated\\n')process.exit(7);console.log('event workflow verified')\"";
+        const actions=failed?[['read',{file_path:'sample.txt'}],['write',{file_path:'sample.txt',content:'updated\n'}],['task_check',{command}]]:event?[]:[['task_check',{command}]];
+        [tool,args]=actions[prior]||[];
+      }
+      else if(prompt.includes('FIXTURE_COMMAND')&&!prior){tool='task_command';args={command:"node -e \"require('fs').writeFileSync('started',String(process.pid));console.log('command running');setInterval(()=>{},1000)\"",timeoutMs:60000};}
       else if(prompt.includes('FIXTURE_INVALID')&&!prior){tool='task_command';args={command:'true',workdir:'../outside'};}
       else if(prompt.includes('FIXTURE_QUESTION')&&!prior){tool='task_question';args={question:'需要哪种颜色？'};}
       else if(prompt.includes('FIXTURE_EDIT')){

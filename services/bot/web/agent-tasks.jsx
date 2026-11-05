@@ -1,12 +1,13 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {EventRules} from './event-rules.jsx';
 import {errorText} from './api.mjs';
 import {activeTask,taskLabels,appendTaskLog} from './task-view.mjs';
-const fresh={title:'',goal:'',constraints:'',mode:'analysis',minutes:30,maxSteps:32,tokenBudget:200000};
+const fresh={title:'',goal:'',constraints:'',mode:'analysis',minutes:30,maxSteps:32,tokenBudget:200000,autoContinue:0};
 export function AgentTaskForm({action,onSelect,disabled}){
   const [form,setForm]=useState(fresh),submission=useRef(null);
   const field=(key,value)=>setForm({...form,[key]:value});
   async function submit(e){
-    e.preventDefault();submission.current??={...form,id:crypto.randomUUID(),kind:'agent',timeoutMs:Number(form.minutes)*60000,maxSteps:Number(form.maxSteps),tokenBudget:Number(form.tokenBudget)};
+    e.preventDefault();submission.current??={...form,id:crypto.randomUUID(),kind:'agent',timeoutMs:Number(form.minutes)*60000,maxSteps:Number(form.maxSteps),tokenBudget:Number(form.tokenBudget),autoContinue:form.mode==='edit'?Number(form.autoContinue):0};
     const result=await action('background-task-start',submission.current);
     if(result){submission.current=null;setForm(fresh);onSelect(result.task.id);}
   }
@@ -16,13 +17,14 @@ export function AgentTaskForm({action,onSelect,disabled}){
     <label>约束与验收要求<textarea rows={3} maxLength={4000} value={form.constraints} onChange={e=>field('constraints',e.target.value)}/></label>
     <label>工作模式<select value={form.mode} onChange={e=>field('mode',e.target.value)}><option value="analysis">只读分析</option><option value="edit">修改并验证</option></select></label>
     <p className="subtle">在独立工作目录中执行。修改完成后可查看差异，再应用到原工程。</p>
+    {form.mode==='edit'&&<><label className="task-check"><input type="checkbox" checked={!!form.autoContinue} onChange={e=>field('autoContinue',e.target.checked?2:0)}/>测试完成后自动接续</label>{!!form.autoContinue&&<label>最多自动接续次数<input required type="number" min={1} max={5} value={form.autoContinue} onChange={e=>field('autoContinue',Number(e.target.value))}/></label>}<p className="subtle">默认关闭。启用后允许 Agent 提交后台验证，结果到达时按规则接续；规则有效期 24 小时。</p></>}
     <label>最长运行时间（分钟）<input type="number" required min={1} max={120} value={form.minutes} onChange={e=>field('minutes',e.target.value)}/></label>
     <details><summary>执行预算</summary><label>最多模型步骤<input required type="number" min={1} max={128} value={form.maxSteps} onChange={e=>field('maxSteps',e.target.value)}/></label><label>Token 预算<input required type="number" min={1000} max={1000000} value={form.tokenBudget} onChange={e=>field('tokenBudget',e.target.value)}/></label></details>
     <button className="task-primary" disabled={disabled} type="submit">{submission.current?'重试原任务提交':'提交 Agent 任务'}</button>
   </form></details>;
 }
 const deliveryLabels={pending:'待处理',sending:'正在提交',delivered:'已接收',unknown:'接收情况待核对'};
-export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy}){
+export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSelect}){
   const {task}=detail,[text,setText]=useState(''),[diff,setDiff]=useState(null),[applied,setApplied]=useState(false);
   const actions=useRef(new Map());
   useEffect(()=>{setDiff(null);setApplied(false);},[task.runId]);
@@ -36,12 +38,13 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy}){
     <details className="task-command" open><summary>目标与约束</summary><p>{task.goal}</p>{task.constraints&&<p>{task.constraints}</p>}</details>
     {currentRun?.instruction&&<p className="task-intro">本轮接续要求：{currentRun.instruction}</p>}
     {task.question&&<p className="task-question" role="status">需要补充信息：{task.question}</p>}
-    <div className="task-actions">{activeTask(task)&&!['cancelling','pausing'].includes(task.status)&&<button disabled={disabled} onClick={()=>void dispatch('background-task-pause')}>暂停任务</button>}</div>
+    <div className="task-actions">{(activeTask(task)||task.status==='waiting_event')&&!['cancelling','pausing'].includes(task.status)&&<button disabled={disabled} onClick={()=>void dispatch('background-task-pause')}>暂停任务</button>}</div>
     <label>补充要求或接续说明<textarea rows={3} maxLength={4000} value={text} onChange={e=>setText(e.target.value)} placeholder="例如：保留原接口，并补充测试"/></label>
     <p className="subtle">补充要求在当前轮次结束后处理。任务已停止时，请点击“接续任务”；需要立即停下请先暂停。</p>
     <div className="task-actions"><button disabled={disabled||!text.trim()} onClick={()=>void send('background-task-message')}>保存补充要求</button>{task.canContinue&&<button disabled={disabled} onClick={()=>void send('background-task-continue')}>接续任务</button>}</div>
     {!!detail.messages?.length&&<details className="task-command"><summary>补充记录（{detail.messages.length}）</summary>{detail.messages.map(m=><p key={m.id}><strong>{deliveryLabels[m.delivery.status]||m.delivery.status}</strong> · {m.text}</p>)}</details>}
     {currentRun?.progress&&<p className="subtle">本轮：{currentRun.progress.steps} 个模型步骤 · {currentRun.progress.toolCalls} 次工具调用 · {currentRun.progress.estimatedTokens?'约 ':''}{currentRun.progress.totalTokens||'暂未报告'} Token{currentRun.progress.estimatedTokens?'（估算）':''}</p>}
+    <EventRules detail={detail} currentRun={currentRun} action={action} disabled={disabled} onSelect={onSelect}/>
     <h4>执行步骤</h4>
     {currentRun?.jobs?.length?<ol className="agent-steps">{currentRun.jobs.map(j=><AgentStep key={j.id} api={api} taskId={task.id} runId={currentRun.id} job={j}/>)}</ol>:<p className="subtle">尚无工具执行记录。</p>}
     {currentRun?.result&&<><h4>本轮报告</h4><pre className="task-report">{currentRun.result.text||errorText({message:currentRun.result.error})}</pre></>}
