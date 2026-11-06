@@ -55,11 +55,12 @@ test('team roster, assigned document work, task snapshots and restart use real B
   const team=await api('/team-member',input);const member=team.members.find(m=>!m.chief);assert.ok(member);assert.equal(team.chiefBotId,health.botId);
   assert.equal((await api('/team-member',input)).members.length,2);
   assert.equal((await api('/snapshot')).messages.length,before.messages.length);
-  await api('/ask',{id:'assigned-work',text:'agent:'+JSON.stringify({title:'整理资料',goal:'FIXTURE_DOCUMENT',mode:'edit',workspaceMode:'documents',inputFiles:['sample.txt'],assignedBotId:member.id}),source:'voice'});
+  await api('/ask',{id:'assigned-work',text:'agent:'+JSON.stringify({title:'整理资料',goal:'FIXTURE_DOCUMENT',workspaceMode:'documents',inputFiles:['sample.txt'],assignedBotId:member.id}),source:'voice'});
   await waitFor(async()=>(await api('/result',{id:'assigned-work'})).status==='completed');
   const task=await waitFor(async()=>{const {tasks}=await api('/background-tasks');return tasks.find(t=>t.requestId==='assigned-work');});
   const done=await waitFor(async()=>{const d=await api('/background-task',{id:task.id});if(d.task.status==='failed')throw Error(JSON.stringify(d));return d.task.status==='completed'&&d;});
   assert.equal(done.task.assignedBotId,member.id);assert.equal(done.task.ownerName,member.name);assert.equal(done.runs[0].employee.role,'资料整理员');
+  assert.equal(done.task.mode,'edit');
   assert.match(done.runs[0].result.text,/employee=true/);assert.equal(done.workspace.kind,'documents');assert.ok(done.runs[0].job.artifacts.length,JSON.stringify(done));assert.equal(done.runs[0].job.artifacts[0].name,'report.md');
   assert.equal(readFileSync(join(b.workspace,'sample.txt'),'utf8'),'original\n');
   await api('/team-member',{...input,action:'update',actionId:'rename',id:member.id,revision:member.revision,name:'资料专家',role:'新职责'});

@@ -3,7 +3,7 @@ import {AssigneeSelect} from './team.jsx';
 import {EventRules} from './event-rules.jsx';
 import {errorText} from './api.mjs';
 import {activeTask,taskLabels,appendTaskLog} from './task-view.mjs';
-const fresh={assignedBotId:'',workspaceMode:'code',inputs:'',title:'',goal:'',constraints:'',mode:'analysis',minutes:30,maxSteps:32,tokenBudget:200000,autoContinue:0};
+const fresh={assignedBotId:'',workspaceMode:'code',inputs:'',title:'',goal:'',constraints:'',mode:'edit',minutes:30,maxSteps:32,tokenBudget:200000,autoContinue:0};
 export function AgentTaskForm({action,onSelect,disabled,team}){
   const [form,setForm]=useState(fresh),submission=useRef(null);
   const field=(key,value)=>setForm({...form,[key]:value});
@@ -21,8 +21,8 @@ export function AgentTaskForm({action,onSelect,disabled,team}){
     <label>任务名称<input required maxLength={160} value={form.title} onChange={e=>field('title',e.target.value)}/></label>
     <label>任务目标<textarea required rows={4} maxLength={8000} value={form.goal} onChange={e=>field('goal',e.target.value)}/></label>
     <label>约束与验收要求<textarea rows={3} maxLength={4000} value={form.constraints} onChange={e=>field('constraints',e.target.value)}/></label>
-    <label>工作模式<select value={form.mode} onChange={e=>field('mode',e.target.value)}><option value="analysis">只读分析</option><option value="edit">修改并验证</option></select></label>
-    <p className="subtle">{form.workspaceMode==='documents'?'复制指定文本资料到独立目录，可生成交付文件；不运行命令，不覆盖原资料。':'在独立工作目录中执行。修改完成后可查看差异，再应用到原工程。'}</p>
+    <label>工作模式<select value={form.mode} onChange={e=>field('mode',e.target.value)}><option value="edit">修改并验证（默认）</option><option value="analysis">只读分析</option></select></label>
+    <p className="subtle">{form.mode==='analysis'?'只读取独立工作目录，结果显示在任务报告中；不生成文件、不运行命令。':form.workspaceMode==='documents'?'复制指定文本资料到独立目录，可生成交付文件；不运行命令，不覆盖原资料。':'允许在独立工作目录中读写文件和运行命令。修改完成后可查看差异，再应用到原工程。'}</p>
     {form.mode==='edit'&&form.workspaceMode==='code'&&<><label className="task-check"><input type="checkbox" checked={!!form.autoContinue} onChange={e=>field('autoContinue',e.target.checked?2:0)}/>测试完成后自动接续</label>{!!form.autoContinue&&<label>最多自动接续次数<input required type="number" min={1} max={5} value={form.autoContinue} onChange={e=>field('autoContinue',Number(e.target.value))}/></label>}<p className="subtle">默认关闭。启用后允许 Agent 提交后台验证，结果到达时按规则接续；规则有效期 24 小时。</p></>}
     <label>最长运行时间（分钟）<input type="number" required min={1} max={120} value={form.minutes} onChange={e=>field('minutes',e.target.value)}/></label>
     <details><summary>执行预算</summary><label>最多模型步骤<input required type="number" min={1} max={128} value={form.maxSteps} onChange={e=>field('maxSteps',e.target.value)}/></label><label>Token 预算<input required type="number" min={1000} max={1000000} value={form.tokenBudget} onChange={e=>field('tokenBudget',e.target.value)}/></label></details>

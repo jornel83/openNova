@@ -18,10 +18,11 @@ async function fixture(t){
   t.after(async()=>{for(const manager of managers)await manager.close();ops.close();rmSync(home,{recursive:true,force:true});});return {home,workspace,ops,tasks,managers};
 }
 const done=(tasks,id)=>until(()=>{const d=tasks.detail(id);return !['running','queued','cancelling','pausing'].includes(d.task.status)&&d.task.cleanupConfirmed&&d;});
-const start=(tasks,goal,extra={})=>tasks.create({id:'agent',kind:'agent',title:'Fixture',goal,mode:'edit',timeoutMs:60000,...extra});
-test('real Harness performs native read/write/test in isolation and continues its persisted session',async t=>{
+const start=(tasks,goal,extra={})=>tasks.create({id:'agent',kind:'agent',title:'Fixture',goal,timeoutMs:60000,...extra});
+test('default mode performs native read/write/test in isolation and continues its persisted session',async t=>{
   const {tasks,workspace}=await fixture(t);start(tasks,'FIXTURE_EDIT REMEMBER_ALPHA');
   const d=await done(tasks,'agent');assert.equal(d.task.status,'completed',tasks.log({id:'agent'}).text);
+  assert.equal(d.task.mode,'edit');
   assert.equal(readFileSync(join(workspace,'sample.txt'),'utf8'),'original\n');
   assert.equal(readFileSync(join(d.workspace.path,'sample.txt'),'utf8'),'updated\n',JSON.stringify(d));
   assert.equal(d.runs[0].jobs.find(j=>j.tool==='task_command').exitCode,0);assert.ok(d.runs[0].progress.totalTokens>0);assert.equal(d.runs[0].progress.estimatedTokens,true);
@@ -60,10 +61,15 @@ test('question waits and explicit continuation consumes the durable supplement o
   tasks.message({id:'agent',messageId:'answer',text:'选择蓝色 REMEMBER_ALPHA'});assert.equal(tasks.detail('agent').messages[0].delivery.status,'pending');
   tasks.continue({id:'agent',runId:d.task.runId,actionId:'answer',text:'RESUME_ONLY'});d=await done(tasks,'agent');assert.equal(d.task.status,'completed');assert.equal(d.messages[0].delivery.status,'delivered');assert.match(d.runs[1].result.text,/remembered=true/);
 });
-test('read-only tools refuse writes, model budget stops the turn, invalid command never blocks queue',async t=>{
-  const {tasks}=await fixture(t);start(tasks,'FIXTURE_EDIT',{mode:'analysis',maxSteps:2});const d=await done(tasks,'agent');assert.equal(d.task.status,'failed');assert.equal(readFileSync(join(d.workspace.path,'sample.txt'),'utf8'),'original\n');
+test('explicit read-only mode refuses writes and stays read-only after restart and continuation',async t=>{
+  const {tasks,ops,home,workspace,managers}=await fixture(t);start(tasks,'FIXTURE_EDIT',{mode:'analysis',maxSteps:2});const d=await done(tasks,'agent');assert.equal(d.task.status,'failed');assert.equal(readFileSync(join(d.workspace.path,'sample.txt'),'utf8'),'original\n');
   tasks.create({id:'invalid',kind:'agent',title:'invalid',goal:'FIXTURE_INVALID',mode:'edit',timeoutMs:30000});assert.equal((await done(tasks,'invalid')).task.status,'completed');
   tasks.create({id:'after',title:'queue remains available',command:'true'});assert.equal((await done(tasks,'after')).task.status,'completed');
+  await tasks.close();const reopened=new TaskManager({ops,home,workspace,agentProviderModule:provider});managers.push(reopened);
+  assert.equal(reopened.detail('agent').task.mode,'analysis');
+  reopened.continue({id:'agent',runId:d.task.runId,actionId:'readonly-resume',text:'RESUME_ONLY'});
+  const resumed=await done(reopened,'agent');assert.equal(resumed.task.status,'completed');assert.equal(resumed.task.mode,'analysis');
+  assert.equal(readFileSync(join(resumed.workspace.path,'sample.txt'),'utf8'),'original\n');
 });
 
 test('requirements saved during an active turn are delivered at its boundary without replaying the original operation',async t=>{
