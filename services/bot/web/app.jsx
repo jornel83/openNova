@@ -123,7 +123,7 @@ function App(){
     </header>
     {!online&&<div className="connection-banner" role="status">连接中断时可以继续编辑，草稿会保留。正在自动重连…</div>}
     <nav className="workspace-tabs" aria-label="交流与任务"><button type="button" aria-pressed={view==='chat'} onClick={()=>setView('chat')}>对话</button><button type="button" aria-pressed={view==='tasks'} onClick={()=>setView('tasks')}>任务{snapshot?.tasks?.activeCount>0&&<span>{snapshot.tasks.activeCount} 项进行中</span>}{snapshot?.tasks?.unreadCount>0&&<i aria-label="有未读任务结果"/>}</button></nav>
-    {view==='tasks'&&<TaskPanel api={api} summary={snapshot?.tasks} selectedId={selectedTask} onSelect={setSelectedTask} online={online} busy={busy}/>}
+    {view==='tasks'&&<TaskPanel api={api} team={snapshot?.team} summary={snapshot?.tasks} selectedId={selectedTask} onSelect={setSelectedTask} online={online} busy={busy}/>}
     <div hidden={view!=='chat'} className="chat-scroll" ref={scroll} onClickCapture={e=>{if(e.target.closest('summary'))stick.current=false;}} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
       {!!snapshot?.tasks?.unreadCount&&<div className="task-notice" role="status"><p>后台任务有新结果</p>{snapshot.tasks.tasks.filter(t=>t.unread).slice(0,3).map(task=><TaskCard key={task.id} task={task} onOpen={openTask}/>)}</div>}
       {snapshot?.hasMore&&limit<500&&<Button className="history-more nova-secondary" onClick={()=>{stick.current=false;setLimit(Math.min(500,limit+50));}}>加载更早的对话</Button>}

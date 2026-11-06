@@ -14,8 +14,10 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,tasks,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,tasks,team,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
+    if(path==='/team')return team?.view()??null;
+    if(path==='/team-member')return requests.exclusive(()=>team.mutate(body));
     if(path==='/background-tasks')return tasks.list(body);
     if(path==='/background-task')return tasks.detail(body.id);
     if(path==='/background-task-start')return tasks.create(body,{source:'web'});
@@ -63,7 +65,7 @@ export function createControls({ops,requests,tasks,memory,health,memoryView,shut
       const limit=Number.isInteger(body.limit)?Math.max(20,Math.min(500,body.limit)):50;
       const readState=()=>{const records=ops.list('request'),approvals=operationRecords(ops);
       const workContext=context?.capture()??{kind:'none'};
-      return {tasks:tasks?.list({limit:50})??null,replyStream:replyStream?.snapshot()??null,workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
+      return {team:team?.view()??null,tasks:tasks?.list({limit:50})??null,replyStream:replyStream?.snapshot()??null,workContext,desktop:{context:workContext,browser:browserState(),voice:voice?.snapshot()??voiceState()},health:health(),busy:!!(requests.active||requests.mutation),activeId:requests.active?.id??null,
         messages:records.slice(0,limit).reverse().map(r=>research?.refresh(r)??r),hasMore:records.length>limit,
         approvals:approvals.filter((r,i)=>i<30||records.slice(0,limit).some(m=>m.id===r.requestId)||['pending','applying','running'].includes(r.status)).map(approvalPreview)};};
       if(!events)return readState();

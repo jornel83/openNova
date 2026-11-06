@@ -4,6 +4,8 @@ import {errorEvent} from '../agent/errors.mjs';
 export function installModelGate(ctx,{rt,bot,getActive,onMaintenance=()=>{}}){
  ctx.on('llm/stream',(options,next)=>{
   const active=getActive();
+  const owner=typeof options.sessionId==='string'?rt.selfOf?.(options.sessionId):undefined;
+  if(owner&&owner!==bot.id)throw Error('team_task_admission_required');
   const owned=[bot.id,rt.chatOf(bot.id),...(bot.segments??[]).map(p=>p.sessionId)];
   const maintenance=options.purpose==='compaction'&&typeof options.sessionId==='string'&&owned.includes(options.sessionId);
   if(options.purpose==='compaction'&&!maintenance)throw Error('bridge_request_required');

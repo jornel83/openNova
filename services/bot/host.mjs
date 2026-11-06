@@ -10,6 +10,9 @@ import {createDocumentOpener,createDocumentTool,inspectFileReference} from './de
 import {createWorkContext} from './desktop/context.mjs';
 import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
+import {TeamRegistry} from './team/registry.mjs';
+import {TeamActors} from './team/actor.mjs';
+import {teamTools} from './team/tools.mjs';
 import {TaskManager,taskTools} from './tasks/manager.mjs';
 import {researchTools} from './research/config.mjs';
 import {createContentFetcher} from '../agent/web-fetch-content.mjs';
@@ -43,7 +46,11 @@ export async function apply(ctx,config) {
   // Recovery is explicit in this experiment; upstream model-driven resume could
   // recreate tasks after a crash. Durable task/approval state remains queryable.
   const deliver=rt.deliver;
-  rt.deliver=args=>(args.resumed||args.resent)?Promise.resolve():deliver(args);
+  rt.deliver=args=>{
+    if(args.resumed||args.resent||args.role==='kickoff')return Promise.resolve();
+    if(args.toId!==rt.state.mainBotIds[0])throw Error('team_task_admission_required');
+    return deliver(args);
+  };
   await rt.bootstrap();resources.assertOpen();if(rt.readOnly())throw Error('bot_home_already_owned');
   const bot=rt.botOf(rt.state.mainBotIds[0]);
   rt.dropKickoff(bot.id);bot.model='opennova-chatgpt/gpt-6.1-sol';bot.instructions=INSTRUCTIONS;
@@ -61,6 +68,9 @@ export async function apply(ctx,config) {
   resources.add(()=>ops.close());
   const tasks=new TaskManager({ops,home:config.home,workspace:config.workspace,events,agentProviderModule:config.agentProviderModule,eventOptions:{githubTokenPath:config.githubTokenPath},bridge:{url:config.url,tokenPath:config.tokenPath}});
   resources.add(()=>tasks.close());
+  const team=new TeamRegistry({rt,db:ops.db,events,workspace:config.workspace});
+  team.tasks=tasks;tasks.team=team;await team.recover();
+  const actors=new TeamActors({team,tasks});
   const syncRetired=()=>writeFileSync(join(config.home,'retired.json'),JSON.stringify(ops.retired()));
   syncRetired();
   const allowed=new Set(researchTools(ALLOWED_TOOLS,config.research)),approved=new WeakSet();
@@ -96,7 +106,8 @@ export async function apply(ctx,config) {
     },
   });
   const moduleTools=[
-    ...taskTools(tasks,()=>requests.active),
+    ...taskTools(tasks,()=>actors.request()),
+    ...teamTools(team,()=>actors.request()),
     research.sourceTool,...research.tools,
     createDocumentTool({opener:documents,getRequest:()=>requests.active}),
     ...createBrowserTools({context,ops,getRequest:()=>requests.active,bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}}),
@@ -104,7 +115,12 @@ export async function apply(ctx,config) {
     ['task_status','查询计时任务的真实状态',{id:{type:'string',required:true}},a=>ops.task(a.id)],
     ['cancel_test_task','用户明确要求取消时，取消指定计时任务',{id:{type:'string',required:true}},a=>ops.cancelTask(a.id)],
   ];
-  for(const [name,description,parameters,execute] of moduleTools)ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},async execute(a){return JSON.stringify(await execute(a));}})));
+  for(const [name,description,parameters,execute] of moduleTools)ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},async execute(a,exec){
+    const sessionId=exec.agent?.session?.id??exec.agent?.id;
+    if(![bot.id,rt.chatOf(bot.id)].includes(sessionId)||!requests.active)throw Error('actor_denied');
+    const actor=actors.issue({kind:'user',botId:bot.id,request:requests.active});
+    try{return JSON.stringify(await actors.run(actor,()=>execute(a)));}finally{actors.revoke(actor);}
+  }})));
   ctx.tools.guard(exec=>allowed.has(exec.name)?undefined:'Tool is outside the OpenNova experiment scope.');
   ctx.on('agent/pre-step',(payload,next)=>staleRequest(payload.messages,requests.active)?{kind:'reject'}:next(),{prepend:true});
   ctx.on('system-prompt/assemble',async(assembly,context,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
@@ -158,9 +174,9 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,tasks,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
+  const handle=createControls({ops,requests,tasks,team,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({backgroundTasks:{version:3,agentSessions:true,eventContinuation:true,concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({team:{version:1,enabled:team.enabled()},backgroundTasks:{version:3,agentSessions:true,eventContinuation:true,concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

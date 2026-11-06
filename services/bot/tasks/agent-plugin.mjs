@@ -68,7 +68,8 @@ export async function apply(ctx,config){
   ])ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute:async a=>JSON.stringify(await execute(a))})));
   const allowed=new Set(config.mode==='analysis'?AGENT_TOOLS.filter(n=>!['write','edit','task_command','task_check'].includes(n)):AGENT_TOOLS);
   if(!config.checksEnabled)allowed.delete('task_check');
-  ctx.tools.guard(exec=>allowed.has(exec.name)?undefined:'Tool unavailable for this task.');
+  if(config.workspaceMode==='documents'){allowed.delete('task_command');allowed.delete('task_check');}
+  ctx.tools.guard(exec=>(exec.agent?.session?.id??exec.agent?.id)===config.sessionId&&allowed.has(exec.name)?undefined:'Tool unavailable for this task.');
   ctx.on('system-prompt/assemble',async(a,c,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
   ctx.on('tools/execute',async(exec,next)=>{
     if(waiting||awaiting)throw Error(awaiting?'task_waiting_for_event':'task_waiting_for_user');

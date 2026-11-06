@@ -20,7 +20,8 @@ export async function apply(ctx,config){
       if(prompt.includes('RESUME_ONLY')){yield* responseToolChunks({streamItems:async()=>({output:[{type:'message',id:'msg_'+randomUUID(),role:'assistant',status:'completed',content:[{type:'output_text',text:'resumed; remembered='+history.includes('REMEMBER_ALPHA'),annotations:[]}]}]})},options,config.allowedTools);return;}
       if(prompt.includes('FIXTURE_DELAY'))await delay(1200,undefined,{signal:options.signal});
       if(prompt.includes('FIXTURE_SLOW'))await delay(30000,undefined,{signal:options.signal});
-      if(prompt.includes('FIXTURE_EVENT_SLOW_CHECK')&&!prior){tool='task_check';args={command:"node -e \"require('fs').writeFileSync('check-pid',String(process.pid));setInterval(()=>{},1000)\"",timeoutMs:60000};}
+      if(prompt.includes('FIXTURE_DOCUMENT')&&!prior){tool='write';args={file_path:'report.md',content:'资料整理完成。'};}
+      else if(prompt.includes('FIXTURE_EVENT_SLOW_CHECK')&&!prior){tool='task_check';args={command:"node -e \"require('fs').writeFileSync('check-pid',String(process.pid));setInterval(()=>{},1000)\"",timeoutMs:60000};}
       else if(prompt.includes('FIXTURE_EVENT_LOOP')){
         const event=prompt.includes('"type":"command.finished"');
         const failed=event&&prompt.includes('"status":"failed"');
@@ -35,7 +36,7 @@ export async function apply(ctx,config){
         const actions=[['read',{file_path:'sample.txt'}],['write',{file_path:'sample.txt',content:'updated\n'}],['task_command',{command:"node -e \"if(require('fs').readFileSync('sample.txt','utf8')!=='updated\\n')process.exit(3);console.log('verified')\""}]];
         [tool,args]=actions[prior]||[];
       }else if(!prior&&prompt.includes('FIXTURE_READ')){tool='read';args={file_path:'sample.txt'};}
-      const output=tool?[{type:'function_call',id:'fc_'+randomUUID(),call_id:'call_'+randomUUID(),name:tool,arguments:JSON.stringify(args),status:'completed'}]:[{type:'message',id:'msg_'+randomUUID(),role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:'fixture completed; remembered='+history.includes('REMEMBER_ALPHA'),annotations:[]}]}];
+      const output=tool?[{type:'function_call',id:'fc_'+randomUUID(),call_id:'call_'+randomUUID(),name:tool,arguments:JSON.stringify(args),status:'completed'}]:[{type:'message',id:'msg_'+randomUUID(),role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:'fixture completed; remembered='+history.includes('REMEMBER_ALPHA')+'; employee='+prompt.includes('资料整理员'),annotations:[]}]}];
       yield* responseToolChunks({streamItems:async()=>({output})},options,config.allowedTools);
     }
   }
