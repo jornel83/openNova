@@ -12,6 +12,9 @@ import {createBrowserTools,requestContent} from './desktop/tools.mjs';
 import {Operations} from './operations.mjs';
 import {TeamRegistry} from './team/registry.mjs';
 import {TeamActors} from './team/actor.mjs';
+import {TeamSupervisor} from './team/supervisor.mjs';
+import {TeamOutbox} from './team/outbox.mjs';
+import {ManagementDelivery} from './team/delivery.mjs';
 import {teamTools} from './team/tools.mjs';
 import {TaskManager,taskTools} from './tasks/manager.mjs';
 import {createTaskHostTools,HOST_TOOL_NAMES} from './tasks/host-tools.mjs';
@@ -81,6 +84,15 @@ export async function apply(ctx,config) {
   const documents=createDocumentOpener({workspace:config.workspace,ops,context});
   let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events,replyStream});
+  tasks.foregroundBusy=()=>!!(requests.active||requests.mutation);
+  const managementDelivery=new ManagementDelivery({home:config.home,chiefId:team.chiefId});
+  tasks.outbox=new TeamOutbox({db:ops.db,delivery:managementDelivery});
+  tasks.supervisor=new TeamSupervisor({tasks,reports:tasks.reports,createManagementTask:({id,report,review,managementReview,goal,budgets})=>{
+    const result=tasks.create({id,kind:'agent',assignedBotId:team.chiefId,title:'总管验收：'+tasks.row('task',report.taskId).title.slice(0,140),goal,
+      constraints:'仅读取固定成果与证据，提交一次结构化验收决定。不得扩大原任务范围或权限。',workspaceMode:'general',permission:'read-only',managementEnabled:false,...budgets},
+      {source:'supervisor',managementReview});
+    void managementDelivery.consume(report.eventId,review.id).catch(()=>{});return result;
+  }});
   const taskHostTools=createTaskHostTools({tasks,ops,foregroundBusy:()=>!!(requests.active||requests.mutation),
     bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}});
   resources.add(()=>taskHostTools.close());
@@ -183,7 +195,7 @@ export async function apply(ctx,config) {
   resources.assertOpen();
   const handle=createControls({ops,requests,tasks,team,memory,context,documents:{...documents,open:(...args)=>taskHostTools.foreground(()=>documents.open(...args))},events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?taskHostTools.foreground(()=>desktop.handle('/desktop/open',{activate:true})):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({team:{version:2,enabled:team.enabled()},backgroundTasks:{version:4,agentSessions:true,eventContinuation:true,executionPolicy:2,permissions:['full','read-only'],templates:['general','code','documents'],concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({team:{version:3,enabled:team.enabled(),reports:true,supervisor:true,dependencies:true},backgroundTasks:{version:5,agentSessions:true,eventContinuation:true,executionPolicy:2,permissions:['full','read-only'],templates:['general','code','documents'],concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

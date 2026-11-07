@@ -1,14 +1,19 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {TeamPanel,AssigneeSelect} from './team.jsx';
 import {AgentTaskForm,AgentTaskDetail} from './agent-tasks.jsx';
+import {TeamInbox} from './team-inbox.jsx';
+import {TeamResults,TaskCoordination} from './team-results.jsx';
+import {reviewLabels,reviewConflict,inboxTasks,employeeTask} from './team-view.mjs';
 import {errorText} from './api.mjs';
 import {taskLabels,activeTask,taskReason,taskDuration,appendTaskLog} from './task-view.mjs';
 
 export function TaskCard({task,onOpen}){
   return <button type="button" className="task-card" onClick={()=>onOpen(task.id)}>
     <span className="task-card-title">{task.title}{task.unread&&<i aria-label="未读结果"/>}</span>
-    {task.ownerName&&<span className="task-card-hint">负责人：{task.ownerName}{task.ownershipOrigin==='legacy'?' · 历史任务':''}</span>}
+    {task.ownerName&&<span className="task-card-hint">负责人：{task.ownerName}{!employeeTask(task)?' · 总管亲自执行':''}{task.ownershipOrigin==='legacy'?' · 历史任务':''}</span>}
     <span className={'task-status '+task.status}>{task.kind==='agent'?'Agent · ':''}{taskLabels[task.status]||task.status} · {taskDuration(task)}</span>
+    {task.reviewStatus&&<span className={'team-review-status '+task.reviewStatus}>{reviewLabels[task.reviewStatus]||task.reviewStatus}</span>}
+    {task.blockedReason&&<span className="task-card-hint">等待前置任务或交接完成</span>}
     <span className="task-card-hint">{taskReason(task)||'查看详情与日志'}<span aria-hidden="true"> →</span></span>
   </button>;
 }
@@ -70,13 +75,18 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
     setPending(true);setError('');setNotice('');
     try{
       const value=await api.call(name,body);
-      if(name==='background-task-open'){
+      if(name==='background-task-open'||name==='tasks/report-artifact'){
         if(value.status!=='dispatched')throw Error(value.error||'open_failed');
         setNotice('已向本机应用发送打开请求。');
       }
       if(value.task&&value.task.id===selectedRef.current)setDetail(value);return value;
     }
-    catch(e){if(name==='background-task-start'&&e.code!=='network')submission.current=null;setError(errorText(e));if(rethrow)throw e;}finally{setPending(false);}
+    catch(e){
+      if(name==='background-task-start'&&e.code!=='network')submission.current=null;
+      setError(errorText(e));
+      if(reviewConflict(e)&&selectedRef.current){try{const latest=await api.call('background-task',{id:selectedRef.current});if(latest.task.id===selectedRef.current){setDetail(latest);setRunId(null);setNotice('任务或成果已有更新，已切换到最新记录，请核对后再操作。');}}catch{}}
+      if(rethrow)throw e;
+    }finally{setPending(false);}
   }
   async function submit(event){
     event.preventDefault();
@@ -90,20 +100,21 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
     const value=await action('background-task-retry',retryAction.current);if(value)setRunId(null);
   }
   const tasks=(page??summary)?.tasks??[];
-  const filtered=tasks.filter(t=>owner==='all'||t.assignedBotId===owner).filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||['failed','interrupted','waiting_input','waiting_event','paused'].includes(t.status)));
+  const filtered=tasks.filter(t=>owner==='all'||t.assignedBotId===owner).filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||inboxTasks([t]).length||['failed','interrupted','waiting_input','waiting_event','paused'].includes(t.status)));
   return <section className="task-panel" aria-label="后台任务">
     <div className="task-heading"><h2>{selectedId?'任务详情':'后台任务'}</h2>{selectedId&&<button type="button" onClick={()=>onSelect(null)}>返回列表</button>}</div>
     {(error||connectionError)&&<p className="error" role="alert">{error||connectionError}</p>}
     {notice&&<p className="task-intro" role="status">{notice}</p>}
     {summary?.problem&&<p className="error" role="alert">任务调度暂时不可用，已保存的任务仍可查看。请检查服务日志。</p>}
     {!selectedId?<>
+      <TeamInbox tasks={tasks} onSelect={onSelect}/>
       <TeamPanel api={api} team={team} disabled={!online||busy} onSelect={onSelect}/>
       {team&&<label>按负责人筛选<select value={owner} onChange={e=>setOwner(e.target.value)}><option value="all">全部员工</option>{team.members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>}
       <p className="task-intro">可以对 Nova 说“在后台运行测试”。任务执行期间，你可以继续聊天。</p>
       <div className="task-filters" aria-label="任务筛选">{[['all','全部'],['active','进行中'],['attention','需要关注']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div>
       <div className="task-list">{filtered.map(task=><TaskCard key={task.id} task={task} onOpen={onSelect}/>)}{!filtered.length&&<p className="task-empty">{tasks.length?'这里暂时没有任务。':'还没有后台任务。'}</p>}</div>
       {page?.hasMore&&<button className="task-more" type="button" onClick={()=>setPageLimit(n=>n+50)}>加载更多任务</button>}
-      <AgentTaskForm team={team} action={action} onSelect={onSelect} disabled={!online||pending}/>
+      <AgentTaskForm team={team} tasks={tasks} action={action} onSelect={onSelect} disabled={!online||pending}/>
       <details className="task-create"><summary>直接运行命令</summary>
         <form onSubmit={submit}>
           <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v})}/>
@@ -118,7 +129,7 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       </details>
     </>:detail?<>
       <h3 className="task-title">{detail.task.title}</h3>
-      {detail.task.ownerName&&<p>负责人：{detail.task.ownerName} · {detail.task.routing==='employee-background'?'员工任务':'总管任务'}</p>}
+      {detail.task.ownerName&&<p>负责人：{detail.task.ownerName} · {employeeTask(detail.task)?'员工任务':'总管亲自执行'}</p>}
       {currentRun?.employee&&<details className="task-command"><summary>本轮职责快照</summary><p>{currentRun.employee.name} · {currentRun.employee.role}</p><p>{currentRun.employee.instructions}</p></details>}
       <p className={'task-status '+detail.task.status} role="status">{taskLabels[detail.task.status]} · {taskDuration(detail.task,clock)}</p>
       {taskReason(detail.task)&&<p className="task-intro">{taskReason(detail.task)}</p>}
@@ -128,6 +139,8 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       </div>
       {detail.task.kind!=='agent'&&<details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>任务 ID：{detail.task.id}</p><p>执行 ID：{detail.task.runId}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>}
       <label className="task-attempt">执行记录<select value={logRun||''} onChange={e=>setRunId(e.target.value)}>{detail.runs.map(run=><option key={run.id} value={run.id}>第 {run.number} 次 · {taskLabels[run.status]}</option>)}</select></label>
+      <TeamResults detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>
+      <TaskCoordination key={'coordination:'+detail.task.id} detail={detail} team={team} tasks={tasks} action={action} disabled={!online||pending}/>
       {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy} onSelect={onSelect}/>}
       <h4>运行日志</h4>
       {log?.earlier&&<p className="subtle">显示最近的日志；完整已保存日志可按下方路径查看。</p>}
@@ -135,7 +148,7 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       <pre className="task-log" aria-label="任务日志">{log?.text||'暂时没有输出。'}</pre>
       <details className="task-command"><summary>已保存日志的位置</summary><p>{currentRun?.job.logPath}</p></details>
       {currentRun?.job.exitCode!=null&&<p className="subtle">退出码：{currentRun.job.exitCode}</p>}
-      {(detail.task.kind!=='agent'||['general','documents'].includes(detail.task.workspaceMode))&&<><h4>结果文件</h4>
+      {![detail.teamReview?.current,...(detail.teamReview?.history??[])].some(report=>report?.runId===currentRun?.id)&&(detail.task.kind!=='agent'||['general','documents'].includes(detail.task.workspaceMode))&&<><h4>结果文件</h4>
       {currentRun?.job.artifacts?.length?<ul className="task-artifacts">{currentRun.job.artifacts.map(file=><li key={file.id}><span>{file.name}</span>{file.status==='available'?<button type="button" disabled={!online||busy||pending} onClick={()=>void action('background-task-open',{id:detail.task.id,runId:currentRun.id,artifactId:file.id,actionId:crypto.randomUUID()})}>打开文件</button>:<small>未生成或不可读取</small>}</li>)}</ul>:<p className="subtle">{detail.task.kind==='agent'?'本轮暂无交付文件；任务结束后在此展示，文字结果可查看本轮报告。':detail.task.artifacts.length?'任务结束后核对结果文件。':'未指定结果文件。执行结果可查看上方日志。'}</p>}</>}
     </>:<p className="task-empty">正在读取任务…</p>}
   </section>;

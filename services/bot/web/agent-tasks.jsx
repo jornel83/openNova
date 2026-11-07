@@ -2,14 +2,16 @@ import React,{useEffect,useRef,useState} from 'react';
 import {AssigneeSelect} from './team.jsx';
 import {EventRules} from './event-rules.jsx';
 import {ResearchSources} from './research-sources.jsx';
+import {TaskPlanningFields} from './team-results.jsx';
 import {errorText} from './api.mjs';
 import {activeTask,taskLabels,appendTaskLog} from './task-view.mjs';
-const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',permission:'full',minutes:30,maxSteps:32,tokenBudget:200000,autoContinue:0};
-export function AgentTaskForm({action,onSelect,disabled,team}){
+const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',acceptanceCriteria:'',permission:'full',minutes:30,maxSteps:32,tokenBudget:200000,autoContinue:0,managementEnabled:null,maxReworks:2,dependsOn:[],priority:'normal',dueAt:''};
+export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
   const [form,setForm]=useState(fresh),submission=useRef(null);
   const field=(key,value)=>setForm({...form,[key]:value});
   async function submit(e){
-    e.preventDefault();submission.current??={...form,assignedBotId:form.assignedBotId||undefined,inputFiles:form.inputs.split('\n').map(s=>s.trim()).filter(Boolean),id:crypto.randomUUID(),kind:'agent',timeoutMs:Number(form.minutes)*60000,maxSteps:Number(form.maxSteps),tokenBudget:Number(form.tokenBudget),autoContinue:form.permission==='full'?Number(form.autoContinue):0};
+    e.preventDefault();submission.current??={...form,assignedBotId:form.assignedBotId||undefined,inputFiles:form.inputs.split('\n').map(s=>s.trim()).filter(Boolean),id:crypto.randomUUID(),kind:'agent',timeoutMs:Number(form.minutes)*60000,maxSteps:Number(form.maxSteps),tokenBudget:Number(form.tokenBudget),autoContinue:form.permission==='full'?Number(form.autoContinue):0,
+      managementEnabled:!!form.assignedBotId&&(form.managementEnabled??true),maxReworks:Number(form.maxReworks),dueAt:form.dueAt?new Date(form.dueAt).getTime():null};
     try{
       const result=await action('background-task-start',submission.current,{rethrow:true});
       if(result){submission.current=null;setForm(fresh);onSelect(result.task.id);}
@@ -18,11 +20,14 @@ export function AgentTaskForm({action,onSelect,disabled,team}){
   return <details className="task-create"><summary>新建 Agent 工作任务</summary><form onSubmit={submit}>
     <label>任务模板<select value={form.workspaceMode} onChange={e=>field('workspaceMode',e.target.value)}><option value="general">通用工作（默认）</option><option value="code">代码工程</option><option value="documents">文本资料整理</option></select></label>
     <p className="subtle">{form.workspaceMode==='code'?'复制当前代码工程到独立工作目录，可查看差异并按需应用成果。':form.workspaceMode==='documents'?'将指定的文本资料复制到独立工作目录，成果单独保存。':'创建独立工作目录，可按需带入文件，保存脚本、报告和其他成果。'}模板只决定工作目录与输入，不限制员工的工具权限。</p>
-    <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>field('assignedBotId',v)}/>
+    <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v,managementEnabled:null})}/>
     {form.workspaceMode!=='code'&&<label>输入文件{form.workspaceMode==='general'?'（选填）':''}（项目内相对路径，每行一个）<textarea rows={3} required={form.workspaceMode==='documents'} value={form.inputs} onChange={e=>field('inputs',e.target.value)}/></label>}
     <label>任务名称<input required maxLength={160} value={form.title} onChange={e=>field('title',e.target.value)}/></label>
     <label>任务目标<textarea required rows={4} maxLength={8000} value={form.goal} onChange={e=>field('goal',e.target.value)}/></label>
-    <label>约束与验收要求<textarea rows={3} maxLength={4000} value={form.constraints} onChange={e=>field('constraints',e.target.value)}/></label>
+    <label>约束<textarea rows={3} maxLength={4000} value={form.constraints} onChange={e=>field('constraints',e.target.value)}/></label>
+    <label>验收标准（选填）<textarea rows={3} maxLength={4000} value={form.acceptanceCriteria} onChange={e=>field('acceptanceCriteria',e.target.value)} placeholder="例如：交付报告，列出来源，验证脚本退出码为 0"/></label>
+    {form.assignedBotId?<><label className="task-check"><input type="checkbox" checked={form.managementEnabled??true} onChange={e=>field('managementEnabled',e.target.checked)}/>由总管检查成果并跟进</label>{(form.managementEnabled??true)&&<label>最多自动返工次数<input type="number" required min={0} max={5} value={form.maxReworks} onChange={e=>field('maxReworks',Number(e.target.value))}/></label>}<p className="subtle">总管依据验收标准和实际执行记录检查成果。需要你决策时会出现在待处理事项中。</p></>:<p className="subtle">总管亲自执行，完成后由你查看并验收成果。</p>}
+    <TaskPlanningFields value={form} tasks={tasks} onChange={patch=>setForm({...form,...patch})}/>
     <label>执行权限<select value={form.permission} onChange={e=>field('permission',e.target.value)}><option value="full">完整执行（默认）</option><option value="read-only">只读</option></select></label>
     <p className="subtle">{form.permission==='read-only'?'读取资料和查询信息，结果显示在任务报告中；不写文件、不运行命令。':'可使用已接入并获授权的文件、命令、联网及浏览器工具。成果保存在独立工作目录。'}</p>
     {form.permission==='full'&&<><label className="task-check"><input type="checkbox" checked={!!form.autoContinue} onChange={e=>field('autoContinue',e.target.checked?2:0)}/>测试完成后自动接续</label>{!!form.autoContinue&&<label>最多自动接续次数<input required type="number" min={1} max={5} value={form.autoContinue} onChange={e=>field('autoContinue',Number(e.target.value))}/></label>}<p className="subtle">默认关闭。启用后允许 Agent 提交后台验证，结果到达时按规则接续；规则有效期 24 小时。</p></>}
@@ -37,6 +42,7 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
   const readonly=(task.permission??(task.mode==='analysis'?'read-only':'full'))==='read-only';
   const codeWorkspace=!task.workspaceMode||task.workspaceMode==='code';
   const permissionLabel=readonly?'只读':task.policyVersion>=2?'完整执行':'可写（历史权限）';
+  const hasReport=[detail.teamReview?.current,...(detail.teamReview?.history??[])].some(r=>r?.runId===currentRun?.id);
   const actions=useRef(new Map());
   useEffect(()=>{setDiff(null);setApplied(false);},[task.runId]);
   async function dispatch(name,extra={}){
@@ -59,8 +65,8 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
     {(task.policyVersion>=2||task.workspaceMode!=='documents')&&<EventRules detail={detail} currentRun={currentRun} action={action} disabled={disabled} onSelect={onSelect}/>}
     <h4>执行步骤</h4>
     {currentRun?.jobs?.length?<ol className="agent-steps">{currentRun.jobs.map(j=><AgentStep key={j.id} api={api} taskId={task.id} runId={currentRun.id} job={j}/>)}</ol>:<p className="subtle">尚无工具执行记录。</p>}
-    {currentRun?.result&&<><h4>本轮报告</h4><pre className="task-report">{currentRun.result.text||errorText({message:currentRun.result.error})}</pre></>}
-    <ResearchSources sources={currentRun?.result?.sources??[]}/>
+    {!hasReport&&currentRun?.result&&<><h4>本轮报告</h4><pre className="task-report">{currentRun.result.text||errorText({message:currentRun.result.error})}</pre></>}
+    {!hasReport&&<ResearchSources sources={currentRun?.result?.sources??[]}/>}
     {!readonly&&codeWorkspace&&<><h4>文件修改</h4><p className="subtle">显示当前工作目录的待应用修改。先查看差异，再应用到原工程；原文件已变化时会停止，不会自动提交 Git。</p><div className="task-actions"><button disabled={disabled||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-diff');if(value){setDiff(value);setApplied(false);}}}>查看文件差异</button>{diff&&!diff.empty&&!applied&&<button disabled={disabled||busy||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-apply',{revision:diff.revision});if(value?.application?.status==='applied')setApplied(true);}}>应用到原工程</button>}</div>
       {applied&&<p className="task-intro" role="status">已应用到原工程。</p>}{diff&&<><p className="subtle">{diff.empty?'没有待应用的修改。':`${diff.files.length} 个文件：${diff.files.join('、')}`}</p>{!diff.empty&&<pre className="task-log" aria-label="文件差异">{diff.patch}</pre>}</>}
       {!!detail.applications?.length&&<details className="task-command"><summary>应用记录</summary>{detail.applications.map(a=><p key={a.actionId}>{a.status==='applied'?'已应用':'应用结果待核对，请检查原文件'} · {new Date(a.createdAt).toLocaleString()}</p>)}</details>}

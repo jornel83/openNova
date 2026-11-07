@@ -58,3 +58,14 @@ Object.assign(labels,{
   task_tool_action_conflict:'这次工具请求与原操作不一致，请核对执行记录。',
   background_window_close_unavailable:'后台员工只能关闭本任务的标签页；共享工作窗口请交由总管处理。',
 });
+Object.assign(labels,{
+  invalid_acceptance_criteria:'验收标准应为不超过 8000 字的文字。',invalid_management_budget:'请检查总管跟进预算，自动返工次数应为 0–5 次。',invalid_management_policy:'请检查总管跟进设置与预算范围。',
+  team_supervisor_unavailable:'总管跟进服务尚未就绪，请检查服务版本。',management_budget_exhausted:'总管跟进额度已用尽，请查看成果并决定下一步。',management_task_not_configurable:'内部检查任务由总管统一管理，请操作原员工任务。',
+  invalid_review_action:'请选择验收通过、返工或补充回答。',invalid_review_summary:'请填写处理说明（最多 4000 字）。',review_instruction_required:'请说明返工要求或补充回答。',review_action_conflict:'本次处理与之前提交不同，请核对最新成果。',
+  review_stale:'成果或任务已更新，请查看最新版本后处理。',team_report_stale:'当前成果已不是最新版本，请刷新后核对。',unknown_team_report:'没有找到这版成果，请刷新任务。',team_report_artifact_changed:'成果文件或原件已有变化，请核对后形成新成果再处理。',
+  report_not_ready_for_acceptance:'当前成果尚不具备验收条件，请核对执行状态、退出码和交付文件。',report_has_no_question:'本版成果没有待回答的问题；如需调整，请填写返工要求。',review_cleanup_unconfirmed:'原作业是否停止尚未确认，暂不能接续或返工。',
+  review_paused_requires_explicit_decision:'总管检查曾暂停，请查看成果后明确下一步。',review_evidence_changed:'验收证据文件已有变化，请重新核对成果。',
+  invalid_task_dependencies:'请选择最多 20 项有效前置任务，并检查优先级与截止时间。',task_dependency_cycle:'前置任务不能形成循环依赖，请调整选择。',task_dependencies_locked:'任务已开始执行，当前不能修改前置任务。',task_dependencies_require_agent:'前置成果依赖只适用于 Agent 工作任务。',
+  invalid_task_handoff:'请选另一位可用员工并填写交接说明（最多 4000 字）；正在交接的任务请等待完成。',
+  accepted_report_evidence_changed:'已验收成果的文件或证据发生变化，请重新核对。',management_review_incomplete:'总管检查未完整完成，请查看成果并决定下一步。',review_verification_incomplete:'命令或检查尚未全部通过，请核对执行证据后返工。',review_requires_concrete_evidence:'总管需要实际成果或执行证据，不能只凭完成摘要验收。',review_artifact_not_readable:'当前成果格式无法由总管自动核验，请人工查看后决定。',
+});

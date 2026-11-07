@@ -24,6 +24,7 @@ async function fixture(t,{invoke}={}){
     automation:{canCheck:()=>checkEnabled},agentHome:()=>home,all:()=>[],
     create(input,options){checked.push({input,options});return {task:{id:input.id,runId:'check-run'},status:'queued'};},
     createCheck:TaskManager.prototype.createCheck,
+    runBudget:TaskManager.prototype.runBudget,
   };
   const team={chiefId:'chief',bot:id=>({id}),enabled:()=>teamEnabled,profile:()=>({enabled})};
   const actors=new TeamActors({tasks,team}),issue=actors.issue.bind(actors);
@@ -80,7 +81,7 @@ test('check requests obey task mode, explicit automation budget and original ass
   f.setCheck(true);f.task.permission='read-only';assert.equal((await f.post('/task-runtime/check',body)).body.error,'task_tool_denied');assert.equal(f.checked.length,0);
   f.task.mode='analysis';assert.notEqual((await f.post('/task-runtime/check',body)).status,200);assert.equal(f.checked.length,0);
   f.task.permission='full';f.task.mode='edit';const result=await f.post('/task-runtime/check',body);
-  assert.equal(result.status,200);assert.equal(f.checked.length,1);
+  assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(f.checked.length,1);
   assert.equal(f.checked[0].input.assignedBotId,'employee');assert.equal(f.checked[0].options.check.taskId,'task-one');assert.equal(f.checked[0].options.check.runId,'run-one');
   assert.notEqual((await f.post('/task-runtime/check',{...body,taskId:'task-two'})).status,200);assert.equal(f.checked.length,1);
 });

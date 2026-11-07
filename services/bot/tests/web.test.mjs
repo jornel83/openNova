@@ -142,3 +142,14 @@ test('desktop-open uses same-origin web session without exposing pairing or desk
  assert.equal((await post('/web/api/desktop-open')).status,401);
  assert.equal((await post('/web/api/desktop/pair',{},headers)).status,404);
 });
+test('team result and management routes preserve exact report bindings and require browser authentication',async t=>{
+ const {post,calls}=await fixture(t),login=await post('/web/session'),{csrf}=await login.json();
+ const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ const body={id:'task',runId:'run-2',reportId:'report-2',assignmentVersion:2,actionId:'action',action:'accept'};
+ for(const name of ['review','management','reassign','dependencies','report-artifact']){
+  assert.equal((await post('/web/api/tasks/'+name,body)).status,401);
+  assert.equal((await post('/web/api/tasks/'+name,body,{Cookie:headers.Cookie})).status,403);
+  assert.equal((await post('/web/api/tasks/'+name,body,headers)).status,200);
+  assert.deepEqual(calls.at(-1),{path:'/tasks/'+name,body});
+ }
+});

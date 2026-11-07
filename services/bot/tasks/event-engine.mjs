@@ -112,10 +112,12 @@ export class TaskEventEngine{
       else if(!['completed','waiting_event','paused'].includes(task.status))reason='manual_continuation_required';
       else if(!this.tasks.summary(task).canContinue)reason='cleanup_unconfirmed';
       else if(this.tasks.all().filter(t=>active.has(t.status)).length>=100)reason='queue_full';
+      const budget=this.tasks.supervisor?.continuationBudget(task)??{};
+      reason??=budget.reason;
       if(reason){if(delivery.reason!==reason)this.put('delivery',{...delivery,reason});continue;}
       this.tasks.atomic(()=>{
         const previousRunId=task.runId;delete task.stopIntent;
-        this.tasks.newRun(task,this.tasks.row('run',previousRunId).number+1,rule.instruction,{trigger:{ruleId:rule.id,eventId:event.id,deliveryId:delivery.id,previousRunId},eventContext:event});
+        this.tasks.newRun(task,this.tasks.row('run',previousRunId).number+1,rule.instruction,{trigger:{ruleId:rule.id,eventId:event.id,deliveryId:delivery.id,previousRunId},eventContext:event,...budget.executionBudget?{executionBudget:budget.executionBudget}:{}});
         this.put('rule',{...rule,usedRuns:rule.usedRuns+1,lastTriggeredAt:this.now()});
         this.put('delivery',{...delivery,status:'dispatched',reason:null,runId:task.runId,dispatchedAt:this.now()});
       });

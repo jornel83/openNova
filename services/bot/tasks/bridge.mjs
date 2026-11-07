@@ -22,7 +22,7 @@ export function createTaskRuntimeBridge({tasks,actors,hostTools,foregroundBusy})
       const token=(req.headers.authorization??'').startsWith('Bearer ')?req.headers.authorization.slice(7):'';
       const {task,run}=authorize(body,token);
       const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(30000)]);
-      actor=actors?.issue({kind:'worker',botId:task.assignedBotId,taskId:task.id,runId:run.id,assignmentVersion:run.assignmentVersion,request:{id:run.id,signal}});
+      actor=actors?.issue({kind:task.managementReview?'supervisor':'worker',botId:task.assignedBotId,taskId:task.id,runId:run.id,assignmentVersion:run.assignmentVersion,request:{id:run.id,signal}});
       if(actor)actors.check(actor,task.id);
       interval=setInterval(()=>{try{authorize(body,token);if(actor)actors.check(actor,task.id);}catch(error){controller.abort(error);}},100);interval.unref();
       let result;

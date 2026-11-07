@@ -1,5 +1,5 @@
-export const taskLabels={paused:'已暂停',pausing:'暂停中',waiting_input:'等待补充',waiting_event:'等待事件',queued:'排队中',running:'运行中',cancelling:'取消中',completed:'已完成',failed:'执行失败',cancelled:'已取消',interrupted:'异常中断'};
-export const activeTask=task=>['queued','running','pausing','cancelling'].includes(task.status);
+export const taskLabels={blocked:'等待前置条件',paused:'已暂停',pausing:'暂停中',waiting_input:'等待补充',waiting_event:'等待事件',queued:'排队中',running:'运行中',cancelling:'取消中',completed:'已完成',failed:'执行失败',cancelled:'已取消',interrupted:'异常中断'};
+export const activeTask=task=>['blocked','queued','running','pausing','cancelling'].includes(task.status);
 export function taskReason(task){
   if(task.error==='task_timeout')return '执行超过时限，作业已停止。';
   if(task.cleanupConfirmed===false&&!activeTask(task))return '旧作业是否停止尚未确认，后续任务暂缓执行。请核对运行环境。';

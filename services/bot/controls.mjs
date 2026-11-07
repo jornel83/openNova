@@ -35,6 +35,14 @@ export function createControls({ops,requests,tasks,team,memory,health,memoryView
     if(path==='/background-task-continue')return tasks.continue(body);
     if(path==='/background-task-diff')return tasks.diff(body);
     if(path==='/background-task-apply')return requests.exclusive(()=>tasks.applyChanges(body));
+    if(path==='/tasks/review')return tasks.review(body);
+    if(path==='/tasks/management')return tasks.configureManagement(body);
+    if(path==='/tasks/reassign')return tasks.reassign(body);
+    if(path==='/tasks/dependencies')return tasks.setDependencies(body);
+    if(path==='/tasks/report-artifact'){
+      const file=await tasks.reportArtifact(body);
+      return requests.exclusive(()=>documents.open({id:body.actionId||randomUUID(),path:file.path}));
+    }
     if(path==='/background-task-open'){
       const file=tasks.artifact(body);
       return requests.exclusive(()=>documents.open({id:body.actionId,path:file.path}));

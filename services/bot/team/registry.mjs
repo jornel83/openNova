@@ -4,7 +4,7 @@ import {readFileSync,lstatSync} from 'node:fs';
 import {join} from 'node:path';
 import {nameProblem} from '../../../engine/bot/ds-bot/src/shared/mentions.js';
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
-const active=new Set(['queued','running','pausing','cancelling','waiting_input','waiting_event','paused']);
+const active=new Set(['queued','blocked','running','pausing','cancelling','waiting_input','waiting_event','paused']);
 export class TeamRegistry {
   constructor({rt,db,events,workspace}){
     Object.assign(this,{rt,db,events,workspace});this.chiefId=rt.state.mainBotIds[0];
@@ -19,9 +19,9 @@ export class TeamRegistry {
   profile(id){return this.get('bot:'+id)??{enabled:id===this.chiefId,revision:1,taskTypes:['code','documents','command']};}
   bot(id){const b=this.rt.botOf(id);if(!b)throw Error('unknown_team_member');return b;}
   view(){const tasks=this.tasks?.all()??[];return {version:1,enabled:this.enabled(),chiefBotId:this.chiefId,members:Object.values(this.rt.state.bots).map(b=>{
-    const work=tasks.filter(t=>(t.assignedBotId??this.chiefId)===b.id&&active.has(t.status));
+    const work=tasks.filter(t=>(t.assignedBotId??this.chiefId)===b.id&&!t.managementReview&&active.has(t.status));
     return {id:b.id,name:b.name,role:b.role,instructions:b.instructions,chief:b.id===this.chiefId,...this.profile(b.id),
-      status:work.some(t=>['running','pausing','cancelling'].includes(t.status))?'working':work.some(t=>t.status==='waiting_input')?'waiting_input':work.some(t=>t.status==='queued')?'queued':work.length?'paused':'idle',
+      status:work.some(t=>['running','pausing','cancelling'].includes(t.status))?'working':work.some(t=>t.status==='waiting_input')?'waiting_input':work.some(t=>t.status==='blocked')?'blocked':work.some(t=>t.status==='queued')?'queued':work.length?'paused':'idle',
       tasks:work.map(t=>({id:t.id,title:t.title,status:t.status})),model:b.model??'opennova-chatgpt/gpt-6.1-sol'};
   })};}
   changed(){this.events?.publish('team.updated',{});}

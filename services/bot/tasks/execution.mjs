@@ -13,6 +13,7 @@ export function executionSpec(input){
   return {permission,mode,policyVersion:EXECUTION_POLICY_VERSION};
 }
 export function allowedTaskTools(config){
+  if(config.managementReview)return ['glob','grep','read','review_decide'];
   const writable=(config.permission??(config.mode==='analysis'?'read-only':'full'))==='full';
   const tools=new Set(LOCAL_TASK_TOOLS);
   if(!writable)for(const name of ['write','edit','task_command','task_check'])tools.delete(name);
