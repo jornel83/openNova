@@ -83,8 +83,11 @@ export async function executeBuild(steps,{root=ROOT,record=()=>recordBuild(root)
   let error,complete=false;
   async function cleanGroups(){
     for(const child of children)if(!child.cleanupConfirmed){
+      // The direct child may exit just before its process group disappears.
+      // Give normal teardown a brief grace period before attempting termination.
+      for(let i=0;i<4&&buildGroupAlive(child.pid);i++)await delay(50);
       if(buildGroupAlive(child.pid)){
-        try{process.kill(process.platform==='win32'?child.pid:-child.pid,'SIGTERM');}catch(value){if(value.code!=='ESRCH')throw value;}
+        try{process.kill(process.platform==='win32'?child.pid:-child.pid,'SIGTERM');}catch(value){if(!['ESRCH','EPERM'].includes(value.code))throw value;}
         for(let i=0;i<30&&buildGroupAlive(child.pid);i++)await delay(100);
         if(buildGroupAlive(child.pid))throw Error('build_cleanup_unconfirmed: inspect output/team-soak.lock before recovery');
       }

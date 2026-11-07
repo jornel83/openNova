@@ -35,9 +35,20 @@ function acquire(root,owner){
 }
 export const acquireTeamSoak=(root,owner)=>acquire(root,{...owner,purpose:'soak'});
 export const acquireBuild=(root,owner)=>acquire(root,{...owner,purpose:'build',children:[],spawning:false});
-export function buildGroupAlive(pid){
+export function buildGroupAlive(pid,{kill=process.kill,ps=spawnSync}={}){
   if(!Number.isInteger(pid)||pid<1)throw Error('invalid_build_pid');
-  try{process.kill(process.platform==='win32'?pid:-pid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}
+  try{kill(process.platform==='win32'?pid:-pid,0);return true;}catch(error){
+    if(error.code==='ESRCH')return false;
+    if(error.code!=='EPERM')throw error;
+    // EPERM is not proof of exit. macOS can briefly return it as a group
+    // disappears; only a complete process table with no matching PGID is proof.
+    if(process.platform==='win32')return true;
+    const result=ps('ps',['-axo','pid=,pgid='],{encoding:'utf8',timeout:1000});
+    if(result.error||result.status!==0||!result.stdout?.trim())return true;
+    const rows=result.stdout.trim().split('\n').map(line=>line.trim().split(/\s+/));
+    if(rows.some(row=>row.length!==2||row.some(value=>!/^\d+$/.test(value)||Number(value)<1)))return true;
+    return rows.some(row=>Number(row[1])===pid);
+  }
 }
 
 /** Explicit stale-lock repair requires the same completed run, never just a PID. */

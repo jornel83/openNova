@@ -21,6 +21,42 @@ function launch(t,root,source,args=[]){
 function command(root,source){const path=join(root,'command.mjs');writeFileSync(path,source);return {command:process.execPath,args:[path],cwd:root};}
 function buildSource(steps){return `import {executeBuild} from ${JSON.stringify(projectUrl)};await executeBuild(${JSON.stringify(steps)},{root:process.cwd(),record:()=>{}}).catch(error=>{console.error(error.message);process.exitCode=1;});`;}
 
+test('EPERM needs independent process-group absence evidence; unavailable or partial tables remain live',()=>{
+  if(process.platform==='win32')return;
+  const denied=()=>{throw Object.assign(Error('fixture EPERM'),{code:'EPERM'});};
+  const table=stdout=>()=>({status:0,stdout});
+  assert.equal(buildGroupAlive(123,{kill:denied,ps:table('1 1\n456 123\n')}),true);
+  assert.equal(buildGroupAlive(123,{kill:denied,ps:table('1 1\n456 456\n')}),false);
+  for(const ps of [()=>({status:1,stdout:''}),()=>({error:Error('unavailable')}),table(''),table('1 1\nincomplete')])assert.equal(buildGroupAlive(123,{kill:denied,ps}),true);
+  assert.equal(buildGroupAlive(123,{kill:()=>{throw Object.assign(Error('gone'),{code:'ESRCH'});},ps:()=>{throw Error('unnecessary ps');}}),false);
+});
+
+test('EPERM during a real group exit waits for disappearance and records a successful build',{timeout:15000},async t=>{
+  if(process.platform==='win32')return;
+  const root=fixture(t),ready=join(root,'descendant');let probes=0,terminations=0,recorded=false;
+  const descendant=`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setTimeout(()=>process.exit(0),700);`;
+  const step=command(root,`import {spawn} from 'node:child_process';import {existsSync} from 'node:fs';spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'inherit'});setInterval(()=>{if(existsSync(${JSON.stringify(ready)}))process.exit(0);},10);`);
+  const realKill=process.kill;
+  const mock=t.mock.method(process,'kill',(pid,signal)=>{if(pid<0){if(signal===0)probes++;else terminations++;throw Object.assign(Error('fixture EPERM'),{code:'EPERM'});}return realKill(pid,signal);});
+  try{await executeBuild([step],{root,record:()=>{recorded=true;}});}finally{mock.mock.restore();}
+  assert.ok(probes>1);assert.ok(terminations>0,'the simulated permission race also reaches termination');assert.equal(recorded,true);assert.equal(existsSync(teamSoakLock(root)),false);
+  assert.throws(()=>realKill(Number(readFileSync(ready,'utf8')),0),{code:'ESRCH'});
+});
+
+test('persistent EPERM with a living group preserves the failed build lock',{timeout:15000},async t=>{
+  if(process.platform==='win32')return;
+  const root=fixture(t),ready=join(root,'descendant');let recorded=false,group;
+  const descendant=`require('node:fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));setInterval(()=>{},1000);`;
+  const step=command(root,`import {spawn} from 'node:child_process';import {existsSync} from 'node:fs';spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'inherit'});setInterval(()=>{if(existsSync(${JSON.stringify(ready)}))process.exit(0);},10);`);
+  const realKill=process.kill,mock=t.mock.method(process,'kill',(pid,signal)=>{if(pid<0){group=-pid;throw Object.assign(Error('fixture EPERM'),{code:'EPERM'});}return realKill(pid,signal);});
+  try{
+    await assert.rejects(executeBuild([step],{root,record:()=>{recorded=true;}}),/build_cleanup_unconfirmed/);
+    const owner=JSON.parse(readFileSync(join(teamSoakLock(root),'owner.json')));assert.equal(owner.cleanupConfirmed,false);assert.equal(owner.status,'cleanup_unconfirmed');assert.equal(recorded,false);
+  }finally{
+    mock.mock.restore();if(group){try{realKill(-group,'SIGKILL');}catch(error){if(error.code!=='ESRCH')throw error;}await until(()=>!buildGroupAlive(group));}
+  }
+});
+
 test('a build and soak cannot enter concurrently in either acquisition order',{timeout:15000},async t=>{
   const root=fixture(t),ready=join(root,'ready'),finish=join(root,'finish');
   const step=command(root,`import {writeFileSync,existsSync} from 'node:fs';writeFileSync(${JSON.stringify(ready)},'ready');const timer=setInterval(()=>{if(existsSync(${JSON.stringify(finish)})){clearInterval(timer);}},20);`);
