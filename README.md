@@ -52,6 +52,8 @@ pnpm start
 
 团队版已支持成果版本、总管后台验收与有限返工、待处理问题、员工交接及明确前置依赖。员工任务默认由独立总管会话跟进，验收通过后才释放依赖任务；查看成果、验收和合入代码各自独立。历史任务不自动补跑，配置、授权、会话、记忆和任务数据继续保留在仓库外。入口与验证边界见 [团队 M2 使用与验证](docs/research/opennova-team-m2-verification.md)。
 
+新 Agent 任务的步骤、Token、运行时长及总管累计预算默认不限制，预算字段留空即可；旧任务保留原设置。任务详情展示当前执行阶段和最近活动，总管验收有独立活动记录。团队运行、恢复与交付验收见 [M3 验证记录](docs/research/opennova-team-m3-verification.md)，停机备份和恢复步骤见 [状态恢复说明](docs/research/opennova-team-recovery.md)。
+
 ## 工程结构
 
 | 目录 | 职责 |

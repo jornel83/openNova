@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync,existsSync} from 'node:fs';
+import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {setTimeout as delay} from 'node:timers/promises';
+import {lifecycleHost,alive} from './fixtures/lifecycle-host.mjs';
+import {ManagementDelivery} from '../team/delivery.mjs';
+import {ANSWER} from './fixtures/context-provider.mjs';
+
+test('foreground voice stop leaves employee command alive; host hard crash cleans it and restart never replays it',{timeout:90000},async t=>{
+  const h=await lifecycleHost(t);await h.start();const employee=await h.employee();
+  await h.foreground('dispatch','background_agent_start',{title:'保持后台命令',goal:'FIXTURE_COMMAND',assignedBotId:employee.id,managementEnabled:false});
+  const task=await h.until(async()=>{const {tasks}=await h.api('/background-tasks');return tasks.find(task=>task.requestId==='dispatch');});
+  const running=await h.until(async()=>{const d=await h.api('/background-task',{id:task.id});return d.workspace&&existsSync(join(d.workspace.path,'started'))&&d;});
+  const marker=join(running.workspace.path,'started'),pid=Number(readFileSync(marker,'utf8')),original=readFileSync(marker);
+  assert.equal(alive(pid),true);assert.equal(running.task.timeoutMs,0);assert.equal(running.task.tokenBudget,0);
+  assert.equal(running.runs[0].activity.phase,'tool');assert.equal(running.runs[0].activity.tool,'task_command');assert.equal(running.runs[0].activity.workerConnected,true);
+  await h.api('/ask',{id:'foreground-speech',text:'slow',source:'voice'});
+  await h.until(async()=>(await h.api('/snapshot')).activeId==='foreground-speech');
+  await h.api('/voice/publish',{voiceInstanceId:'fixture-voice',seq:1,generation:1,captureEpoch:1,capture:'listening',recognition:'idle',playback:'playing',requestId:'foreground-speech'});
+  await h.api('/voice-control',{id:'stop-speech',action:'stop',voiceInstanceId:'fixture-voice',generation:1,requestId:'foreground-speech'});
+  await h.until(async()=>(await h.api('/result',{id:'foreground-speech'})).status==='cancelled');
+  assert.equal(alive(pid),true);assert.equal((await h.api('/background-task',{id:task.id})).task.status,'running');
+  await h.stop('SIGKILL');await h.until(()=>!alive(pid));await h.start();
+  const recovered=await h.until(async()=>{const d=await h.api('/background-task',{id:task.id});return d.task.cleanupConfirmed&&!['running','cancelling','pausing'].includes(d.task.status)&&d;});
+  assert.equal(recovered.runs.length,1);assert.equal(recovered.task.runId,task.runId);assert.equal(recovered.task.status,'interrupted');
+  assert.equal(recovered.runs[0].activity.phase,'interrupted','historical tool telemetry cannot claim a recovered task is still executing');
+  assert.deepEqual(readFileSync(marker),original);assert.equal(alive(pid),false);
+  await h.foreground('resume-after-crash','background_agent_continue',{id:task.id,runId:task.runId,text:'RESUME_ONLY 只核对已完成步骤，不重放命令。'});
+  const done=await h.until(async()=>{const d=await h.api('/background-task',{id:task.id});return d.task.status==='completed'&&d;});
+  assert.equal(done.runs.length,2);assert.equal(done.task.sessionId,running.task.sessionId);assert.equal(done.runs[1].jobs.length,0);assert.deepEqual(readFileSync(marker),original);
+  await h.stop();await h.start();assert.equal((await h.api('/background-task',{id:task.id})).runs.length,2);
+});
+
+test('durable question and lost outbox acknowledgement survive hard restart, then a voice-path answer is independently accepted exactly once',{timeout:90000},async t=>{
+  const h=await lifecycleHost(t,{provider:'context-provider.mjs'}),health=await h.start(),employee=await h.employee();
+  await h.foreground('ask-name','background_agent_start',{title:'活动欢迎语',goal:'先询问活动名称，收到用户回答后生成 welcome.md。',assignedBotId:employee.id});
+  const task=await h.until(async()=>{const {tasks}=await h.api('/background-tasks');return tasks.find(task=>task.requestId==='ask-name');});
+  const first=await h.until(async()=>{const d=await h.api('/background-task',{id:task.id});return d.task.reviewStatus==='needs_user'&&d;});
+  const report=first.teamReview.current,manifest=join(h.home,'tasks/reports',report.id,'report.json'),before=readFileSync(manifest);
+  await h.stop('SIGKILL');
+  const db=new DatabaseSync(join(h.home,'bridge.sqlite'));
+  const outbox=JSON.parse(db.prepare('SELECT body FROM team_outbox WHERE id=?').get(report.eventId).body);
+  const replay={...outbox,status:'sending',nextAttemptAt:0};delete replay.receipt;delete replay.deliveredAt;
+  db.prepare('UPDATE team_outbox SET body=? WHERE id=?').run(JSON.stringify(replay),report.eventId);db.close();
+  const mailbox=new ManagementDelivery({home:h.home,chiefId:health.botId});assert.equal(mailbox.messages().length,1);
+  await h.start();
+  await h.foreground('answer-name','background_task_review',{id:task.id,runId:task.runId,reportId:report.id,action:'answer',text:ANSWER});
+  const accepted=await h.until(async()=>{const d=await h.api('/background-task',{id:task.id});return d.task.reviewStatus==='accepted'&&d;});
+  assert.equal(accepted.runs.length,2);assert.equal(accepted.task.sessionId,first.task.sessionId);
+  assert.equal(accepted.teamReview.current.taskContext.events.find(event=>event.text===ANSWER)?.source,'user');
+  assert.match(readFileSync(join(accepted.workspace.path,'welcome.md'),'utf8'),/冬季读书会/);
+  assert.deepEqual(readFileSync(manifest),before);assert.equal(mailbox.messages().length,2);
+  const firstReceipt=mailbox.messages().find(message=>message.receipt.eventId===report.eventId);assert.ok(firstReceipt.consumerId);
+  const reviews=accepted.teamReview.reviewHistory.filter(review=>review.source==='supervisor');assert.equal(reviews.length,2);
+  // Same request ID is a retry of the user's voice/text request, not another answer.
+  await h.foreground('answer-name','background_task_review',{id:task.id,runId:task.runId,reportId:report.id,action:'answer',text:ANSWER});
+  await h.stop();await h.start();await delay(300);
+  const final=await h.api('/background-task',{id:task.id});assert.equal(final.runs.length,2);assert.equal(final.task.reviewStatus,'accepted');assert.equal(mailbox.messages().length,2);
+  const stored=new DatabaseSync(join(h.home,'bridge.sqlite'),{readOnly:true});
+  const reconciled=JSON.parse(stored.prepare('SELECT body FROM team_outbox WHERE id=?').get(report.eventId).body);stored.close();
+  assert.equal(reconciled.status,'delivered');assert.equal(reconciled.attempts,outbox.attempts,'existing recipient receipt prevents a second delivery attempt');
+});

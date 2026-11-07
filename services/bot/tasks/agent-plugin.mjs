@@ -10,6 +10,7 @@ import {saveJson,readJson} from './agent-files.mjs';
 import {inside} from './workspace.mjs';
 import {LOCAL_TASK_TOOLS,allowedTaskTools} from './execution.mjs';
 import {hostToolDefinitions} from './host-tools.mjs';
+import {createTaskActivity} from './activity.mjs';
 export const name='opennova-task-agent';
 export const inject=['tools','llm','systemPrompt'];
 export const AGENT_TOOLS=LOCAL_TASK_TOOLS;
@@ -24,6 +25,9 @@ export async function apply(ctx,config){
   const local=new AsyncLocalStorage(),commands=new Set();let steps=0,toolCalls=0,totalTokens=0,estimatedTokens=false,waiting=null,awaiting=null,stopReason;
   const {estimateMessage,estimateContent,estimateToolsTokens}=await import(pathToFileURL(join(config.harnessRoot,'packages/llm/token-meter/lib/types/estimate.js')));
   const progress=()=>saveJson(join(config.runDir,'progress.json'),{steps,toolCalls,totalTokens,estimatedTokens,waiting,awaiting,stopReason,updatedAt:Date.now()});
+  const activity=createTaskActivity({path:join(config.runDir,'activity.json'),taskId:config.taskId,runId:config.runId}),activeTools=new Map();
+  const heartbeat=setInterval(()=>activity.heartbeat(),5000);heartbeat.unref();ctx.effect(()=>()=>clearInterval(heartbeat));
+  const toolActivity=()=>activity.phase(waiting?'waiting_input':awaiting?'waiting_event':activeTools.size?'tool':'idle',[...activeTools.values()].slice(0,3).join(', ')||undefined);
   const stopForBudget=reason=>{stopReason=reason;progress();throw Error(reason);};
   const callHost=async(route,body,signal)=>{
     if(!config.bridge)throw Error('task_host_unavailable');
@@ -69,10 +73,10 @@ export async function apply(ctx,config){
       if(!config.checksEnabled||!config.bridge||config.mode!=='edit')throw Error('task_check_unavailable');
       const current=local.getStore();
       const result=await callHost('check',{...a,stepId:current.id},current.signal);
-      awaiting={taskId:result.task.id,runId:result.task.runId};progress();return {status:'queued',...awaiting,message:'检查已排队；请结束本轮等待结果事件。'};
+      awaiting={taskId:result.task.id,runId:result.task.runId};progress();toolActivity();return {status:'queued',...awaiting,message:'检查已排队；请结束本轮等待结果事件。'};
     }],
     ['task_question','缺少继续任务所必需的信息时，保存给用户的问题并结束本轮等待。',{question:{type:'string',required:true}},a=>{
-      if(typeof a.question!=='string'||!a.question.trim()||a.question.length>4000)throw Error('invalid_task_message');waiting=a.question;progress();return {waitingForUser:true,question:waiting};
+      if(typeof a.question!=='string'||!a.question.trim()||a.question.length>4000)throw Error('invalid_task_message');waiting=a.question;progress();toolActivity();return {waitingForUser:true,question:waiting};
     }],
   ])ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute:async a=>JSON.stringify(await execute(a))})));
   const allowed=new Set(allowedTaskTools(config));
@@ -89,6 +93,7 @@ export async function apply(ctx,config){
     const record={id:randomUUID(),runId:config.runId,taskId:config.taskId,tool:exec.name,status:'running',createdAt:Date.now(),arguments:exec.arguments};
     if(exec.name==='task_command')record.logPath=join(config.runDir,'commands',record.id,'output.log');
     const path=join(config.runDir,'steps',record.id+'.json');saveJson(path,record);progress();
+    activeTools.set(record.id,exec.name);toolActivity();
     try{
     for(const key of ['file_path','path','workdir'])if(typeof exec.arguments?.[key]==='string')scopedPath(exec.arguments[key]);
       const result=await local.run({...record,signal:exec.signal},()=>next());
@@ -101,6 +106,7 @@ export async function apply(ctx,config){
         output:result.content?.filter(b=>b.type==='text').map(b=>b.text).join('\n').slice(-24000),logPath:value?.logPath??record.logPath});
       return result;
     }catch(error){saveJson(path,{...record,status:exec.signal?.aborted?'interrupted':'failed',finishedAt:Date.now(),error:String(error.message).slice(0,500)});throw error;}
+    finally{activeTools.delete(record.id);toolActivity();}
   });
   ctx.on('llm/stream',(options,next)=>{
     if(options.sessionId!==config.sessionId)throw Error('task_session_mismatch');
@@ -112,15 +118,18 @@ export async function apply(ctx,config){
       if(config.tokenBudget>0&&totalTokens+inputEstimate>config.tokenBudget)stopForBudget('task_token_budget_exhausted');
       steps++;progress();
       if(config.bridge){
+        activity.phase('waiting_foreground');
         for(;;){
           options.signal?.throwIfAborted();
           if(!(await callHost('admission',{},options.signal)).foregroundBusy)break;
           await delay(150,undefined,{signal:options.signal});
         }
       }
+      activity.phase('model');
       let usage,outputEstimate=0;
       try{
         for await(const chunk of next()){
+          activity.touch();
           if(chunk.type==='usage')usage=chunk.usage;
           if(chunk.type==='block-end')outputEstimate+=estimateContent([chunk.block]);
           yield chunk;
@@ -129,6 +138,7 @@ export async function apply(ctx,config){
         if(usage)totalTokens+=usage.totalTokens??((usage.inputTokens??0)+(usage.outputTokens??0)+(usage.cacheReadTokens??0)+(usage.cacheWriteTokens??0));
         else{totalTokens+=inputEstimate+outputEstimate;estimatedTokens=true;}
         progress();
+        toolActivity();
       }
     })();
   });

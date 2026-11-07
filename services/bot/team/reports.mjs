@@ -15,7 +15,9 @@ function fileStatus(path,sha256){try{if(!lstatSync(path).isFile()||lstatSync(pat
 export class TeamReports {
   constructor(tasks,{now=Date.now,maxFileBytes=20*1024*1024,maxTotalBytes=64*1024*1024}={}){
     Object.assign(this,{tasks,db:tasks.db,now,maxFileBytes,maxTotalBytes});this.fileCache=new Map();this.root=join(tasks.root,'reports');mkdirSync(this.root,{recursive:true,mode:0o700});
-    this.db.exec('CREATE TABLE IF NOT EXISTS team_report (id TEXT PRIMARY KEY, body TEXT NOT NULL)');ensureDeliveryTables(this.db);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS team_report (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS team_report_task_version ON team_report(json_extract(body,'$.taskId'),json_extract(body,'$.version') DESC);
+      CREATE INDEX IF NOT EXISTS team_report_current ON team_report(json_extract(body,'$.taskId'),json_extract(body,'$.runId'),json_extract(body,'$.assignmentVersion'),json_extract(body,'$.version') DESC)`);ensureDeliveryTables(this.db);
   }
   raw(id){const row=this.db.prepare('SELECT body FROM team_report WHERE id=?').get(id);if(!row)throw Error('unknown_team_report');return JSON.parse(row.body);}
   fileStatus(path,sha256,fresh=false){
@@ -30,7 +32,8 @@ export class TeamReports {
       sourceStatus:a.sourcePath?this.fileStatus(a.sourcePath,a.sha256,fresh):'available'}))};
   }
   history(taskId){return this.db.prepare("SELECT id FROM team_report WHERE json_extract(body,'$.taskId')=? ORDER BY json_extract(body,'$.version') DESC").all(taskId).map(r=>this.get(r.id));}
-  current(task){const row=this.db.prepare("SELECT id FROM team_report WHERE json_extract(body,'$.taskId')=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.assignmentVersion')=? ORDER BY json_extract(body,'$.version') DESC LIMIT 1").get(task.id,task.runId,task.assignmentVersion??1);return row?this.get(row.id):null;}
+  currentId(task){return this.db.prepare("SELECT id FROM team_report WHERE json_extract(body,'$.taskId')=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.assignmentVersion')=? ORDER BY json_extract(body,'$.version') DESC LIMIT 1").get(task.id,task.runId,task.assignmentVersion??1)?.id??null;}
+  current(task){const id=this.currentId(task);return id?this.get(id):null;}
   view(task){return {current:this.current(task),history:this.history(task.id)};}
   isDelivered(id){const report=this.raw(id),row=this.db.prepare('SELECT body FROM team_outbox WHERE id=?').get(report.eventId);return !!row&&JSON.parse(row.body).status==='delivered';}
   assertCurrent(task,reportId){

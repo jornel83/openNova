@@ -171,3 +171,12 @@ test('cumulative limits can be cleared per dimension without erasing explicit pe
   f.supervisor.tick();assert.deepEqual(f.supervisor.history(task.id)[0].budgets,{maxSteps:0,tokenBudget:1500,timeoutMs:0});
   for(const key of ['tokenBudget','timeBudgetMs'])for(const value of [-1,999,null,NaN,Infinity,'0'])assert.throws(()=>f.supervisor.configure({...bound,[key]:value}),/invalid_management_policy/);
 });
+
+test('management activity is shown only for the current bound review while history remains immutable',t=>{
+  const f=fixture(t);f.supervisor.tick();const review=f.supervisor.history(f.base.id)[0];
+  f.tasks.activity=(task,run,job)=>{assert.equal(task.id,review.managementTaskId);assert.equal(run.id,task.runId);assert.equal(job.id,run.jobId);return {phase:'model',lastActivityAt:1000,heartbeatAt:2000};};
+  assert.equal(f.supervisor.view(f.base).currentReview.activity.phase,'model');
+  assert.equal(f.supervisor.get(review.id).activity,undefined,'live activity is not written into the acceptance record');
+  f.decide({action:'accept',summary:'检查通过',evidenceIds:[f.report.artifacts[0].id]});f.supervisor.tick();
+  assert.equal(f.supervisor.view(f.base).currentReview.activity,undefined);
+});

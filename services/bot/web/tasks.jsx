@@ -5,7 +5,7 @@ import {TeamInbox} from './team-inbox.jsx';
 import {TeamResults,TaskCoordination} from './team-results.jsx';
 import {reviewLabels,reviewConflict,inboxTasks,employeeTask} from './team-view.mjs';
 import {errorText} from './api.mjs';
-import {taskLabels,activeTask,taskReason,taskDuration,appendTaskLog} from './task-view.mjs';
+import {taskLabels,activeTask,taskReason,taskDuration,appendTaskLog,taskActivityText} from './task-view.mjs';
 
 export function TaskCard({task,onOpen}){
   return <button type="button" className="task-card" onClick={()=>onOpen(task.id)}>
@@ -139,6 +139,7 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       </div>
       {detail.task.kind!=='agent'&&<details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>任务 ID：{detail.task.id}</p><p>执行 ID：{detail.task.runId}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>}
       <label className="task-attempt">执行记录<select value={logRun||''} onChange={e=>setRunId(e.target.value)}>{detail.runs.map(run=><option key={run.id} value={run.id}>第 {run.number} 次 · {taskLabels[run.status]}</option>)}</select></label>
+      {taskActivityText(currentRun,clock)&&<p className="task-intro" aria-label="执行活动">{taskActivityText(currentRun,clock)}</p>}
       <TeamResults detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>
       <TaskCoordination key={'coordination:'+detail.task.id} detail={detail} team={team} tasks={tasks} action={action} disabled={!online||pending}/>
       {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy} onSelect={onSelect}/>}

@@ -1,5 +1,14 @@
 export const taskLabels={blocked:'等待前置条件',paused:'已暂停',pausing:'暂停中',waiting_input:'等待补充',waiting_event:'等待事件',queued:'排队中',running:'运行中',cancelling:'取消中',completed:'已完成',failed:'执行失败',cancelled:'已取消',interrupted:'异常中断'};
 export const activeTask=task=>['blocked','queued','running','pausing','cancelling'].includes(task.status);
+export function taskActivityText(run,now=Date.now()){
+  const activity=run?.activity;if(!activity)return '';
+  const labels={initializing:'正在准备工作会话',waiting_foreground:'等待前台对话结束',model:'正在等待模型响应',tool:'正在执行工具',idle:'正在衔接执行步骤',command:'命令正在运行',queued:'等待执行队列',blocked:'等待前置条件',pausing:'正在暂停',cancelling:'正在取消'};
+  const phase=labels[activity.phase];if(!phase)return '';
+  const seconds=Math.max(0,Math.floor((now-activity.lastActivityAt)/1000)),age=seconds<60?`${seconds} 秒`:`${Math.floor(seconds/60)} 分钟`;
+  const recent=Number.isFinite(activity.lastActivityAt)?` · 最近活动 ${age}前`:'';
+  const heartbeat=activity.heartbeatAt&&now-activity.heartbeatAt>15000?' · 状态更新暂未收到，尚不能确认执行是否中断':'';
+  return phase+(activity.tool?'（'+activity.tool+'）':'')+recent+heartbeat;
+}
 export function taskReason(task){
   if(task.error==='task_timeout')return '执行超过时限，作业已停止。';
   if(task.cleanupConfirmed===false&&!activeTask(task))return '旧作业是否停止尚未确认，后续任务暂缓执行。请核对运行环境。';

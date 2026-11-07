@@ -12,6 +12,7 @@ import {workspaceDiff,applyWorkspace} from './workspace.mjs';
 import {TeamReports} from '../team/reports.mjs';
 import {TeamAssignments,planningSpec} from '../team/assignments.mjs';
 import {validBudget,remainingBudget,capBudget} from './budgets.mjs';
+import {taskActivity,readTaskActivity} from './activity.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
 const live=new Set(['queued','blocked','running','pausing','cancelling']);
@@ -139,11 +140,16 @@ export class TaskManager {
     task.runId=run.id;task.status='queued';task.updatedAt=run.createdAt;task.unread=false;
     this.put('job',job);this.put('run',run);this.put('task',task);
   }
+  activity(task,run,job){
+    const directory=this.directory(job);let logActivityAt;
+    try{logActivityAt=statSync(join(directory,'output.log')).mtimeMs;}catch{}
+    return taskActivity({task,run,job,record:readTaskActivity(join(directory,'activity.json')),logActivityAt,workerConnected:!!this.workers.get(job.id)?.connected,foregroundBusy:!!this.foregroundBusy?.()});
+  }
   detail(id){
     const task=this.row('task',id),runs=this.db.prepare("SELECT body FROM background_run WHERE json_extract(body,'$.taskId')=? ORDER BY rowid").all(id).map(r=>JSON.parse(r.body));
     return {task:this.summary(task),runs:runs.map(run=>{
       const job=this.row('job',run.jobId),directory=this.directory(job);
-      return {...run,job:{...job,logPath:join(directory,'output.log')},...(task.kind==='agent'?{
+      return {...run,activity:this.activity(task,run,job),job:{...job,logPath:join(directory,'output.log')},...(task.kind==='agent'?{
         jobs:readSteps(directory),progress:readJson(join(directory,'progress.json')),result:job.agentResult??readJson(join(directory,'agent-result.json')),
       }:{})};
     }),teamReview:{...this.reports.view(task),...this.supervisor?.view(task)},...(task.kind==='agent'?{automation:this.automation.view(task),checks:this.all().filter(t=>t.parentTaskId===id).map(t=>this.summary(t)),workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};

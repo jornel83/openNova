@@ -11,6 +11,7 @@ import {parseStartArgs} from './start-options.mjs';
 import {prepareDesktop} from '../../tools/desktop/start.mjs';
 import {loadResearchConfig} from './research/config.mjs';
 import {runtimePatch} from './configuration.mjs';
+import {assertRestoreLocation} from '../../tools/bot/state-backup.mjs';
 
 process.umask(0o077);
 const b=botSettings(),s=loadSettings(),research=loadResearchConfig();
@@ -30,6 +31,7 @@ if(options.stop){
   try{await api('/shutdown');console.log('已请求停止 Bot 宿主，持久状态保留。');}catch{console.error('无法连接 Bot 宿主。');process.exitCode=1;}
   process.exit(process.exitCode||0);
 }
+assertRestoreLocation(b.home);
 let existing;
 try{existing=await api('/health');}catch{}
 if(existing?.ready){await showUI(existing);console.log(`Bot 已在运行：${b.url}；复用现有会话。`);process.exit(0);}

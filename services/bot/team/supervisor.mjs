@@ -13,7 +13,10 @@ export const MANAGEMENT_DEFAULTS={enabled:true,paused:false,maxReworks:2,tokenBu
 export class TeamSupervisor {
   constructor({tasks,reports,createManagementTask,now=Date.now}){
     Object.assign(this,{tasks,reports,createManagementTask,now,db:tasks.db});this.ticking=false;this.notifications=new Set();
-    this.db.exec('CREATE TABLE IF NOT EXISTS team_review (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+    this.db.exec(`CREATE TABLE IF NOT EXISTS team_review (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS team_review_task ON team_review(json_extract(body,'$.taskId'));
+      CREATE INDEX IF NOT EXISTS team_review_current ON team_review(json_extract(body,'$.taskId'),json_extract(body,'$.reportId'),json_extract(body,'$.runId'),json_extract(body,'$.assignmentVersion'));
+      CREATE INDEX IF NOT EXISTS team_review_status ON team_review(json_extract(body,'$.status'))`);
   }
   get(id){const row=this.db.prepare('SELECT body FROM team_review WHERE id=?').get(id);return row?JSON.parse(row.body):null;}
   put(value){
@@ -26,6 +29,7 @@ export class TeamSupervisor {
     return value;
   }
   history(taskId){return this.db.prepare("SELECT body FROM team_review WHERE json_extract(body,'$.taskId')=? ORDER BY rowid DESC").all(taskId).map(row=>JSON.parse(row.body));}
+  hasReview(task,reportId){return !!this.db.prepare("SELECT id FROM team_review WHERE json_extract(body,'$.taskId')=? AND json_extract(body,'$.reportId')=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.assignmentVersion')=? LIMIT 1").get(task.id,reportId,task.runId,task.assignmentVersion??1);}
   management(task){return {...MANAGEMENT_DEFAULTS,enabled:false,...task.management};}
   usage(task){
     const ids=new Set([task.id,...this.tasks.all().filter(item=>item.managementReview?.targetTaskId===task.id||item.parentTaskId===task.id).map(item=>item.id)]);let usedTokens=0,usedDurationMs=0;
@@ -38,13 +42,20 @@ export class TeamSupervisor {
     return {usedTokens,usedDurationMs};
   }
   summary(task){
-    const report=this.reports.current(task),review=report&&this.history(task.id).find(item=>item.reportId===report.id);
+    const report=this.reports.current(task),review=report&&this.history(task.id).find(item=>item.reportId===report.id&&item.runId===task.runId&&item.assignmentVersion===(task.assignmentVersion??1));
     let status=review?.status,reason;
     if(status==='accepted'&&(report.evidence?.captureIncomplete||(report.artifacts??[]).some(item=>item.status!=='available'||item.sourceStatus&&!['available','unchanged'].includes(item.sourceStatus))||(report.evidence?.codeChanges??[]).some(item=>item.deleted&&existsSync(item.path)))){status='stale';reason='accepted_report_evidence_changed';}
     return {reportId:report?.id,reviewStatus:status??(report?'pending':undefined),reviewVersion:review?.id,
       inboxReason:reason??(review&&['needs_user','budget_exhausted','failed'].includes(status)?review.decision?.summary??review.error:undefined)};
   }
-  view(task){const reviews=this.history(task.id),effective=this.summary(task),current=reviews.find(review=>review.reportId===effective.reportId);return {management:{...this.management(task),...this.usage(task)},currentReview:current?{...current,status:effective.reviewStatus,effectiveReason:effective.inboxReason}:null,reviewHistory:reviews,reviews};}
+  view(task){
+    const reviews=this.history(task.id),effective=this.summary(task),current=reviews.find(review=>review.reportId===effective.reportId&&review.runId===task.runId&&review.assignmentVersion===(task.assignmentVersion??1));let activity;
+    if(current?.managementTaskId&&['queued','reviewing'].includes(effective.reviewStatus))try{
+      const child=this.tasks.row('task',current.managementTaskId),run=this.tasks.row('run',child.runId),job=this.tasks.row('job',run.jobId);
+      if(child.managementReview?.reportId===current.reportId)activity=this.tasks.activity?.(child,run,job);
+    }catch{}
+    return {management:{...this.management(task),...this.usage(task)},currentReview:current?{...current,status:effective.reviewStatus,effectiveReason:effective.inboxReason,...activity?{activity}:{} }:null,reviewHistory:reviews,reviews};
+  }
   continuationBudget(task){
     const settings=this.management(task);if(!settings.enabled)return {};
     if(settings.paused)return {reason:'management_paused'};
@@ -59,7 +70,7 @@ export class TeamSupervisor {
   }
   current(review){
     const task=this.tasks.row('task',review.taskId);
-    if(review.source!=='user'&&this.history(task.id).some(other=>other.id!==review.id&&other.reportId===review.reportId&&other.source==='user'&&['accepted','changes_requested','answered','needs_user'].includes(other.status)))throw Error('review_stale');
+    if(review.source!=='user'&&this.history(task.id).some(other=>other.id!==review.id&&other.reportId===review.reportId&&other.runId===review.runId&&other.assignmentVersion===review.assignmentVersion&&other.source==='user'&&['accepted','changes_requested','answered','needs_user'].includes(other.status)))throw Error('review_stale');
     if(task.runId!==review.runId||task.assignmentVersion!==review.assignmentVersion||live.has(task.status)||!waiting.has(task.status))throw Error('review_stale');
     const report=this.reports.assertCurrent(task,review.reportId)??this.reports.get(review.reportId);
     if(report.runId!==task.runId||report.assignmentVersion!==task.assignmentVersion)throw Error('review_stale');
@@ -116,7 +127,7 @@ export class TeamSupervisor {
   tick(){
     if(this.ticking||this.tasks.closed)return;this.ticking=true;
     try{
-      for(const row of this.db.prepare('SELECT body FROM team_review').all()){
+      for(const row of this.db.prepare("SELECT body FROM team_review WHERE json_extract(body,'$.status') IN ('queued','reviewing')").all()){
         const review=JSON.parse(row.body);if(!['queued','reviewing'].includes(review.status))continue;
         let current;try{current=this.current(review);}catch{
           this.put({...review,status:'stale',finishedAt:this.now()});
@@ -148,8 +159,12 @@ export class TeamSupervisor {
       for(const task of this.tasks.all()){
         const settings=this.management(task);
         if(!task.management||!settings.enabled||settings.paused||task.managementReview||!waiting.has(task.status)||task.assignedBotId===this.tasks.team?.chiefId)continue;
+        // Accepted/history rows need no file hashing on every scheduler tick.
+        // Resolve the current immutable report id each time: a new capture in
+        // the same Run must still enter independent review.
+        const reportId=this.reports.currentId?.(task);if(reportId&&this.hasReview(task,reportId))continue;
         const report=this.reports.current(task);if(!report||!this.reports.isDelivered(report.id))continue;
-        if(this.history(task.id).some(review=>review.reportId===report.id))continue;
+        if(this.hasReview(task,report.id))continue;
         const review={id:'review-'+hash(report.id),reportId:report.id,taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion,source:'supervisor',createdAt:this.now()};
         try{
           this.current(review);const usage=this.usage(task),tokensLeft=remainingBudget(settings.tokenBudget,usage.usedTokens),timeLeft=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);

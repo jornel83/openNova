@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ResearchSources} from './research-sources.jsx';
 import {AssigneeSelect} from './team.jsx';
-import {taskLabels} from './task-view.mjs';
+import {taskLabels,taskActivityText} from './task-view.mjs';
 import {errorText} from './api.mjs';
 import {reviewView,reviewLabels,priorityLabels,localDateValue,canEditDependencies,artifactLabel,employeeTask,dependencyReason} from './team-view.mjs';
 import {budgetInput,budgetMinutesInput,managementExecutionBudget,managementUsageLabel} from './task-budget.mjs';
@@ -38,6 +38,7 @@ export function TeamResults({detail,currentRun,action,disabled=false,busy=false}
   return <section className="team-results" aria-label="成果与验收">
     <div className="task-heading"><h3>成果与验收</h3><span>第 {report.version} 版</span></div>
     <div className="team-result-states"><span>执行：{taskLabels[report.status]||report.status}</span><span>验收：{reviewLabels[review?.status]||'待查看'}</span></div>
+    {view.latest&&review?.activity&&taskActivityText(review)&&<p className="subtle" aria-label="总管活动">总管：{taskActivityText(review)}</p>}
     <p className="subtle">{employeeTask(detail.task)?'员工交付，按验收标准检查。':'总管亲自执行，由你查看成果。'}{report.delivery==='delivered'?' 汇报已送达管理记录。':''}</p>
     {!view.latest&&<p className="team-callout">这是历史成果，仅供查看。请切换到最新执行记录后处理。</p>}
     {view.latest&&view.evidenceChanged&&<p className="team-callout">当前文件或成果快照已有变化，或快照未完整保存。请核对后接续任务，形成新的成果再验收。</p>}
