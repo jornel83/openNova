@@ -172,7 +172,7 @@ export class TaskManager {
     const old=this.db.prepare('SELECT body FROM background_message WHERE id=?').get(messageId);
     if(old){const m=JSON.parse(old.body);if(m.taskId!==id||m.text!==text)throw Error('task_id_conflict');return this.detail(id);}
     if(this.messages(task).length>=100)throw Error('task_message_limit');
-    this.put('message',{id:messageId,taskId:id,text,createdAt:Date.now()});this.syncInbox(task);this.changed(task);return this.detail(id);
+    this.put('message',{id:messageId,taskId:id,text,source:'user',assignmentVersion:task.assignmentVersion??1,createdAt:Date.now()});this.syncInbox(task);this.changed(task);return this.detail(id);
   }
   pause({id,runId,handoffActionId}){
     const task=this.row('task',id);if(task.kind!=='agent')throw Error('not_agent_task');
@@ -197,7 +197,7 @@ export class TaskManager {
     if(task.runId!==runId)throw Error('task_run_changed');
     if(!this.summary(task).canContinue)throw Error('task_retry_unavailable');
     task.lastContinueAction=actionId;task.lastContinueText=text;delete task.stopIntent;
-    this.atomic(()=>this.newRun(task,this.row('run',runId).number+1,text||'请继续完成原任务，先核对已有结果。'));
+    this.atomic(()=>this.newRun(task,this.row('run',runId).number+1,text||'请继续完成原任务，先核对已有结果。',{instructionSource:{kind:'user',actionId,previousRunId:runId}}));
     this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
   }
   async diff({id,runId}){

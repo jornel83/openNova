@@ -21,6 +21,7 @@
 | 模块 | 职责 |
 | --- | --- |
 | `services/bot/team/reports.mjs` | 在任务完成事务中保存成果、事件与 outbox；复制固定版本文件，保存校验哈希、命令退出码、日志及来源 |
+| `services/bot/team/task-context.mjs` | 为成果固定本任务跨轮提问、用户回答和已送达补充的上下文，记录来源与派工版本 |
 | `services/bot/team/outbox.mjs`、`delivery.mjs` | 持久投递意图、收件记录核对、失败重试、消费去重 |
 | `services/bot/team/supervisor.mjs` | 总管管理任务的排队、预算、版本准入、人工决定优先、有限返工与待处理事项 |
 | `services/bot/team/review.mjs`、`management-plugin.mjs` | 只读证据工作目录、结构化验收决定及证据准入 |
@@ -67,6 +68,30 @@ node --test services/bot/tests/team-delivery.test.mjs \
   services/bot/tests/team-assignments.test.mjs \
   services/bot/tests/team-handoff-runtime.test.mjs \
   services/bot/tests/team-view.test.mjs
+```
+
+## 跨轮问答验收修复（2026-11-07）
+
+原问题：首轮员工询问活动名称，用户通过“待你处理”回答后，员工在下一轮生成成果；独立总管的证据目录仅包含当前轮目标、文件和工具记录，缺少上一轮提问及用户回答，因而误判“无法确认名称由用户指定”。
+
+新成果增加不可变的 `taskContext` 快照，并随 `report.json` 传入独立管理会话：
+
+- 收集本任务此前的实际提问、接续指令和有明确送达回执的补充消息，绑定 Task、Run 与派工版本。不读取员工私有会话或记忆。
+- 区分用户、员工、总管、事件、交接和未知来源；历史人工回答通过持久化 review / report / nextRun 关联恢复来源，员工自述不能冒充用户确认。
+- 原始提交时间决定用户要求的新旧，送达时间只证明收到；迟送的旧消息不能覆盖之后的明确更正。未送达、送达不明、其他任务或未来轮次记录不进入验收证据。
+- 上下文最多 100 条事件、每条 8,000 字符、整体 64 KiB，截断显式标记。历史报告与历史管理证据不回写；修复前报告如需复核，可接续原任务生成新版本。
+
+页面入口保持不变，未新增“回复员工”入口，也不提升执行权限。
+
+验证：全量 554 项 Node + 186 项 Python 测试通过，共 740 项；补充迟送消息边界后，相关 9 项定向测试通过。真实 bundled Harness 覆盖人工回答与接续两条路径、第三轮名称更正、管理会话实际读取上下文与成果、旧快照不变。构建成功，doctor ready=true，源码审计 independent=true、gitlinks=0。
+
+原目录真实模型验证：接续现有 `tc03`，第三轮仅查找并读取已有 `welcome.md`，没有重新询问或改写；总管在第 3 版明确核对首轮提问与用户“冬季读书会”的答复后验收通过。重启及复核前后，3 名成员与 11 项可见任务保留，其他任务当前 Run 和状态不变；核对的 10 项文件（配置、连接令牌、记忆、原成果及历史证据）哈希一致。浏览器连接正常，原语音客户端持续静音；授权、会话和记忆继续使用仓库外目录。
+
+定向复现：
+
+```sh
+node --test services/bot/tests/team-task-context.test.mjs \
+  services/bot/tests/task-context-runtime.test.mjs
 ```
 
 ## 当前边界

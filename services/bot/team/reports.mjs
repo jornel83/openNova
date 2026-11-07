@@ -5,6 +5,7 @@ import {mkdirSync,readFileSync,writeFileSync,renameSync,realpathSync,lstatSync,e
 import {join,resolve,relative,isAbsolute,basename} from 'node:path';
 import {readJson,saveJson,readSteps} from '../tasks/agent-files.mjs';
 import {enqueueTeamEvent,ensureDeliveryTables} from './outbox.mjs';
+import {captureTaskContext} from './task-context.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const terminal=new Set(['completed','failed','interrupted','cancelled','paused','waiting_input','waiting_event']);
 const inside=(root,path)=>{const p=relative(root,path);return p!=='..'&&!p.startsWith('../')&&!isAbsolute(p);};
@@ -89,7 +90,7 @@ export class TeamReports {
       report={id,eventId:'event-'+id,taskId:task.id,runId:run.id,assignmentVersion:task.assignmentVersion??1,assignedBotId:task.assignedBotId,recipientBotId:task.reportTo??task.supervisorBotId??this.tasks.team?.chiefId,
         version,status:job.status,error:job.error,createdAt,goal:task.goal??task.command,constraints:task.constraints,acceptanceCriteria:task.acceptanceCriteria,
         summary:clipped(job.agentResult?.text||job.error||`${task.title}：${job.status}${job.exitCode===undefined?'':'，退出码 '+job.exitCode}`),question:job.agentResult?.question,
-        artifacts,evidence:{execution:{status:job.status,exitCode:job.exitCode,cleanupConfirmed:job.cleanupConfirmed,error:job.error},steps,commands,checks,codeChanges,captureIncomplete:!!codeError||candidates.size>remainingArtifacts,...codeError?{codeError}:{}},sources};
+        taskContext:captureTaskContext(this.tasks,task,run,job),artifacts,evidence:{execution:{status:job.status,exitCode:job.exitCode,cleanupConfirmed:job.cleanupConfirmed,error:job.error},steps,commands,checks,codeChanges,captureIncomplete:!!codeError||candidates.size>remainingArtifacts,...codeError?{codeError}:{}},sources};
       saveJson(manifest,report);
     }
     if(report.taskId!==task.id||report.runId!==run.id||report.assignmentVersion!==(task.assignmentVersion??1))throw Error('team_report_binding_mismatch');
