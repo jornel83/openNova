@@ -50,6 +50,15 @@ test('dependency cycles, stale form submissions and mutation after launch are re
   const run=tasks.row('run',b.task.runId);tasks.put('run',{...run,startedAt:Date.now()});
   assert.throws(()=>tasks.setDependencies({id:'b-task',runId:run.id,dependsOn:[]}),/locked/);
 });
+test('completed dependency histories recheck file drift when viewed without background polling',async t=>{
+  const {tasks}=fixture(t);create(tasks,'source');const report=await completed(tasks,'source');accept(tasks,'source',report);
+  create(tasks,'consumer',{dependsOn:['source']});tasks.assignments.tick();await completed(tasks,'consumer');
+  const consumer=tasks.row('task','consumer');assert.deepEqual(tasks.summary(consumer).inputsStale,[]);
+  let checked=0;const current=tasks.reports.current.bind(tasks.reports);tasks.reports.current=(...args)=>{checked++;return current(...args);};
+  writeFileSync(report.artifacts[0].sourcePath,'changed after completion');tasks.assignments.tick();assert.equal(checked,0,'completed consumers are not polled');
+  assert.deepEqual(tasks.detail(consumer.id).task.inputsStale,['source']);
+  writeFileSync(report.artifacts[0].sourcePath,'固定版本成果');assert.deepEqual(tasks.detail(consumer.id).task.inputsStale,[],'restoring evidence is reflected immediately, without cross-view cache');
+});
 test('reassignment waits for confirmed process cleanup and gives the next owner a fresh session and workspace',async t=>{
   const {tasks}=fixture(t);create(tasks,'handoff');const report=await completed(tasks,'handoff');
   const old=tasks.row('task','handoff'),oldHome=tasks.agentHome(old),oldRun=tasks.row('run',old.runId),oldJob=tasks.row('job',oldRun.jobId);

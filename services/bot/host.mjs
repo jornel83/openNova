@@ -13,6 +13,8 @@ import {Operations} from './operations.mjs';
 import {TeamRegistry} from './team/registry.mjs';
 import {TeamActors} from './team/actor.mjs';
 import {TeamSupervisor} from './team/supervisor.mjs';
+import {TeamWatch} from './team/watch.mjs';
+import {TeamOverview} from './team/overview.mjs';
 import {TeamOutbox} from './team/outbox.mjs';
 import {ManagementDelivery} from './team/delivery.mjs';
 import {teamTools} from './team/tools.mjs';
@@ -93,6 +95,8 @@ export async function apply(ctx,config) {
       {source:'supervisor',managementReview});
     void managementDelivery.consume(report.eventId,review.id).catch(()=>{});return result;
   }});
+  tasks.watch=new TeamWatch({tasks,team,events});
+  team.overview=new TeamOverview({tasks,team,watch:tasks.watch});
   const taskHostTools=createTaskHostTools({tasks,ops,foregroundBusy:()=>!!(requests.active||requests.mutation),
     bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}});
   resources.add(()=>taskHostTools.close());
@@ -195,7 +199,7 @@ export async function apply(ctx,config) {
   resources.assertOpen();
   const handle=createControls({ops,requests,tasks,team,memory,context,documents:{...documents,open:(...args)=>taskHostTools.foreground(()=>documents.open(...args))},events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
     desktopOpen:()=>desktop?taskHostTools.foreground(()=>desktop.handle('/desktop/open',{activate:true})):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({team:{version:3,enabled:team.enabled(),reports:true,supervisor:true,dependencies:true},backgroundTasks:{version:5,agentSessions:true,eventContinuation:true,activity:true,agentDefaults:{maxSteps:0,tokenBudget:0,timeoutMs:0},executionPolicy:2,permissions:['full','read-only'],templates:['general','code','documents'],concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+    health:()=>({team:{version:4,enabled:team.enabled(),reports:true,supervisor:true,dependencies:true,watch:true,overview:true},backgroundTasks:{version:5,agentSessions:true,eventContinuation:true,activity:true,agentDefaults:{maxSteps:0,tokenBudget:0,timeoutMs:0},executionPolicy:2,permissions:['full','read-only'],templates:['general','code','documents'],concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });

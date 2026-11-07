@@ -1,9 +1,10 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {TeamPanel,AssigneeSelect} from './team.jsx';
 import {AgentTaskForm,AgentTaskDetail} from './agent-tasks.jsx';
-import {TeamInbox} from './team-inbox.jsx';
+import {TeamOverview,TeamWatch} from './team-overview.jsx';
+import {taskPages} from './team-overview-view.mjs';
 import {TeamResults,TaskCoordination} from './team-results.jsx';
-import {reviewLabels,reviewConflict,inboxTasks,employeeTask} from './team-view.mjs';
+import {reviewLabels,reviewConflict,employeeTask} from './team-view.mjs';
 import {errorText} from './api.mjs';
 import {taskLabels,activeTask,taskReason,taskDuration,appendTaskLog,taskActivityText} from './task-view.mjs';
 
@@ -23,22 +24,28 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
   const [connectionError,setConnectionError]=useState(''),[notice,setNotice]=useState('');
   const [owner,setOwner]=useState('all');
   const [filter,setFilter]=useState('all'),[page,setPage]=useState(null),[pageLimit,setPageLimit]=useState(50);
+  const [overview,setOverview]=useState(null),[overviewError,setOverviewError]=useState(''),[overviewVersion,setOverviewVersion]=useState(0);
+  const [historyOpen,setHistoryOpen]=useState(false),[listLoading,setListLoading]=useState(false);
   const [runId,setRunId]=useState(null),[log,setLog]=useState(null),[clock,setClock]=useState(Date.now());
   const [form,setForm]=useState({title:'',command:'',workdir:'.',artifacts:'',minutes:'30'});
   const submission=useRef(null),retryAction=useRef(null),logRef=useRef(null),selectedRef=useRef(selectedId);
   selectedRef.current=selectedId;
   useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[]);
   useEffect(()=>{
-    let stopped=false;
+    let stopped=false;setListLoading(true);
     const refresh=async()=>{
       try{
-        const rows=[];let result;
-        for(let offset=0;offset<pageLimit;offset+=50){result=await api.call('background-tasks',{limit:50,offset});rows.push(...result.tasks);if(!result.hasMore)break;}
-        if(!stopped){setPage({...result,tasks:[...new Map(rows.map(task=>[task.id,task])).values()]});setConnectionError('');}
-      }catch(e){if(!stopped)setConnectionError(errorText(e));}
+        const result=await taskPages(api,{owner,filter,pageLimit,stopped:()=>stopped});
+        if(!stopped){setPage({...result,scope:owner+':'+filter});setConnectionError('');}
+      }catch(e){if(!stopped)setConnectionError(errorText(e));}finally{if(!stopped)setListLoading(false);}
     };
     void refresh();return()=>{stopped=true;};
-  },[summary,pageLimit]);
+  },[summary,pageLimit,owner,filter,online]);
+  useEffect(()=>{
+    let stopped=false;
+    const refresh=async()=>{try{const value=await api.call('team-overview',{...(owner==='all'?{}:{ownerId:owner}),limit:3});if(!stopped){setOverview({...value,owner});setOverviewError('');}}catch(e){if(!stopped)setOverviewError(errorText(e));}};
+    void refresh();return()=>{stopped=true;};
+  },[summary,owner,online,overviewVersion]);
   useEffect(()=>{
     setDetail(null);setRunId(null);setError('');setConnectionError('');setNotice('');retryAction.current=null;
     if(!selectedId)return;
@@ -99,22 +106,30 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
     if(retryAction.current?.runId!==task.runId)retryAction.current={id:task.id,runId:task.runId,actionId:crypto.randomUUID()};
     const value=await action('background-task-retry',retryAction.current);if(value)setRunId(null);
   }
-  const tasks=(page??summary)?.tasks??[];
-  const filtered=tasks.filter(t=>owner==='all'||t.assignedBotId===owner).filter(t=>filter==='all'||filter==='active'&&activeTask(t)||filter==='attention'&&(t.unread||inboxTasks([t]).length||['failed','interrupted','waiting_input','waiting_event','paused'].includes(t.status)));
+  const currentPage=page?.scope===owner+':'+filter?page:null;
+  const tasks=currentPage?.tasks??(owner==='all'&&filter==='all'?summary?.tasks??[]:[]);
+  const choices=[...new Map([...(summary?.tasks??[]),...tasks].map(task=>[task.id,task])).values()];
+  const currentOverview=overview?.owner===owner?overview:null;
+  const chooseOwner=value=>{setOwner(value);setPageLimit(50);};
+  const chooseFilter=value=>{setFilter(value);setPageLimit(50);setHistoryOpen(true);};
   return <section className="task-panel" aria-label="后台任务">
     <div className="task-heading"><h2>{selectedId?'任务详情':'后台任务'}</h2>{selectedId&&<button type="button" onClick={()=>onSelect(null)}>返回列表</button>}</div>
     {(error||connectionError)&&<p className="error" role="alert">{error||connectionError}</p>}
     {notice&&<p className="task-intro" role="status">{notice}</p>}
     {summary?.problem&&<p className="error" role="alert">任务调度暂时不可用，已保存的任务仍可查看。请检查服务日志。</p>}
     {!selectedId?<>
-      <TeamInbox tasks={tasks} onSelect={onSelect}/>
-      <TeamPanel api={api} team={team} disabled={!online||busy} onSelect={onSelect}/>
-      {team&&<label>按负责人筛选<select value={owner} onChange={e=>setOwner(e.target.value)}><option value="all">全部员工</option>{team.members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>}
-      <p className="task-intro">可以对 Nova 说“在后台运行测试”。任务执行期间，你可以继续聊天。</p>
-      <div className="task-filters" aria-label="任务筛选">{[['all','全部'],['active','进行中'],['attention','需要关注']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div>
-      <div className="task-list">{filtered.map(task=><TaskCard key={task.id} task={task} onOpen={onSelect}/>)}{!filtered.length&&<p className="task-empty">{tasks.length?'这里暂时没有任务。':'还没有后台任务。'}</p>}</div>
-      {page?.hasMore&&<button className="task-more" type="button" onClick={()=>setPageLimit(n=>n+50)}>加载更多任务</button>}
-      <AgentTaskForm team={team} tasks={tasks} action={action} onSelect={onSelect} disabled={!online||pending}/>
+      {team&&<label className="team-owner-filter">按负责人筛选<select value={owner} onChange={e=>chooseOwner(e.target.value)}><option value="all">全部员工与总管</option>{team.members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>}
+      {overviewError&&<p className="error" role="alert">团队总览暂时未能刷新：{overviewError}</p>}
+      <TeamOverview overview={currentOverview} owner={owner} onSelect={onSelect} onOwner={chooseOwner} onFilter={chooseFilter}/>
+      <TeamWatch key={'watch:'+owner} api={api} watch={currentOverview?.watch} owner={owner} disabled={!online||pending} onSelect={onSelect} onRefresh={()=>setOverviewVersion(n=>n+1)}/>
+      <details className="team-management"><summary>管理员工</summary><TeamPanel api={api} team={team} disabled={!online||busy} onSelect={onSelect}/></details>
+      <details className="task-history" open={historyOpen} onToggle={event=>setHistoryOpen(event.currentTarget.open)}><summary>任务记录{currentPage?` · ${currentPage.total??tasks.length} 项`:''}</summary>
+        <div className="task-filters" aria-label="任务筛选">{[['all','全部'],['active','进行中'],['attention','需要你处理'],['recent','最近成果']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>chooseFilter(value)}>{label}</button>)}</div>
+        <div className="task-list">{tasks.map(task=><TaskCard key={task.id} task={task} onOpen={onSelect}/>)}{!tasks.length&&<p className="task-empty">{listLoading?'正在读取任务…':'这里暂时没有任务。'}</p>}</div>
+        {currentPage?.hasMore&&<button className="task-more" type="button" disabled={listLoading} onClick={()=>setPageLimit(n=>n+50)}>{listLoading?'正在读取…':'加载更多任务'}</button>}
+      </details>
+      <p className="task-intro">可以直接对 Nova 说任务要求，或补充员工需要的信息。任务执行期间，你可以继续聊天。</p>
+      <AgentTaskForm team={team} tasks={choices} action={action} onSelect={onSelect} disabled={!online||pending}/>
       <details className="task-create"><summary>直接运行命令</summary>
         <form onSubmit={submit}>
           <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v})}/>
@@ -141,7 +156,7 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       <label className="task-attempt">执行记录<select value={logRun||''} onChange={e=>setRunId(e.target.value)}>{detail.runs.map(run=><option key={run.id} value={run.id}>第 {run.number} 次 · {taskLabels[run.status]}</option>)}</select></label>
       {taskActivityText(currentRun,clock)&&<p className="task-intro" aria-label="执行活动">{taskActivityText(currentRun,clock)}</p>}
       <TeamResults detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>
-      <TaskCoordination key={'coordination:'+detail.task.id} detail={detail} team={team} tasks={tasks} action={action} disabled={!online||pending}/>
+      <TaskCoordination key={'coordination:'+detail.task.id} detail={detail} team={team} tasks={choices} action={action} disabled={!online||pending}/>
       {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy} onSelect={onSelect}/>}
       <h4>运行日志</h4>
       {log?.earlier&&<p className="subtle">显示最近的日志；完整已保存日志可按下方路径查看。</p>}

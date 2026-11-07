@@ -13,6 +13,7 @@ import {TeamReports} from '../team/reports.mjs';
 import {TeamAssignments,planningSpec} from '../team/assignments.mjs';
 import {validBudget,remainingBudget,capBudget} from './budgets.mjs';
 import {taskActivity,readTaskActivity} from './activity.mjs';
+import {TaskQueries} from './queries.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
 const live=new Set(['queued','blocked','running','pausing','cancelling']);
@@ -29,16 +30,18 @@ export class TaskManager {
       this.db.exec(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, body TEXT NOT NULL)`);
     this.automation=new TaskEventEngine(this,eventOptions);
     this.reports=new TeamReports(this);
+    this.queries=new TaskQueries(this);
     this.assignments=new TeamAssignments(this);
     // A restart never replays commands, including a launch whose delivery was
     // uncertain. A surviving supervisor will publish its cleanup receipt.
-    for(const task of this.all())if(live.has(task.status)&&!['queued','blocked'].includes(task.status)){
+    for(const task of this.queries.select({statuses:['running','pausing','cancelling'],includeManagement:true})){
       const run=this.row('run',task.runId),job=this.row('job',run.jobId);
       const receipt=this.receipt(job);
       this.finish(task,run,job,receipt??{status:'interrupted',cleanupConfirmed:false,error:'host_interrupted_checking_cleanup'});
     }
     this.timer=setInterval(()=>this.tick(),250);this.timer.unref();
-    for(const task of this.all())if(task.kind==='agent')this.syncInbox(task);
+    // Inbox files are rebuilt from durable messages immediately before launch
+    // (and when a message arrives), not for every historical session at startup.
     queueMicrotask(()=>this.tick());
   }
   row(kind,id){
@@ -52,17 +55,16 @@ export class TaskManager {
   changed(task){this.events?.publish('task.updated',this.summary(task),task.requestId);}
   summary(task){
     const run=this.row('run',task.runId),job=this.row('job',run.jobId);
-    return {...task,...this.team?.owner(task),runNumber:run.number,startedAt:run.startedAt,finishedAt:run.finishedAt,exitCode:job.exitCode,error:job.error,
+    // Historical dependencies are checked when viewed, not on every idle tick.
+    return {...task,...(task.dependencyInputs?.length?{inputsStale:this.assignments.staleInputs(task)}:{}),...this.team?.owner(task),runNumber:run.number,startedAt:run.startedAt,finishedAt:run.finishedAt,exitCode:job.exitCode,error:job.error,
       cleanupConfirmed:job.cleanupConfirmed,logTruncated:job.truncated??false,
       canContinue:task.kind==='agent'&&terminal.has(task.status)&&job.cleanupConfirmed===true,
       question:job.agentResult?.question,...this.supervisor?.summary(task),
       canRetry:task.kind!=='agent'&&['failed','cancelled','interrupted'].includes(task.status)&&job.cleanupConfirmed===true};
   }
-  list({limit=50,offset=0}={}){
-    if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(offset)||offset<0)throw Error('invalid_task_page');
-    const all=this.all().filter(t=>!t.managementReview).sort((a,b)=>Number(live.has(b.status))-Number(live.has(a.status))||Number(!!b.unread)-Number(!!a.unread));
-    return {tasks:all.slice(offset,offset+limit).map(t=>this.summary(t)),total:all.length,problem:this.lastError?'task_scheduler_failed':null,
-      activeCount:all.filter(t=>live.has(t.status)).length,unreadCount:all.filter(t=>t.unread).length,hasMore:offset+limit<all.length};
+  list(options={}){
+    const page=this.queries.page(options);
+    return {...page,tasks:page.tasks.map(t=>this.summary(t)),problem:this.lastError?'task_scheduler_failed':null};
   }
   spec(input,root=this.workspace,check){
     const assignment=this.team?.assignment(check?{...input,kind:'agent',workspaceMode:'code'}:input)??{};
@@ -118,7 +120,7 @@ export class TaskManager {
       return this.detail(id);
     }
     this.assignments.validate(id,spec.dependsOn);
-    if(this.all().filter(t=>live.has(t.status)).length>=100)throw Error('task_queue_full');
+    if(this.queries.counts({statuses:[...live],includeManagement:true}).total>=100)throw Error('task_queue_full');
     const now=Date.now(),task={id,...spec,budgetVersion:2,teamReportVersion:1,createdBy:{kind:source==='assistant'||source==='supervisor'?'chief':'user',requestId},fingerprint,requestId,source,status:'queued',createdAt:now,updatedAt:now,unread:false};
     if(managementReview)task.managementReview=managementReview;
     if(check)Object.assign(task,{parentTaskId:check.taskId,parentRunId:check.runId});
@@ -152,7 +154,7 @@ export class TaskManager {
       return {...run,activity:this.activity(task,run,job),job:{...job,logPath:join(directory,'output.log')},...(task.kind==='agent'?{
         jobs:readSteps(directory),progress:readJson(join(directory,'progress.json')),result:job.agentResult??readJson(join(directory,'agent-result.json')),
       }:{})};
-    }),teamReview:{...this.reports.view(task),...this.supervisor?.view(task)},...(task.kind==='agent'?{automation:this.automation.view(task),checks:this.all().filter(t=>t.parentTaskId===id).map(t=>this.summary(t)),workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};
+    }),teamReview:{...this.reports.view(task),...this.supervisor?.view(task)},...(task.kind==='agent'?{automation:this.automation.view(task),checks:this.queries.related({parentTaskId:id}).map(t=>this.summary(t)),workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};
   }
   review(body){if(!this.supervisor)throw Error('team_supervisor_unavailable');const decision=this.supervisor.userDecision(body);return {...this.detail(body.id),decision};}
   configureManagement(body){if(!this.supervisor)throw Error('team_supervisor_unavailable');this.supervisor.configure(body);return this.detail(body.id);}
@@ -172,11 +174,11 @@ export class TaskManager {
     const workspace=readJson(join(this.agentHome(task),'workspace.json'));
     if(!workspace)throw Error('task_workspace_not_ready');
     const id='check-'+hash(runId+'\0'+stepId).slice(0,48);
-    const existing=this.all().find(t=>t.parentRunId===runId&&t.id!==id);
+    const existing=this.queries.related({parentRunId:runId}).find(t=>t.id!==id);
     if(existing)throw Error('task_check_already_submitted');
     return this.create({id,assignedBotId:task.assignedBotId,title:title||'任务验证',command,workdir,timeoutMs},{source:'agent-check',check:{taskId,runId,workspace:workspace.path}});
   }
-  stopChecks(task){for(const child of this.all().filter(t=>t.parentTaskId===task.id&&live.has(t.status)))this.cancel(child.id,child.runId);}
+  stopChecks(task){for(const child of this.queries.related({parentTaskId:task.id}).filter(t=>live.has(t.status)))this.cancel(child.id,child.runId);}
   agentHome(task){return join(this.root,'agents',hash(task.id+(task.assignmentVersion>1?'\0assignment:'+task.assignmentVersion:'')));}
   messages(task){
     const acks=readJson(join(this.agentHome(task),'delivered.json'),{});
@@ -257,7 +259,7 @@ export class TaskManager {
     }
     // The durable check receipt wins if HTTP delivery was lost after acceptance.
     // Interrupted Runs still require manual review; never replay uncertain work.
-    const check=job.kind==='agent'&&this.all().find(t=>t.parentRunId===run.id);
+    const check=job.kind==='agent'&&this.queries.related({parentRunId:run.id})[0];
     if(check&&result.cleanupConfirmed&&['completed','failed'].includes(result.status)&&agentResult?.status!=='waiting_input'){
       agentResult={...agentResult,runId:run.id,status:'waiting_event',awaiting:{taskId:check.id,runId:check.runId},text:agentResult?.text||'检查已提交，等待结果事件接续。'};
       result={...result,status:'completed'};
@@ -307,20 +309,16 @@ export class TaskManager {
   tick(){
     if(this.closed)return;
     try{
-      for(const task of this.all()){
-        const run=this.row('run',task.runId),job=this.row('job',run.jobId);
-        if((live.has(task.status)&&!['queued','blocked'].includes(task.status))||job.cleanupConfirmed===false){
-          const receipt=this.receipt(job);
-          if(receipt&&(live.has(task.status)||receipt.cleanupConfirmed!==job.cleanupConfirmed||receipt.error!==job.error))this.finish(task,run,job,receipt);
-        }
+      for(const {task,run,job} of this.queries.currentWork()){
+        const receipt=this.receipt(job);
+        if(receipt&&(live.has(task.status)||receipt.cleanupConfirmed!==job.cleanupConfirmed||receipt.error!==job.error))this.finish(task,run,job,receipt);
       }
       void this.outbox?.tick().catch(()=>{});
-      this.automation.tick();this.supervisor?.tick();this.assignments.tick();this.lastError=null;
+      this.automation.tick();this.supervisor?.tick();this.assignments.tick();this.watch?.tick();this.lastError=null;
       // One active project command. Unconfirmed cleanup also holds the slot.
-      if(this.applying||this.workers.size||this.all().some(t=>['running','pausing','cancelling'].includes(t.status)||this.row('job',this.row('run',t.runId).jobId).cleanupConfirmed===false))return;
+      if(this.applying||this.workers.size||this.queries.holdsSlot())return;
       if(this.foregroundBusy?.())return;
-      const priority={high:2,normal:1,low:0};
-      const next=this.all().reverse().filter(t=>t.status==='queued').sort((a,b)=>Number(!!b.managementReview)-Number(!!a.managementReview)||(priority[b.priority]??1)-(priority[a.priority]??1)||(a.dueAt??Infinity)-(b.dueAt??Infinity)||this.row('run',a.runId).createdAt-this.row('run',b.runId).createdAt)[0];if(next)this.launch(next);
+      const next=this.queries.nextQueued();if(next)this.launch(next);
     }catch(error){this.lastError=String(error.message);}
   }
   launch(task){
@@ -437,7 +435,7 @@ export class TaskManager {
         const timer=setTimeout(resolveDone,6500);child.once('exit',()=>{clearTimeout(timer);resolveDone();});
         if(child.connected){child.send({type:'stop',reason:'interrupted'},()=>{});child.disconnect();}
       })));
-      for(const task of this.all())if(['running','pausing','cancelling'].includes(task.status)){
+      for(const task of this.queries.select({statuses:['running','pausing','cancelling'],includeManagement:true})){
         const run=this.row('run',task.runId),job=this.row('job',run.jobId);
         this.finish(task,run,job,this.receipt(job)??{status:'interrupted',cleanupConfirmed:false,error:'cleanup_unconfirmed'});
       }

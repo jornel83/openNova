@@ -17,6 +17,7 @@ export class TeamSupervisor {
       CREATE INDEX IF NOT EXISTS team_review_task ON team_review(json_extract(body,'$.taskId'));
       CREATE INDEX IF NOT EXISTS team_review_current ON team_review(json_extract(body,'$.taskId'),json_extract(body,'$.reportId'),json_extract(body,'$.runId'),json_extract(body,'$.assignmentVersion'));
       CREATE INDEX IF NOT EXISTS team_review_status ON team_review(json_extract(body,'$.status'))`);
+    this.tasks.queries?.initializeReviews();
   }
   get(id){const row=this.db.prepare('SELECT body FROM team_review WHERE id=?').get(id);return row?JSON.parse(row.body):null;}
   put(value){
@@ -32,8 +33,8 @@ export class TeamSupervisor {
   hasReview(task,reportId){return !!this.db.prepare("SELECT id FROM team_review WHERE json_extract(body,'$.taskId')=? AND json_extract(body,'$.reportId')=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.assignmentVersion')=? LIMIT 1").get(task.id,reportId,task.runId,task.assignmentVersion??1);}
   management(task){return {...MANAGEMENT_DEFAULTS,enabled:false,...task.management};}
   usage(task){
-    const ids=new Set([task.id,...this.tasks.all().filter(item=>item.managementReview?.targetTaskId===task.id||item.parentTaskId===task.id).map(item=>item.id)]);let usedTokens=0,usedDurationMs=0;
-    for(const row of this.db.prepare('SELECT body FROM background_run').all()){
+    const ids=new Set([task.id,...(this.tasks.queries?.related({managementTargetId:task.id,parentTaskId:task.id})??this.tasks.all().filter(item=>item.managementReview?.targetTaskId===task.id||item.parentTaskId===task.id)).map(item=>item.id)]);let usedTokens=0,usedDurationMs=0;
+    for(const row of this.db.prepare(`SELECT body FROM background_run WHERE json_extract(body,'$.taskId') IN (${[...ids].map(()=>'?').join(',')})`).all(...ids)){
       const run=JSON.parse(row.body);if(!ids.has(run.taskId))continue;
       const job=this.tasks.row('job',run.jobId),progress=readJson(join(this.tasks.directory(job),'progress.json'))??job.agentResult??{};
       usedTokens+=Number(progress.totalTokens)||0;
@@ -156,7 +157,7 @@ export class TeamSupervisor {
         if(child.status!=='completed'||receipt?.reviewId!==review.id||receipt?.targetTaskId!==review.taskId||receipt?.targetRunId!==review.runId||receipt?.assignmentVersion!==review.assignmentVersion||receipt?.reportId!==review.reportId||receipt?.managementRunId!==run.id){this.put({...review,status:'needs_user',error:'management_review_incomplete',finishedAt:this.now()});continue;}
         try{this.apply(review,receipt.decision);}catch(error){this.put({...review,status:error.message==='review_stale'?'stale':'needs_user',error:String(error.message).slice(0,200),finishedAt:this.now()});}
       }
-      for(const task of this.tasks.all()){
+      for(const task of this.tasks.queries?.pendingReviews()??this.tasks.all()){
         const settings=this.management(task);
         if(!task.management||!settings.enabled||settings.paused||task.managementReview||!waiting.has(task.status)||task.assignedBotId===this.tasks.team?.chiefId)continue;
         // Accepted/history rows need no file hashing on every scheduler tick.

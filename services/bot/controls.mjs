@@ -18,6 +18,10 @@ export function createControls({ops,requests,tasks,team,memory,health,memoryView
   return async(path,body)=>{
     if(path==='/team')return team?.view()??null;
     if(path==='/team-member')return requests.exclusive(()=>team.mutate(body));
+    if(path==='/team-overview')return team.overview.view(body);
+    if(path==='/team-watch')return tasks.watch.view(body);
+    if(path==='/team-watch-policy')return requests.exclusive(()=>tasks.watch.configure(body));
+    if(path==='/team-watch-ack')return requests.exclusive(()=>tasks.watch.acknowledge(body));
     if(path==='/background-tasks')return tasks.list(body);
     if(path==='/background-task')return tasks.detail(body.id);
     if(path==='/background-task-start')return tasks.create(body,{source:'web'});

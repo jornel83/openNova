@@ -111,7 +111,7 @@ export class TaskEventEngine{
       else if(active.has(task.status))reason='task_busy';
       else if(!['completed','waiting_event','paused'].includes(task.status))reason='manual_continuation_required';
       else if(!this.tasks.summary(task).canContinue)reason='cleanup_unconfirmed';
-      else if(this.tasks.all().filter(t=>active.has(t.status)).length>=100)reason='queue_full';
+      else if((this.tasks.queries?.counts({statuses:[...active],includeManagement:true}).total??this.tasks.all().filter(t=>active.has(t.status)).length)>=100)reason='queue_full';
       const budget=this.tasks.supervisor?.continuationBudget(task)??{};
       reason??=budget.reason;
       if(reason){if(delivery.reason!==reason)this.put('delivery',{...delivery,reason});continue;}

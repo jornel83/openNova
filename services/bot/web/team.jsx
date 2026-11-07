@@ -2,7 +2,7 @@ import React,{useRef,useState} from 'react';
 import {errorText} from './api.mjs';
 import {taskLabels} from './task-view.mjs';
 const fresh={name:'',role:'',instructions:'',taskTypes:[],enabled:true};
-const labels={idle:'空闲',working:'执行中',queued:'排队中',waiting_input:'等待信息',paused:'已暂停或等待事件'};
+const labels={idle:'空闲',working:'执行中',queued:'排队中',blocked:'等待前置条件',waiting_input:'等待信息',paused:'已暂停或等待事件'};
 export function TeamPanel({api,team,disabled,onSelect}){
   const [edit,setEdit]=useState(null),[error,setError]=useState(''),[pending,setPending]=useState(false),submission=useRef(null);
   if(!team)return null;

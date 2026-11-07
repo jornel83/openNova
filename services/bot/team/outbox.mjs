@@ -2,7 +2,8 @@
 import {createHash} from 'node:crypto';
 export const eventFingerprint=event=>createHash('sha256').update(JSON.stringify(event)).digest('hex');
 export function ensureDeliveryTables(db){
-  db.exec('CREATE TABLE IF NOT EXISTS team_event (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS team_outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
+  db.exec(`CREATE TABLE IF NOT EXISTS team_event (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS team_outbox (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS team_outbox_pending_due ON team_outbox((CASE WHEN json_type(body,'$.nextAttemptAt')='null' THEN 0 ELSE json_extract(body,'$.nextAttemptAt') END)) WHERE json_extract(body,'$.status') IS NOT 'delivered'`);
 }
 export function enqueueTeamEvent(db,event){
   ensureDeliveryTables(db);const fingerprint=eventFingerprint(event),old=db.prepare('SELECT body FROM team_event WHERE id=?').get(event.id);
@@ -14,6 +15,7 @@ export class TeamOutbox {
   constructor({db,delivery,now=Date.now,retryMs=1000,maxRetryMs=60000}){Object.assign(this,{db,delivery,now,retryMs,maxRetryMs});ensureDeliveryTables(db);this.running=null;this.closed=false;}
   get(id){const row=this.db.prepare('SELECT body FROM team_outbox WHERE id=?').get(id);return row?JSON.parse(row.body):null;}
   list(){return this.db.prepare('SELECT body FROM team_outbox ORDER BY rowid').all().map(r=>JSON.parse(r.body));}
+  pending(){return this.db.prepare("SELECT body FROM team_outbox WHERE json_extract(body,'$.status') IS NOT 'delivered' AND (CASE WHEN json_type(body,'$.nextAttemptAt')='null' THEN 0 ELSE json_extract(body,'$.nextAttemptAt') END)<=? ORDER BY rowid LIMIT 10").all(this.now()).map(row=>JSON.parse(row.body));}
   put(row){this.db.prepare('UPDATE team_outbox SET body=? WHERE id=?').run(JSON.stringify(row),row.id);return row;}
   receipt(event,row,receipt){
     if(!receipt||receipt.eventId!==event.id||receipt.recipientBotId!==event.recipientBotId||receipt.fingerprint!==row.fingerprint||!receipt.messageId||!receipt.sessionId)throw Error('team_delivery_receipt_invalid');
@@ -21,7 +23,7 @@ export class TeamOutbox {
   }
   tick(){if(this.closed)return Promise.resolve();if(this.running)return this.running;this.running=this.drain().finally(()=>{this.running=null;});return this.running;}
   async drain(){
-    for(const original of this.list().filter(r=>r.status!=='delivered'&&r.nextAttemptAt<=this.now()).slice(0,10)){
+    for(const original of this.pending()){
       if(this.closed)break;
       const event=JSON.parse(this.db.prepare('SELECT body FROM team_event WHERE id=?').get(original.eventId).body);
       let row=original;

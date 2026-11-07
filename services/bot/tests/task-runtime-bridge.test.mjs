@@ -21,7 +21,7 @@ async function fixture(t,{invoke}={}){
   let checkEnabled=false,enabled=true,teamEnabled=true,busy=false;
   const checked=[],tools=[],controls=[],grants=[];
   const tasks={closed:false,row(kind,id){const value=(kind==='task'?[task,otherTask]:[run,otherRun]).find(v=>v.id===id);if(!value)throw Error('unknown_task');return structuredClone(value);},
-    automation:{canCheck:()=>checkEnabled},agentHome:()=>home,all:()=>[],
+    automation:{canCheck:()=>checkEnabled},agentHome:()=>home,queries:{related:()=>[]},
     create(input,options){checked.push({input,options});return {task:{id:input.id,runId:'check-run'},status:'queued'};},
     createCheck:TaskManager.prototype.createCheck,
     runBudget:TaskManager.prototype.runBudget,

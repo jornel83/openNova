@@ -59,13 +59,19 @@ export class TeamAssignments {
       tasks.newRun(t,run.number+1,'用户明确改派。交接摘要：'+h.summary+'\n指定成果已复制到 handoff 目录。原员工私有会话和记忆不随交接传递。');
     });tasks.changed(t);
   }
+  staleInputs(task){
+    return (task.dependencyInputs??[]).filter(input=>{
+      try{const source=this.tasks.row('task',input.taskId),current=this.tasks.reports?.current(source);return !current||current.id!==input.reportId||!this.tasks.supervisor?.isAccepted(current);}
+      catch{return true;}
+    }).map(input=>input.taskId);
+  }
   tick(){
     const tasks=this.tasks;
-    for(let t of tasks.all()){
+    for(let t of tasks.queries?.assignmentCandidates()??tasks.all()){
       if(t.managementReview)continue;
       if(t.handoff?.status==='stopping'){this.finishHandoff(t);continue;}
       if(t.dependencyInputs?.length){
-        const stale=t.dependencyInputs.filter(input=>{const source=tasks.row('task',input.taskId),current=tasks.reports?.current(source);return !current||current.id!==input.reportId||!tasks.supervisor?.isAccepted(current);}).map(x=>x.taskId);
+        const stale=this.staleInputs(t);
         if(JSON.stringify(stale)!==JSON.stringify(t.inputsStale??[])){t.inputsStale=stale;tasks.put('task',t);tasks.changed(t);}
       }
       if(!['queued','blocked'].includes(t.status))continue;

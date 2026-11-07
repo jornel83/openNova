@@ -54,6 +54,8 @@ pnpm start
 
 新 Agent 任务的步骤、Token、运行时长及总管累计预算默认不限制，预算字段留空即可；旧任务保留原设置。任务详情展示当前执行阶段和最近活动，总管验收有独立活动记录。团队运行、恢复与交付验收见 [M3 验证记录](docs/research/opennova-team-m3-verification.md)，停机备份和恢复步骤见 [状态恢复说明](docs/research/opennova-team-recovery.md)。
 
+任务页提供“正在做 / 需要你处理 / 最近成果”团队总览，支持按员工查询全部任务和加载历史。总管值守提醒临近截止、逾期、持续阻塞及无新进展；默认只提醒，可明确开启逾期排队提优先级。语音或对话可直接询问团队进展、确认提醒，执行完成与验收记录分开汇总。详见 [M4 使用与验证](docs/research/opennova-team-m4-verification.md)。
+
 ## 工程结构
 
 | 目录 | 职责 |

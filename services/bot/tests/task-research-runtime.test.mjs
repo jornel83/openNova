@@ -75,7 +75,7 @@ for(const scenario of ['success','failed','cancelled','http-error'])test('real H
     // Exercise the real terminal projection even if a killed worker never
     // managed to write agent-result.json. No running scheduler is necessary.
     const records=new Map(),task={id:spec.taskId,kind:'agent',runId:spec.runId,status:'running'},run={id:spec.runId,taskId:spec.taskId,jobId:'job'},job={id:'job',runId:spec.runId,taskId:spec.taskId,kind:'agent'};
-    const receiver={row:()=>task,directory:()=>runDir,all:()=>[],atomic:fn=>fn(),put:(kind,record)=>records.set(kind,record),artifacts:()=>[],changed(){},automation:{recordCompletion(){}},reports:{capture(){}}};
+    const receiver={row:()=>task,directory:()=>runDir,queries:{related:()=>[]},atomic:fn=>fn(),put:(kind,record)=>records.set(kind,record),artifacts:()=>[],changed(){},automation:{recordCompletion(){}},reports:{capture(){}}};
     TaskManager.prototype.finish.call(receiver,task,run,job,{status:scenario,cleanupConfirmed:true});
     assert.equal(records.get('job').agentResult.sources.length,1);assert.equal(records.get('job').agentResult.sources[0].requestId,spec.runId);
     saveJson(join(runDir,'research.json'),{...evidence,runId:'foreign-run'});

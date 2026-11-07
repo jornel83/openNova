@@ -18,7 +18,7 @@ export class TeamRegistry {
   enabled(){return this.get('settings').enabled;}
   profile(id){return this.get('bot:'+id)??{enabled:id===this.chiefId,revision:1,taskTypes:['code','documents','command']};}
   bot(id){const b=this.rt.botOf(id);if(!b)throw Error('unknown_team_member');return b;}
-  view(){const tasks=this.tasks?.all()??[];return {version:1,enabled:this.enabled(),chiefBotId:this.chiefId,members:Object.values(this.rt.state.bots).map(b=>{
+  view(){const tasks=this.tasks?.queries?.unfinished()??this.tasks?.all()??[];return {version:1,enabled:this.enabled(),chiefBotId:this.chiefId,members:Object.values(this.rt.state.bots).map(b=>{
     const work=tasks.filter(t=>(t.assignedBotId??this.chiefId)===b.id&&!t.managementReview&&active.has(t.status));
     return {id:b.id,name:b.name,role:b.role,instructions:b.instructions,chief:b.id===this.chiefId,...this.profile(b.id),
       status:work.some(t=>['running','pausing','cancelling'].includes(t.status))?'working':work.some(t=>t.status==='waiting_input')?'waiting_input':work.some(t=>t.status==='blocked')?'blocked':work.some(t=>t.status==='queued')?'queued':work.length?'paused':'idle',
@@ -37,7 +37,7 @@ export class TeamRegistry {
     if(op?.status==='completed')return this.view();
     if(action==='toggle'){
       if(typeof input.enabled!=='boolean')throw Error('invalid_team_action');
-      if(!input.enabled&&(this.tasks?.all()??[]).some(t=>t.assignedBotId&&t.assignedBotId!==this.chiefId&&active.has(t.status)))throw Error('team_has_unfinished_tasks');
+      if(!input.enabled&&(this.tasks?.queries?.unfinished()??this.tasks?.all()??[]).some(t=>t.assignedBotId&&t.assignedBotId!==this.chiefId&&active.has(t.status)))throw Error('team_has_unfinished_tasks');
       this.put('settings',{schemaVersion:1,enabled:input.enabled});
     }else{
       if(!this.enabled())throw Error('team_disabled');
@@ -51,7 +51,7 @@ export class TeamRegistry {
       if(action==='create'&&Object.keys(this.rt.state.bots).length>=20)throw Error('team_member_limit');
       if(action==='update'&&input.id===this.chiefId)throw Error('chief_profile_managed');
       if(action==='update'&&!op){this.bot(input.id);if(this.profile(input.id).revision!==input.revision)throw Error('team_member_changed');}
-      if(input.enabled===false&&(input.id===this.chiefId||(this.tasks?.all()??[]).some(t=>t.assignedBotId===input.id&&active.has(t.status))))throw Error('member_has_unfinished_tasks');
+      if(input.enabled===false&&(input.id===this.chiefId||(this.tasks?.queries?.unfinished()??this.tasks?.all()??[]).some(t=>t.assignedBotId===input.id&&active.has(t.status))))throw Error('member_has_unfinished_tasks');
       if(!op){op={input,fingerprint,status:'pending',beforeIds:Object.keys(this.rt.state.bots)};this.put('op:'+actionId,op);}
       let bot;
       if(action==='create'){
