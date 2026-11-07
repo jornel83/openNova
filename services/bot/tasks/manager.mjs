@@ -11,6 +11,7 @@ import {executionSpec,plainWorkspace} from './execution.mjs';
 import {workspaceDiff,applyWorkspace} from './workspace.mjs';
 import {TeamReports} from '../team/reports.mjs';
 import {TeamAssignments,planningSpec} from '../team/assignments.mjs';
+import {validBudget,remainingBudget,capBudget} from './budgets.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
 const live=new Set(['queued','blocked','running','pausing','cancelling']);
@@ -68,16 +69,16 @@ export class TaskManager {
     const acceptanceCriteria=input.acceptanceCriteria??'';
     if(typeof acceptanceCriteria!=='string'||acceptanceCriteria.length>8000)throw Error('invalid_acceptance_criteria');
     const managementEnabled=input.managementEnabled??!!(assignment.assignedBotId&&assignment.assignedBotId!==assignment.supervisorBotId&&!check),maxReworks=input.maxReworks??2;
-    const tokenBudget=input.managementTokenBudget??600000,timeBudgetMs=input.managementTimeBudgetMs??7200000;
-    if(typeof managementEnabled!=='boolean'||!Number.isInteger(maxReworks)||maxReworks<0||maxReworks>5||!Number.isInteger(tokenBudget)||tokenBudget<1000||tokenBudget>3000000||!Number.isInteger(timeBudgetMs)||timeBudgetMs<1000||timeBudgetMs>28800000)throw Error('invalid_management_budget');
+    const tokenBudget=input.managementTokenBudget===undefined?0:input.managementTokenBudget,timeBudgetMs=input.managementTimeBudgetMs===undefined?0:input.managementTimeBudgetMs;
+    if(typeof managementEnabled!=='boolean'||!Number.isInteger(maxReworks)||maxReworks<0||maxReworks>5||!validBudget(tokenBudget,1000,3000000)||!validBudget(timeBudgetMs,1000,28800000))throw Error('invalid_management_budget');
     const work={...plan,acceptanceCriteria,management:{enabled:managementEnabled,paused:false,maxReworks,tokenBudget,timeBudgetMs,usedReworks:0}};
     if(input.kind==='agent'){
-      const {title,goal,constraints='',timeoutMs=1800000,maxSteps=32,tokenBudget=200000,autoContinue=0}=input;
+      const {title,goal,constraints='',timeoutMs=0,maxSteps=0,tokenBudget=0,autoContinue=0}=input;
       const execution=executionSpec(input),{mode}=execution;
       if(!Number.isInteger(autoContinue)||autoContinue<0||autoContinue>5||autoContinue&&mode!=='edit')throw Error('invalid_event_budget');
       if(typeof title!=='string'||!title.trim()||title.length>160||typeof goal!=='string'||!goal.trim()||goal.length>8000||typeof constraints!=='string'||constraints.length>4000)throw Error('invalid_agent_task');
-      if(!['analysis','edit'].includes(mode)||!Number.isInteger(maxSteps)||maxSteps<1||maxSteps>128||!Number.isInteger(tokenBudget)||tokenBudget<1000||tokenBudget>1000000)throw Error('invalid_agent_budget');
-      if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>7200000)throw Error('invalid_task_timeout');
+      if(!['analysis','edit'].includes(mode)||!validBudget(maxSteps,1,128)||!validBudget(tokenBudget,1000,1000000))throw Error('invalid_agent_budget');
+      if(!validBudget(timeoutMs,1000,7200000))throw Error('invalid_task_timeout');
       const workspaceMode=input.workspaceMode??'general';
       if(!['general','code','documents'].includes(workspaceMode))throw Error('invalid_workspace_mode');
       const inputFiles=workspaceMode==='code'?[]:(workspaceMode==='documents'?validateInputFiles:validateGeneralInputs)(root,input.inputFiles??[]);
@@ -104,10 +105,20 @@ export class TaskManager {
     if(!idOk(id))throw Error('invalid_task_id');
     const fingerprint=hash(JSON.stringify(spec));
     const old=this.db.prepare('SELECT body FROM background_task WHERE id=?').get(id);
-    if(old){const task=JSON.parse(old.body);if(task.fingerprint!==fingerprint)throw Error('task_id_conflict');return this.detail(id);}
+    if(old){
+      const task=JSON.parse(old.body);
+      if(task.fingerprint!==fingerprint){
+        // An acknowledgement lost before upgrade may retry an input that omitted
+        // the old defaults. Only pre-upgrade records may use that normalization.
+        const legacy=!task.budgetVersion&&this.spec({...input,managementTokenBudget:input.managementTokenBudget??600000,managementTimeBudgetMs:input.managementTimeBudgetMs??7200000,
+          ...(input.kind==='agent'?{maxSteps:input.maxSteps??32,tokenBudget:input.tokenBudget??200000,timeoutMs:input.timeoutMs??1800000}:{})},check?.workspace??this.workspace,check);
+        if(!legacy||task.fingerprint!==hash(JSON.stringify(legacy)))throw Error('task_id_conflict');
+      }
+      return this.detail(id);
+    }
     this.assignments.validate(id,spec.dependsOn);
     if(this.all().filter(t=>live.has(t.status)).length>=100)throw Error('task_queue_full');
-    const now=Date.now(),task={id,...spec,teamReportVersion:1,createdBy:{kind:source==='assistant'||source==='supervisor'?'chief':'user',requestId},fingerprint,requestId,source,status:'queued',createdAt:now,updatedAt:now,unread:false};
+    const now=Date.now(),task={id,...spec,budgetVersion:2,teamReportVersion:1,createdBy:{kind:source==='assistant'||source==='supervisor'?'chief':'user',requestId},fingerprint,requestId,source,status:'queued',createdAt:now,updatedAt:now,unread:false};
     if(managementReview)task.managementReview=managementReview;
     if(check)Object.assign(task,{parentTaskId:check.taskId,parentRunId:check.runId});
     if(task.kind==='agent')task.sessionId='session-'+randomUUID().replaceAll('-','');
@@ -116,13 +127,13 @@ export class TaskManager {
   runBudget(task){
     if(task.kind!=='agent'||!task.management?.enabled||task.managementReview)return null;
     const usage=this.supervisor?.usage(task)??{usedTokens:0,usedDurationMs:0};
-    const tokenBudget=task.management.tokenBudget-usage.usedTokens,timeoutMs=task.management.timeBudgetMs-usage.usedDurationMs;
+    const tokenBudget=remainingBudget(task.management.tokenBudget??0,usage.usedTokens),timeoutMs=remainingBudget(task.management.timeBudgetMs??0,usage.usedDurationMs);
     if(tokenBudget<1000||timeoutMs<1000)throw Error('management_budget_exhausted');
-    return {tokenBudget:Math.min(task.tokenBudget,tokenBudget),timeoutMs:Math.min(task.timeoutMs,timeoutMs)};
+    return {tokenBudget:capBudget(task.tokenBudget,tokenBudget),timeoutMs:capBudget(task.timeoutMs,timeoutMs)};
   }
   newRun(task,number,instruction,extra={}){
     const employee=this.team?.snapshot(task);
-    const budget=this.runBudget(task);if(budget)extra={...extra,executionBudget:{tokenBudget:Math.min(budget.tokenBudget,extra.executionBudget?.tokenBudget??Infinity),timeoutMs:Math.min(budget.timeoutMs,extra.executionBudget?.timeoutMs??Infinity)}};
+    const budget=this.runBudget(task);if(budget)extra={...extra,executionBudget:{tokenBudget:capBudget(budget.tokenBudget,extra.executionBudget?.tokenBudget),timeoutMs:capBudget(budget.timeoutMs,extra.executionBudget?.timeoutMs)}};
     const run={employee,assignmentVersion:task.assignmentVersion,permission:task.permission,policyVersion:task.policyVersion,id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
     const job={id:run.jobId,runId:run.id,taskId:task.id,status:'queued',cleanupConfirmed:true,createdAt:run.createdAt,kind:task.kind??'command'};
     task.runId=run.id;task.status='queued';task.updatedAt=run.createdAt;task.unread=false;
@@ -151,7 +162,7 @@ export class TaskManager {
     if(task.runId!==runId)throw Error('task_run_changed');
     if(task.kind!=='agent'||task.mode!=='edit'||task.status!=='running'||!this.automation.canCheck(taskId))throw Error('task_check_unavailable');
     if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000)throw Error('invalid_task_timeout');
-    const remaining=this.runBudget(task);if(remaining)timeoutMs=Math.min(timeoutMs,remaining.timeoutMs);
+    const remaining=this.runBudget(task);if(remaining)timeoutMs=capBudget(timeoutMs,remaining.timeoutMs);
     const workspace=readJson(join(this.agentHome(task),'workspace.json'));
     if(!workspace)throw Error('task_workspace_not_ready');
     const id='check-'+hash(runId+'\0'+stepId).slice(0,48);
@@ -432,14 +443,14 @@ export function taskTools(tasks,getRequest){
   const request=()=>{const r=getRequest();if(!r||r.cancelled||r.signal?.aborted)throw Error('bridge_request_required');return r;};
   return [
     ['background_task_review','用户明确验收、要求修改或回答员工问题时使用；先查询当前任务和成果版本。验收不应用代码或发布。',{id:{type:'string',required:true},runId:{type:'string',required:true},reportId:{type:'string',required:true},action:{type:'string',enum:['accept','request_changes','answer','needs_user'],required:true},text:{type:'string',required:true}},a=>tasks.review({...a,actionId:hash(request().id+'\0review\0'+JSON.stringify(a))})],
-    ['background_task_management','按用户要求设置总管自动跟进；暂停不停止当前执行，需要停止用background_agent_pause。不得自行扩大返工次数或预算。',{id:{type:'string',required:true},runId:{type:'string',required:true},enabled:{type:'boolean'},paused:{type:'boolean'},maxReworks:{type:'integer'},tokenBudget:{type:'integer',description:'用户明确指定的累计Token上限，1000–3000000。'},timeBudgetMs:{type:'integer',description:'用户明确指定的累计执行时长上限，毫秒，最多8小时。'}},a=>{request();return tasks.configureManagement(a);}],
+    ['background_task_management','按用户要求设置总管自动跟进；暂停不停止当前执行，需要停止用background_agent_pause。不得自行扩大返工次数或预算。',{id:{type:'string',required:true},runId:{type:'string',required:true},enabled:{type:'boolean'},paused:{type:'boolean'},maxReworks:{type:'integer'},tokenBudget:{type:'integer',description:'用户明确指定的累计Token上限，0表示不限制，有限值1000–3000000。'},timeBudgetMs:{type:'integer',description:'用户明确指定的累计执行时长上限，毫秒；0表示不限制，有限值最多8小时。'}},a=>{request();return tasks.configureManagement(a);}],
     ['background_task_reassign','仅用户明确要求改派时使用；先查询runId、assignmentVersion和员工ID。先清理旧执行，再以新会话交接摘要和指定成果。',{id:{type:'string',required:true},runId:{type:'string',required:true},assignmentVersion:{type:'integer',required:true},assignedBotId:{type:'string',required:true},summary:{type:'string',required:true},reportId:{type:'string'}},a=>tasks.reassign({...a,actionId:hash(request().id+'\0handoff\0'+JSON.stringify(a))})],
     ['background_task_dependencies','按用户明确要求配置尚未开始的Agent任务前置依赖；前置成果必须验收后才能放行。不猜测依赖关系。',{id:{type:'string',required:true},runId:{type:'string',required:true},dependsOn:{type:'array',items:{type:'string'},required:true},priority:{type:'string',enum:['low','normal','high']},dueAt:{type:'number'}},a=>{request();return tasks.setDependencies(a);}],
     ['background_agent_rule','只有用户明确要求时，为指定任务配置事件接续规则。type=check/task/file/github；source 必须按类型精确指定。默认停用，enabled=true 表示用户授权启用。',{taskId:{type:'string',required:true},type:{type:'string',enum:['check','task','file','github'],required:true},instruction:{type:'string',required:true},source:{type:'object',additionalProperties:false,properties:{taskId:{type:'string'},runId:{type:'string'},paths:{type:'array',items:{type:'string'}},repository:{type:'string'},number:{type:'integer'},authors:{type:'array',items:{type:'string'}}},description:'task: taskId/runId；file: paths；github: repository/number/authors（仅 /opennova 前缀评论）。'},maxRuns:{type:'number'},ttlHours:{type:'number'},enabled:{type:'boolean'}},a=>tasks.ruleCreate({...a,id:hash(request().id+'\0rule\0'+JSON.stringify(a))})],
     ['background_agent_automation','按用户要求暂停或恢复该任务的自动接续。暂停自动接续不停止已运行的轮次；要立即停止请用 background_agent_pause。',{id:{type:'string',required:true},paused:{type:'boolean',required:true}},a=>{request();return tasks.automationPause(a);}],
     ['background_agent_start','创建独立后台数字员工工作会话。默认 permission=full，可使用已接入的文件、命令、联网、浏览器工具；明确只读时用 read-only。workspaceMode仅决定目录准备：默认general、代码快照code、文本输入documents。需要的输入文件用inputFiles指定。提交后立即结束本轮等待，主对话仍可交流。',{
-      acceptanceCriteria:{type:'string',description:'从用户目标提取的可验证交付标准，不添加用户未要求的工作。'},managementEnabled:{type:'boolean',description:'员工任务默认启用总管跟进；用户明确关闭时设false。'},maxReworks:{type:'integer',description:'默认最多两次自动返工，只有用户要求调整时填写，0–5。'},managementTokenBudget:{type:'integer',description:'可选累计Token预算，默认600000，只有用户明确要求时调整。'},managementTimeBudgetMs:{type:'integer',description:'可选累计执行时长毫秒，默认2小时，只有用户明确要求时调整。'},dependsOn:{type:'array',items:{type:'string'},description:'用户明确指定的前置任务ID，等待其已验收成果。'},priority:{type:'string',enum:['low','normal','high']},dueAt:{type:'number',description:'用户明确的截止时间，Unix毫秒；用于排序提醒，独立于执行超时。'},
-      assignedBotId:{type:'string',description:'team_list 返回的员工 ID；省略由总管负责。'},workspaceMode:{type:'string',enum:['general','code','documents'],description:'任务模板，默认general；code准备Git快照，documents复制文本资料。模板不限制工具权限。'},inputFiles:{type:'array',items:{type:'string'},description:'general/documents 模板复制的输入文件：项目内相对路径。general可省略，最多20个文件、每个20MiB；documents为文本文件，最多10个、每个64KiB。'},title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},permission:{type:'string',enum:['full','read-only'],description:'执行权限，默认full；只有用户明确要求只读时选择read-only。完整执行使用已接入且已授权的工具，不新增外部账号。'},mode:{type:'string',enum:['analysis','edit'],description:'旧客户端兼容字段，优先使用permission；analysis对应read-only，edit对应full，不得冲突。'},timeoutMs:{type:'number'},maxSteps:{type:'number'},tokenBudget:{type:'number'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
+      acceptanceCriteria:{type:'string',description:'从用户目标提取的可验证交付标准，不添加用户未要求的工作。'},managementEnabled:{type:'boolean',description:'员工任务默认启用总管跟进；用户明确关闭时设false。'},maxReworks:{type:'integer',description:'默认最多两次自动返工，只有用户要求调整时填写，0–5。'},managementTokenBudget:{type:'integer',description:'可选累计Token预算，默认0表示不限制；只有用户明确要求设置上限时填写有限值。'},managementTimeBudgetMs:{type:'integer',description:'可选累计执行时长毫秒，默认0表示不限制；只有用户明确要求设置上限时填写有限值。'},dependsOn:{type:'array',items:{type:'string'},description:'用户明确指定的前置任务ID，等待其已验收成果。'},priority:{type:'string',enum:['low','normal','high']},dueAt:{type:'number',description:'用户明确的截止时间，Unix毫秒；用于排序提醒，独立于执行超时。'},
+      assignedBotId:{type:'string',description:'team_list 返回的员工 ID；省略由总管负责。'},workspaceMode:{type:'string',enum:['general','code','documents'],description:'任务模板，默认general；code准备Git快照，documents复制文本资料。模板不限制工具权限。'},inputFiles:{type:'array',items:{type:'string'},description:'general/documents 模板复制的输入文件：项目内相对路径。general可省略，最多20个文件、每个20MiB；documents为文本文件，最多10个、每个64KiB。'},title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},permission:{type:'string',enum:['full','read-only'],description:'执行权限，默认full；只有用户明确要求只读时选择read-only。完整执行使用已接入且已授权的工具，不新增外部账号。'},mode:{type:'string',enum:['analysis','edit'],description:'旧客户端兼容字段，优先使用permission；analysis对应read-only，edit对应full，不得冲突。'},timeoutMs:{type:'number',description:'每轮执行时限毫秒，默认0不限制；只有用户明确要求时设置有限值。'},maxSteps:{type:'number',description:'每轮模型步骤上限，默认0不限制；只有用户明确要求时设置有限值。'},tokenBudget:{type:'number',description:'每轮Token预算，默认0不限制；只有用户明确要求时设置有限值。'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
     },a=>{const r=request(),input={...a,kind:'agent'};return tasks.create({...input,id:hash(r.id+'\0'+JSON.stringify(tasks.spec(input)))},{requestId:r.id,source:'assistant'});}],
     ['background_agent_message','向指定后台 Agent 任务补充要求。只表示消息已保存，不能声称正在执行的操作已经按新要求修改。',{id:{type:'string',required:true},text:{type:'string',required:true}},a=>tasks.message({...a,messageId:hash(request().id+'\0'+a.id+'\0'+a.text)})],
     ['background_agent_pause','暂停后台 Agent，停止模型和工具，保留工作区和会话供继续。先查询当前 runId。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>{request();return tasks.pause(a);}],

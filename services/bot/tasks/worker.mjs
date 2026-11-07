@@ -91,6 +91,6 @@ process.on('message',message=>{
     });
     child.once('close',()=>{pipesClosed=true;});
     child.once('spawn',()=>send({type:'started',pid:child.pid}));
-    deadline=setTimeout(()=>stop('task_timeout'),spec.timeoutMs);
+    if(spec.timeoutMs>0)deadline=setTimeout(()=>stop('task_timeout'),spec.timeoutMs);
   }catch{stopReason='spawn_failed';settle(null,null);}
 });

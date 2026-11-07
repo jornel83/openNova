@@ -4,6 +4,7 @@ import {AssigneeSelect} from './team.jsx';
 import {taskLabels} from './task-view.mjs';
 import {errorText} from './api.mjs';
 import {reviewView,reviewLabels,priorityLabels,localDateValue,canEditDependencies,artifactLabel,employeeTask,dependencyReason} from './team-view.mjs';
+import {budgetInput,budgetMinutesInput,managementExecutionBudget,managementUsageLabel} from './task-budget.mjs';
 
 export function TaskPlanningFields({value,tasks=[],onChange,taskId,disabled=false}){
   const selected=value.dependsOn??[];
@@ -67,20 +68,20 @@ export function TeamResults({detail,currentRun,action,disabled=false,busy=false}
 export function TaskCoordination({detail,team,tasks=[],action,disabled=false}){
   const {task}=detail,management=detail.teamReview?.management??task.management;
   const [maxReworks,setMaxReworks]=useState(management?.maxReworks??2),[assignee,setAssignee]=useState(task.assignedBotId??''),[handoff,setHandoff]=useState('');
-  const [tokenBudget,setTokenBudget]=useState(management?.tokenBudget??600000),[budgetMinutes,setBudgetMinutes]=useState((management?.timeBudgetMs??7200000)/60000);
+  const [tokenBudget,setTokenBudget]=useState(budgetInput(management?.tokenBudget)),[budgetMinutes,setBudgetMinutes]=useState(budgetMinutesInput(management?.timeBudgetMs));
   const [schedule,setSchedule]=useState({dependsOn:task.dependsOn??[],priority:task.priority??'normal',dueAt:localDateValue(task.dueAt)});
   const send=useBoundAction(action),bound={id:task.id,runId:task.runId};
-  useEffect(()=>{setAssignee(task.assignedBotId??'');setHandoff('');setMaxReworks(management?.maxReworks??2);setTokenBudget(management?.tokenBudget??600000);setBudgetMinutes((management?.timeBudgetMs??7200000)/60000);setSchedule({dependsOn:task.dependsOn??[],priority:task.priority??'normal',dueAt:localDateValue(task.dueAt)});},[task.id,task.runId,task.assignmentVersion]);
-  const validBudgets=Number.isInteger(maxReworks)&&maxReworks>=0&&maxReworks<=5&&Number.isInteger(tokenBudget)&&tokenBudget>=1000&&tokenBudget<=3000000&&Number.isFinite(budgetMinutes)&&budgetMinutes>=1&&budgetMinutes<=480;
+  useEffect(()=>{setAssignee(task.assignedBotId??'');setHandoff('');setMaxReworks(management?.maxReworks??2);setTokenBudget(budgetInput(management?.tokenBudget));setBudgetMinutes(budgetMinutesInput(management?.timeBudgetMs));setSchedule({dependsOn:task.dependsOn??[],priority:task.priority??'normal',dueAt:localDateValue(task.dueAt)});},[task.id,task.runId,task.assignmentVersion]);
+  const budget=managementExecutionBudget({tokenBudget,budgetMinutes}),validBudgets=Number.isInteger(maxReworks)&&maxReworks>=0&&maxReworks<=5&&!!budget;
   const target=assignee||team?.chiefBotId,selected=target===team?.chiefBotId?'':assignee;
   const dependencies=(task.dependsOn??[]).map(id=>tasks.find(t=>t.id===id)??{id,title:id});
   return <section className="task-coordination" aria-label="任务安排">
     {management&&employeeTask(task)&&<details className="task-management" open><summary>总管跟进</summary>
       <label className="task-check"><input type="checkbox" checked={!!management.enabled} disabled={disabled} onChange={e=>void send('tasks/management',{...bound,enabled:e.target.checked})}/>启用成果检查与跟进</label>
-      <p className="subtle">已自动返工 {management.usedReworks??0} / {management.maxReworks??2} 次 · 累计 {management.usedTokens??0} / {management.tokenBudget??600000} Token · {Math.ceil((management.usedDurationMs??0)/60000)} / {(management.timeBudgetMs??7200000)/60000} 分钟</p>
+      <p className="subtle">已自动返工 {management.usedReworks??0} / {management.maxReworks??2} 次 · {managementUsageLabel(management)}</p>
       <label>最多自动返工次数<input type="number" min={0} max={5} value={maxReworks} onChange={e=>setMaxReworks(Number(e.target.value))}/></label>
-      <details><summary>累计执行预算</summary><label>累计 Token 上限<input type="number" min={1000} max={3000000} value={tokenBudget} onChange={e=>setTokenBudget(Number(e.target.value))}/></label><label>累计运行时间（分钟）<input type="number" min={1} max={480} value={budgetMinutes} onChange={e=>setBudgetMinutes(Number(e.target.value))}/></label><p className="subtle">员工执行与总管检查共用累计预算；达到上限后停止自动跟进，等待你处理。</p></details>
-      <div className="task-actions"><button type="button" disabled={disabled||!validBudgets} onClick={()=>void send('tasks/management',{...bound,maxReworks,tokenBudget,timeBudgetMs:Math.round(budgetMinutes*60000)})}>保存跟进设置</button>{management.enabled&&<button type="button" disabled={disabled} onClick={()=>void send('tasks/management',{...bound,paused:!management.paused})}>{management.paused?'恢复总管跟进':'暂停总管跟进'}</button>}</div>
+      <details><summary>累计执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><label>累计 Token 上限<input type="number" min={1000} max={3000000} placeholder="不限制" value={tokenBudget} onChange={e=>setTokenBudget(e.target.value)}/></label><label>累计运行时间（分钟）<input type="number" min={1/60} max={480} step="any" placeholder="不限制" value={budgetMinutes} onChange={e=>setBudgetMinutes(e.target.value)}/></label><p className="subtle">员工执行与总管检查共用累计预算。留空表示不限制；填写上限后，达到上限会停止自动跟进，等待你处理。修改用于后续轮次，当前执行保留本轮预算。</p></details>
+      <div className="task-actions"><button type="button" disabled={disabled||!validBudgets} onClick={()=>void send('tasks/management',{...bound,maxReworks,...budget})}>保存跟进设置</button>{management.enabled&&<button type="button" disabled={disabled} onClick={()=>void send('tasks/management',{...bound,paused:!management.paused})}>{management.paused?'恢复总管跟进':'暂停总管跟进'}</button>}</div>
       {management.paused&&<p className="team-callout">总管跟进已暂停。恢复后会按当前成果和预算继续检查。</p>}
     </details>}
     <details className="task-command"><summary>优先级与依赖</summary><p>优先级：{priorityLabels[task.priority]||'普通'}{task.dueAt?` · 截止 ${new Date(task.dueAt).toLocaleString('zh-CN')}`:''}</p>

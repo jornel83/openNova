@@ -4,11 +4,12 @@ import {existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {readJson} from '../tasks/agent-files.mjs';
 import {normalizeReviewDecision,prepareReviewEvidence} from './review.mjs';
+import {validBudget,remainingBudget,capBudget} from '../tasks/budgets.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
 const live=new Set(['queued','running','pausing','cancelling']);
 const waiting=new Set(['completed','failed','waiting_input']);
-export const MANAGEMENT_DEFAULTS={enabled:true,paused:false,maxReworks:2,tokenBudget:600000,timeBudgetMs:7200000,usedReworks:0};
+export const MANAGEMENT_DEFAULTS={enabled:true,paused:false,maxReworks:2,tokenBudget:0,timeBudgetMs:0,usedReworks:0};
 export class TeamSupervisor {
   constructor({tasks,reports,createManagementTask,now=Date.now}){
     Object.assign(this,{tasks,reports,createManagementTask,now,db:tasks.db});this.ticking=false;this.notifications=new Set();
@@ -47,9 +48,9 @@ export class TeamSupervisor {
   continuationBudget(task){
     const settings=this.management(task);if(!settings.enabled)return {};
     if(settings.paused)return {reason:'management_paused'};
-    const usage=this.usage(task),tokenBudget=settings.tokenBudget-usage.usedTokens,timeoutMs=settings.timeBudgetMs-usage.usedDurationMs;
+    const usage=this.usage(task),tokenBudget=remainingBudget(settings.tokenBudget,usage.usedTokens),timeoutMs=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
     if(tokenBudget<1000||timeoutMs<1000)return {reason:'management_budget_exhausted'};
-    return {executionBudget:{tokenBudget:Math.min(task.tokenBudget??200000,tokenBudget),timeoutMs:Math.min(task.timeoutMs,timeoutMs)}};
+    return {executionBudget:{tokenBudget:capBudget(task.tokenBudget,tokenBudget),timeoutMs:capBudget(task.timeoutMs,timeoutMs)}};
   }
   isAccepted(report){
     if(!report)return false;
@@ -69,7 +70,7 @@ export class TeamSupervisor {
     if(task.managementReview)throw Error('management_task_not_configurable');
     const settings=this.management(task);
     for(const key of ['enabled','paused'])if(body[key]!==undefined){if(typeof body[key]!=='boolean')throw Error('invalid_management_policy');settings[key]=body[key];}
-    for(const [key,min,max] of [['maxReworks',0,5],['tokenBudget',1000,3000000],['timeBudgetMs',1000,28800000]])if(body[key]!==undefined){if(!Number.isInteger(body[key])||body[key]<min||body[key]>max)throw Error('invalid_management_policy');settings[key]=body[key];}
+    for(const [key,min,max] of [['maxReworks',0,5],['tokenBudget',1000,3000000],['timeBudgetMs',1000,28800000]])if(body[key]!==undefined){if(!validBudget(body[key],min,max))throw Error('invalid_management_policy');settings[key]=body[key];}
     task.management=settings;this.tasks.put('task',task);
     if(!settings.enabled||settings.paused)for(const review of this.history(task.id))if(['queued','reviewing'].includes(review.status)){
       try{const child=this.tasks.row('task',review.managementTaskId);if(live.has(child.status))this.tasks.pause({id:child.id,runId:child.runId});}catch{}
@@ -99,14 +100,14 @@ export class TeamSupervisor {
     const continueTask=['request_changes','answer'].includes(decision.action);
     if(continueTask&&task.kind!=='agent')decision={action:'needs_user',summary:'命令任务需要用户指定新的执行要求，不能自动重放原命令。',evidenceIds:[]};
     if(continueTask&&decision.action!=='needs_user'){
-      const remainingTokens=settings.tokenBudget-usage.usedTokens,remainingTime=settings.timeBudgetMs-usage.usedDurationMs;
+      const remainingTokens=remainingBudget(settings.tokenBudget,usage.usedTokens),remainingTime=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
       if(!manual&&(decision.action==='request_changes'&&settings.usedReworks>=settings.maxReworks||remainingTokens<1000||remainingTime<1000))return this.put({...review,status:'budget_exhausted',decision,error:'management_budget_exhausted',finishedAt:this.now()});
       const oldRun=this.tasks.row('run',task.runId),job=this.tasks.row('job',oldRun.jobId);
       if(job.cleanupConfirmed!==true)throw Error('review_cleanup_unconfirmed');
       this.tasks.atomic(()=>{
         this.current(review);delete task.stopIntent;task.management={...settings,usedReworks:settings.usedReworks+(!manual&&decision.action==='request_changes'?1:0)};
         this.tasks.newRun(task,oldRun.number+1,decision.instruction,{managementTrigger:{reviewId:review.id,reportId:report.id},
-          ...(!manual?{executionBudget:{tokenBudget:Math.min(task.tokenBudget,remainingTokens),timeoutMs:Math.min(task.timeoutMs,remainingTime)}}:{})});
+          ...(!manual?{executionBudget:{tokenBudget:capBudget(task.tokenBudget,remainingTokens),timeoutMs:capBudget(task.timeoutMs,remainingTime)}}:{})});
         this.put({...review,decision,status:decision.action==='answer'?'answered':'changes_requested',nextRunId:task.runId,finishedAt:this.now()});
       });
     }else this.tasks.atomic(()=>{this.current(review);this.put({...review,decision,status:decision.action==='accept'?'accepted':'needs_user',finishedAt:this.now()});});
@@ -132,11 +133,11 @@ export class TeamSupervisor {
         if(job.cleanupConfirmed!==true)continue;
         if(review.resumePending&&child.status!=='completed'){
           if(this.tasks.workers?.has(job.id))continue;
-          const settings=this.management(current.task),usage=this.usage(current.task),tokenBudget=settings.tokenBudget-usage.usedTokens,timeoutMs=settings.timeBudgetMs-usage.usedDurationMs;
+          const settings=this.management(current.task),usage=this.usage(current.task),tokenBudget=remainingBudget(settings.tokenBudget,usage.usedTokens),timeoutMs=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
           if(tokenBudget<1000||timeoutMs<1000){this.put({...review,status:'budget_exhausted',error:'management_budget_exhausted',finishedAt:this.now()});continue;}
           this.tasks.atomic(()=>{
             this.current(review);delete child.stopIntent;
-            this.tasks.newRun(child,run.number+1,'恢复同一报告的只读验收。重新读取 report.json 和相关证据，再用 review_decide 提交本轮决定。',{executionBudget:{tokenBudget:Math.min(child.tokenBudget,tokenBudget),timeoutMs:Math.min(child.timeoutMs,timeoutMs)}});
+            this.tasks.newRun(child,run.number+1,'恢复同一报告的只读验收。重新读取 report.json 和相关证据，再用 review_decide 提交本轮决定。',{executionBudget:{tokenBudget:capBudget(child.tokenBudget,tokenBudget),timeoutMs:capBudget(child.timeoutMs,timeoutMs)}});
             this.put({...review,status:'queued',resumePending:false,resumedRunId:child.runId});
           });this.tasks.changed(child);continue;
         }
@@ -151,12 +152,13 @@ export class TeamSupervisor {
         if(this.history(task.id).some(review=>review.reportId===report.id))continue;
         const review={id:'review-'+hash(report.id),reportId:report.id,taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion,source:'supervisor',createdAt:this.now()};
         try{
-          this.current(review);const usage=this.usage(task),tokenBudget=Math.min(60000,settings.tokenBudget-usage.usedTokens),timeoutMs=Math.min(300000,settings.timeBudgetMs-usage.usedDurationMs);
-          if(tokenBudget<1000||timeoutMs<1000){this.put({...review,status:'budget_exhausted',error:'management_budget_exhausted',finishedAt:this.now()});continue;}
+          this.current(review);const usage=this.usage(task),tokensLeft=remainingBudget(settings.tokenBudget,usage.usedTokens),timeLeft=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
+          if(tokensLeft<1000||timeLeft<1000){this.put({...review,status:'budget_exhausted',error:'management_budget_exhausted',finishedAt:this.now()});continue;}
+          const tokenBudget=capBudget(settings.tokenBudget===0?0:60000,tokensLeft),timeoutMs=capBudget(settings.timeBudgetMs===0?0:300000,timeLeft);
           const managementTaskId='management-'+hash(report.id),evidenceDirectory=join(this.tasks.root,'management-inputs',hash(report.id));
           prepareReviewEvidence({report,task,directory:evidenceDirectory});
           const managementReview={reviewId:review.id,reportId:report.id,targetTaskId:task.id,targetRunId:task.runId,assignmentVersion:task.assignmentVersion,evidenceDirectory};
-          const budgets={maxSteps:24,tokenBudget,timeoutMs};
+          const budgets={maxSteps:0,tokenBudget,timeoutMs};
           this.put({...review,status:'queued',managementTaskId,managementReview,budgets});
           try{this.createManagementTask({id:managementTaskId,report,review,managementReview,goal:'读取 report.json，验收员工交付并调用 review_decide。',budgets});}catch(error){
             // Keep a recoverable intent even if creation or acknowledgement was interrupted.

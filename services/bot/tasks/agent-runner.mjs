@@ -49,7 +49,8 @@ try{
   const env={...process.env,...research.childEnv,NODE_OPTIONS:'',OPENNOVA_HARNESS_ROOT:settings.harnessRoot,OPENNOVA_SIWC_ROOT:settings.siwcRoot,
     OPENNOVA_SIWC_STORAGE:settings.storageDir,OPENNOVA_KEYCHAIN_HELPER:settings.keychainPath,PATH:dirname(process.execPath)+':'+process.env.PATH};
   harness=new DeepSeekHarness({profile:'sdk-minimal',patches:[patchPath],dshHome:join(spec.agentHome,'harness'),processCwd:workspace.path,cwd:workspace.path,
-    provider:'opennova-chatgpt',model:'gpt-6.1-sol',initializeTimeoutMs:30000,requestTimeoutMs:spec.timeoutMs,shutdownTimeoutMs:1000,disposeEofGraceMs:200,disposeGraceMs:500,env});
+    // SDK requests wait indefinitely only when timeout is omitted; 0 would abort immediately.
+    provider:'opennova-chatgpt',model:'gpt-6.1-sol',initializeTimeoutMs:30000,requestTimeoutMs:spec.timeoutMs>0?spec.timeoutMs:undefined,shutdownTimeoutMs:1000,disposeEofGraceMs:200,disposeGraceMs:500,env});
   await harness.start();
   console.log('独立 Agent 会话已就绪，正在处理任务。');
   // Only dispatch at a completed Harness turn boundary. A message arriving after

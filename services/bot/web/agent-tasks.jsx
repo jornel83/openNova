@@ -5,12 +5,14 @@ import {ResearchSources} from './research-sources.jsx';
 import {TaskPlanningFields} from './team-results.jsx';
 import {errorText} from './api.mjs';
 import {activeTask,taskLabels,appendTaskLog} from './task-view.mjs';
-const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',acceptanceCriteria:'',permission:'full',minutes:30,maxSteps:32,tokenBudget:200000,autoContinue:0,managementEnabled:null,maxReworks:2,dependsOn:[],priority:'normal',dueAt:''};
+import {agentExecutionBudget,executionBudgetLabel} from './task-budget.mjs';
+const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',acceptanceCriteria:'',permission:'full',minutes:'',maxSteps:'',tokenBudget:'',autoContinue:0,managementEnabled:null,maxReworks:2,dependsOn:[],priority:'normal',dueAt:''};
 export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
   const [form,setForm]=useState(fresh),submission=useRef(null);
+  const budget=agentExecutionBudget(form);
   const field=(key,value)=>setForm({...form,[key]:value});
   async function submit(e){
-    e.preventDefault();submission.current??={...form,assignedBotId:form.assignedBotId||undefined,inputFiles:form.inputs.split('\n').map(s=>s.trim()).filter(Boolean),id:crypto.randomUUID(),kind:'agent',timeoutMs:Number(form.minutes)*60000,maxSteps:Number(form.maxSteps),tokenBudget:Number(form.tokenBudget),autoContinue:form.permission==='full'?Number(form.autoContinue):0,
+    e.preventDefault();if(!budget)return;submission.current??={...form,...budget,assignedBotId:form.assignedBotId||undefined,inputFiles:form.inputs.split('\n').map(s=>s.trim()).filter(Boolean),id:crypto.randomUUID(),kind:'agent',autoContinue:form.permission==='full'?Number(form.autoContinue):0,
       managementEnabled:!!form.assignedBotId&&(form.managementEnabled??true),maxReworks:Number(form.maxReworks),dueAt:form.dueAt?new Date(form.dueAt).getTime():null};
     try{
       const result=await action('background-task-start',submission.current,{rethrow:true});
@@ -31,9 +33,8 @@ export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
     <label>执行权限<select value={form.permission} onChange={e=>field('permission',e.target.value)}><option value="full">完整执行（默认）</option><option value="read-only">只读</option></select></label>
     <p className="subtle">{form.permission==='read-only'?'读取资料和查询信息，结果显示在任务报告中；不写文件、不运行命令。':'可使用已接入并获授权的文件、命令、联网及浏览器工具。成果保存在独立工作目录。'}</p>
     {form.permission==='full'&&<><label className="task-check"><input type="checkbox" checked={!!form.autoContinue} onChange={e=>field('autoContinue',e.target.checked?2:0)}/>测试完成后自动接续</label>{!!form.autoContinue&&<label>最多自动接续次数<input required type="number" min={1} max={5} value={form.autoContinue} onChange={e=>field('autoContinue',Number(e.target.value))}/></label>}<p className="subtle">默认关闭。启用后允许 Agent 提交后台验证，结果到达时按规则接续；规则有效期 24 小时。</p></>}
-    <label>最长运行时间（分钟）<input type="number" required min={1} max={120} value={form.minutes} onChange={e=>field('minutes',e.target.value)}/></label>
-    <details><summary>执行预算</summary><label>最多模型步骤<input required type="number" min={1} max={128} value={form.maxSteps} onChange={e=>field('maxSteps',e.target.value)}/></label><label>Token 预算<input required type="number" min={1000} max={1000000} value={form.tokenBudget} onChange={e=>field('tokenBudget',e.target.value)}/></label></details>
-    <button className="task-primary" disabled={disabled} type="submit">{submission.current?'重试原任务提交':'提交 Agent 任务'}</button>
+    <details><summary>执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><p className="subtle">默认不限制；需要上限时填写，留空可取消该项限制。</p><label>最多模型步骤<input type="number" min={1} max={128} placeholder="不限制" value={form.maxSteps} onChange={e=>field('maxSteps',e.target.value)}/></label><label>Token 预算<input type="number" min={1000} max={1000000} placeholder="不限制" value={form.tokenBudget} onChange={e=>field('tokenBudget',e.target.value)}/></label><label>最长运行时间（分钟）<input type="number" min={1/60} max={120} step="any" placeholder="不限制" value={form.minutes} onChange={e=>field('minutes',e.target.value)}/></label></details>
+    <button className="task-primary" disabled={disabled||!budget} type="submit">{submission.current?'重试原任务提交':'提交 Agent 任务'}</button>
   </form></details>;
 }
 const deliveryLabels={pending:'待处理',sending:'正在提交',delivered:'已接收',unknown:'接收情况待核对'};
@@ -51,7 +52,7 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
   }
   async function send(name){const result=await dispatch(name,{text});if(result)setText('');}
   return <div className="agent-task">
-    <p className="task-intro">{permissionLabel} · {({general:'通用工作',code:'代码工程',documents:'文本资料整理'})[task.workspaceMode??'code']} · 每轮最多 {task.maxSteps} 个模型步骤 · {task.timeoutMs/60000} 分钟</p>
+    <p className="task-intro">{permissionLabel} · {({general:'通用工作',code:'代码工程',documents:'文本资料整理'})[task.workspaceMode??'code']} · {executionBudgetLabel(task)}</p>
     {!readonly&&!(task.policyVersion>=2)&&<p className="subtle">此任务保留创建时的工具权限。新建任务可使用通用执行能力。</p>}
     <details className="task-command" open><summary>目标与约束</summary><p>{task.goal}</p>{task.constraints&&<p>{task.constraints}</p>}</details>
     {currentRun?.instruction&&<p className="task-intro">本轮接续要求：{currentRun.instruction}</p>}

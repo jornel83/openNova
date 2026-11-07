@@ -85,7 +85,7 @@ export async function apply(ctx,config){
   ctx.on('system-prompt/assemble',async(a,c,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
   ctx.on('tools/execute',async(exec,next)=>{
     if(waiting||awaiting)throw Error(awaiting?'task_waiting_for_event':'task_waiting_for_user');
-    if(++toolCalls>config.maxSteps*8)stopForBudget('task_step_budget_exhausted');
+    toolCalls++;if(config.maxSteps>0&&toolCalls>config.maxSteps*8)stopForBudget('task_step_budget_exhausted');
     const record={id:randomUUID(),runId:config.runId,taskId:config.taskId,tool:exec.name,status:'running',createdAt:Date.now(),arguments:exec.arguments};
     if(exec.name==='task_command')record.logPath=join(config.runDir,'commands',record.id,'output.log');
     const path=join(config.runDir,'steps',record.id+'.json');saveJson(path,record);progress();
@@ -106,10 +106,10 @@ export async function apply(ctx,config){
     if(options.sessionId!==config.sessionId)throw Error('task_session_mismatch');
     return (async function*(){
       if(awaiting)throw Error('task_waiting_for_event');
-      if(steps>=config.maxSteps)stopForBudget('task_step_budget_exhausted');
-      if(totalTokens>=config.tokenBudget)stopForBudget('task_token_budget_exhausted');
+      if(config.maxSteps>0&&steps>=config.maxSteps)stopForBudget('task_step_budget_exhausted');
+      if(config.tokenBudget>0&&totalTokens>=config.tokenBudget)stopForBudget('task_token_budget_exhausted');
       const inputEstimate=options.messages.reduce((sum,m)=>sum+estimateMessage(m),0)+estimateToolsTokens({tools:options.tools})+Math.ceil((options.system?.length??0)/4);
-      if(totalTokens+inputEstimate>config.tokenBudget)stopForBudget('task_token_budget_exhausted');
+      if(config.tokenBudget>0&&totalTokens+inputEstimate>config.tokenBudget)stopForBudget('task_token_budget_exhausted');
       steps++;progress();
       if(config.bridge){
         for(;;){

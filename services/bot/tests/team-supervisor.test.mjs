@@ -23,7 +23,7 @@ function fixture(t){
     pause({id}){const task=this.row('task',id);task.status='paused';this.put('task',task);},
   };
   mkdirSync(tasks.root);
-  const base={id:'employee-work',kind:'agent',runId:'run-1',assignmentVersion:1,assignedBotId:'employee',status:'completed',goal:'生成完整报告',management:{...MANAGEMENT_DEFAULTS},tokenBudget:200000,timeoutMs:1800000};
+  const base={id:'employee-work',kind:'agent',runId:'run-1',assignmentVersion:1,assignedBotId:'employee',status:'completed',goal:'生成完整报告',management:{...MANAGEMENT_DEFAULTS,tokenBudget:600000,timeBudgetMs:7200000},tokenBudget:200000,timeoutMs:1800000};
   tasks.put('task',base);tasks.put('run',{id:'run-1',taskId:base.id,number:1,status:'completed',jobId:'job-1',startedAt:100,finishedAt:150});tasks.put('job',{id:'job-1',status:'completed',cleanupConfirmed:true});
   function finishTarget(content='draft'){
     const task=tasks.row('task',base.id);task.status='completed';tasks.put('task',task);
@@ -143,4 +143,31 @@ test('manual decisions override pending resume and exhausted budgets block it',t
 test('cumulative management time includes asynchronous command checks',t=>{
   const f=fixture(t);f.tasks.put('task',{id:'check',parentTaskId:f.base.id});f.tasks.put('run',{id:'check-run',taskId:'check',jobId:'check-job',startedAt:200,finishedAt:800});f.tasks.put('job',{id:'check-job'});
   assert.deepEqual(f.supervisor.usage(f.base),{usedTokens:0,usedDurationMs:650});
+});
+
+test('unlimited employee and supervisor budgets pass old thresholds and preserve rework counting',t=>{
+  const f=fixture(t),task=f.tasks.row('task',f.base.id);
+  assert.equal(MANAGEMENT_DEFAULTS.tokenBudget,0);assert.equal(MANAGEMENT_DEFAULTS.timeBudgetMs,0);
+  Object.assign(task,{tokenBudget:0,timeoutMs:0,maxSteps:0,management:{...MANAGEMENT_DEFAULTS}});f.tasks.put('task',task);
+  saveJson(join(f.tasks.directory(f.tasks.row('job','job-1')),'progress.json'),{totalTokens:9000000});
+  f.tasks.put('run',{...f.tasks.row('run','run-1'),finishedAt:100000000});
+  assert.deepEqual(f.supervisor.continuationBudget(task),{executionBudget:{tokenBudget:0,timeoutMs:0}});
+  f.supervisor.tick();let review=f.supervisor.history(task.id)[0];
+  assert.deepEqual(review.budgets,{maxSteps:0,tokenBudget:0,timeoutMs:0});
+  f.decide({action:'request_changes',summary:'补全交付',instruction:'补充遗漏内容。'});f.supervisor.tick();
+  const next=f.tasks.row('task',task.id);assert.equal(next.management.usedReworks,1);
+  assert.deepEqual(f.tasks.row('run',next.runId).executionBudget,{tokenBudget:0,timeoutMs:0});
+  f.finishTarget();f.supervisor.tick();review=f.supervisor.history(task.id)[0];
+  f.supervisor.configure({id:task.id,runId:next.runId,paused:true});f.supervisor.configure({id:task.id,runId:next.runId,paused:false});f.supervisor.tick();
+  const child=f.tasks.row('task',review.managementTaskId);assert.deepEqual(f.tasks.row('run',child.runId).executionBudget,{tokenBudget:0,timeoutMs:0});
+});
+
+test('cumulative limits can be cleared per dimension without erasing explicit per-run limits',t=>{
+  const f=fixture(t),bound={id:f.base.id,runId:f.base.runId};
+  f.supervisor.configure({...bound,tokenBudget:0,timeBudgetMs:0});let task=f.tasks.row('task',bound.id);
+  assert.deepEqual(f.supervisor.continuationBudget(task),{executionBudget:{tokenBudget:200000,timeoutMs:1800000}});
+  f.supervisor.configure({...bound,tokenBudget:1500});task=f.tasks.row('task',bound.id);
+  assert.deepEqual(f.supervisor.continuationBudget(task),{executionBudget:{tokenBudget:1500,timeoutMs:1800000}});
+  f.supervisor.tick();assert.deepEqual(f.supervisor.history(task.id)[0].budgets,{maxSteps:0,tokenBudget:1500,timeoutMs:0});
+  for(const key of ['tokenBudget','timeBudgetMs'])for(const value of [-1,999,null,NaN,Infinity,'0'])assert.throws(()=>f.supervisor.configure({...bound,[key]:value}),/invalid_management_policy/);
 });
