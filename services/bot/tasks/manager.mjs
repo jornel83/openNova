@@ -1,12 +1,13 @@
 /** Durable Task / Run / Job records; command effects live in supervised workers. */
 import {spawn} from 'node:child_process';
-import {randomUUID,createHash} from 'node:crypto';
-import {mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync,readdirSync,lstatSync} from 'node:fs';
+import {randomUUID,randomBytes,createHash} from 'node:crypto';
+import {mkdirSync,readFileSync,writeFileSync,statSync,realpathSync,openSync,readSync,closeSync,readdirSync,lstatSync} from 'node:fs';
 import {join,resolve,relative,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {readJson,saveJson,readSteps} from './agent-files.mjs';
 import {TaskEventEngine} from './event-engine.mjs';
-import {validateInputFiles} from './documents.mjs';
+import {validateInputFiles,validateGeneralInputs} from './documents.mjs';
+import {executionSpec,plainWorkspace} from './execution.mjs';
 import {workspaceDiff,applyWorkspace} from './workspace.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
@@ -16,8 +17,8 @@ const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const MAX_LOG=8*1024*1024;
 export class TaskManager {
-  constructor({ops,home,workspace,events,spawnWorker=spawn,agentProviderModule,agentPluginModule,bridge,eventOptions}){
-    Object.assign(this,{db:ops.db,workspace:realpathSync(workspace),events,spawnWorker,agentProviderModule,agentPluginModule,bridge});
+  constructor({ops,home,workspace,events,spawnWorker=spawn,agentProviderModule,agentPluginModule,agentResearchConfig,bridge,eventOptions}){
+    Object.assign(this,{db:ops.db,workspace:realpathSync(workspace),events,spawnWorker,agentProviderModule,agentPluginModule,agentResearchConfig,bridge});
     this.root=join(home,'tasks');mkdirSync(this.root,{recursive:true,mode:0o700});
     this.workers=new Map();this.closed=false;
     for(const table of ['background_task','background_run','background_job','background_message'])
@@ -60,16 +61,16 @@ export class TaskManager {
   spec(input,root=this.workspace,check){
     const assignment=this.team?.assignment(check?{...input,kind:'agent',workspaceMode:'code'}:input)??{};
     if(input.kind==='agent'){
-      const {title,goal,constraints='',mode='edit',timeoutMs=1800000,maxSteps=32,tokenBudget=200000,autoContinue=0}=input;
+      const {title,goal,constraints='',timeoutMs=1800000,maxSteps=32,tokenBudget=200000,autoContinue=0}=input;
+      const execution=executionSpec(input),{mode}=execution;
       if(!Number.isInteger(autoContinue)||autoContinue<0||autoContinue>5||autoContinue&&mode!=='edit')throw Error('invalid_event_budget');
       if(typeof title!=='string'||!title.trim()||title.length>160||typeof goal!=='string'||!goal.trim()||goal.length>8000||typeof constraints!=='string'||constraints.length>4000)throw Error('invalid_agent_task');
       if(!['analysis','edit'].includes(mode)||!Number.isInteger(maxSteps)||maxSteps<1||maxSteps>128||!Number.isInteger(tokenBudget)||tokenBudget<1000||tokenBudget>1000000)throw Error('invalid_agent_budget');
       if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>7200000)throw Error('invalid_task_timeout');
-      const workspaceMode=input.workspaceMode??'code';
-      if(!['code','documents'].includes(workspaceMode))throw Error('invalid_workspace_mode');
-      const inputFiles=workspaceMode==='documents'?validateInputFiles(root,input.inputFiles??[]):[];
-      if(workspaceMode==='documents'&&autoContinue)throw Error('documents_checks_unavailable');
-      return {...assignment,workspaceMode,inputFiles,kind:'agent',title:title.trim(),goal,constraints,mode,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[],...(autoContinue?{autoContinue}:{})};
+      const workspaceMode=input.workspaceMode??'general';
+      if(!['general','code','documents'].includes(workspaceMode))throw Error('invalid_workspace_mode');
+      const inputFiles=workspaceMode==='code'?[]:(workspaceMode==='documents'?validateInputFiles:validateGeneralInputs)(root,input.inputFiles??[]);
+      return {...assignment,...execution,workspaceMode,inputFiles,kind:'agent',title:title.trim(),goal,constraints,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[],...(autoContinue?{autoContinue}:{})};
     }
     if(input.kind&&input.kind!=='command')throw Error('invalid_task_kind');
     const {title,command}=input;
@@ -100,7 +101,7 @@ export class TaskManager {
   }
   newRun(task,number,instruction,extra={}){
     const employee=this.team?.snapshot(task);
-    const run={employee,assignmentVersion:task.assignmentVersion,id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
+    const run={employee,assignmentVersion:task.assignmentVersion,permission:task.permission,policyVersion:task.policyVersion,id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
     const job={id:run.jobId,runId:run.id,taskId:task.id,status:'queued',cleanupConfirmed:true,createdAt:run.createdAt,kind:task.kind??'command'};
     task.runId=run.id;task.status='queued';task.updatedAt=run.createdAt;task.unread=false;
     this.put('job',job);this.put('run',run);this.put('task',task);
@@ -172,14 +173,14 @@ export class TaskManager {
   }
   async diff({id,runId}){
     const task=this.row('task',id);if(task.runId!==runId)throw Error('task_run_changed');
-    if(task.workspaceMode==='documents')throw Error('documents_no_git_diff');
+    if(plainWorkspace(task))throw Error('documents_no_git_diff');
     if(task.kind!=='agent'||!this.summary(task).canContinue||this.workers.size||this.applying)throw Error('task_workspace_busy');
     this.applying=true;try{return await workspaceDiff(this.agentHome(task));}finally{this.applying=false;}
   }
   async applyChanges(body){
     if(!idOk(body.actionId)||typeof body.revision!=='string')throw Error('invalid_task_id');
     const task=this.row('task',body.id);if(task.runId!==body.runId)throw Error('task_run_changed');
-    if(task.workspaceMode==='documents')throw Error('documents_no_git_diff');
+    if(plainWorkspace(task))throw Error('documents_no_git_diff');
     if(task.kind!=='agent'||task.mode!=='edit'||!this.summary(task).canContinue||this.workers.size||this.applying)throw Error('task_workspace_busy');
     this.applying=true;try{const application=await applyWorkspace(this.agentHome(task),body);return {...this.detail(task.id),application};}finally{this.applying=false;}
   }
@@ -204,6 +205,10 @@ export class TaskManager {
     if(this.row('task',task.id).runId!==run.id)return;
     const finishedAt=result.finishedAt??Date.now();
     let agentResult=job.kind==='agent'?readJson(join(this.directory(job),'agent-result.json')):null;
+    if(job.kind==='agent'){
+      const research=readJson(join(this.directory(job),'research.json'));
+      if(research?.runId===run.id&&research.taskId===task.id)agentResult={...agentResult,runId:run.id,taskId:task.id,sources:research.sources??[],research:research.research};
+    }
     // The durable check receipt wins if HTTP delivery was lost after acceptance.
     // Interrupted Runs still require manual review; never replay uncertain work.
     const check=job.kind==='agent'&&this.all().find(t=>t.parentRunId===run.id);
@@ -227,18 +232,23 @@ export class TaskManager {
     this.changed(task);
   }
   artifacts(task,job){
-    const root=task.workspaceMode==='documents'?readJson(join(this.agentHome(task),'workspace.json'))?.path:task.cwd;
+    const workspace=plainWorkspace(task)?readJson(join(this.agentHome(task),'workspace.json')):null;
+    const root=plainWorkspace(task)?workspace?.path:task.cwd;
+    if(plainWorkspace(task)&&!root)return [];
     let files=task.artifacts;
-    if(task.workspaceMode==='documents'&&root){
+    if(plainWorkspace(task)&&root){
       files=[];const walk=(dir,prefix='')=>{for(const entry of readdirSync(dir,{withFileTypes:true})){
-        if(files.length>=50||entry.isSymbolicLink()||entry.name.startsWith('.'))continue;
+        if(files.length>=50||entry.isSymbolicLink()||entry.name.startsWith('.')||['node_modules','__pycache__','.venv'].includes(entry.name))continue;
         const name=prefix+entry.name;if(entry.isDirectory()){if(name.split('/').length<6)walk(join(dir,entry.name),name+'/');}
-        else if(entry.isFile()&&!task.inputFiles.includes(name))files.push(name);
+        else if(entry.isFile()){
+          const baseline=workspace?.inputBaseline?.[name],path=join(dir,entry.name);
+          if(!(task.inputFiles??[]).includes(name)||baseline&&(lstatSync(path).size!==baseline.size||hash(readFileSync(path))!==baseline.sha256))files.push(name);
+        }
       }};try{walk(root);}catch{}
     }
     return files.map((path,index)=>{
       try{
-        const absolute=realpathSync(resolve(root,path)),rel=relative(task.workspaceMode==='documents'?root:this.workspace,absolute),stat=statSync(absolute);
+        const absolute=realpathSync(resolve(root,path)),rel=relative(plainWorkspace(task)?root:this.workspace,absolute),stat=statSync(absolute);
         if(rel==='..'||rel.startsWith('../')||isAbsolute(rel)||!stat.isFile())throw Error();
         return {id:`${job.id}-${index}`,path:absolute,name:path,size:stat.size,mtimeMs:stat.mtimeMs,status:'available'};
       }catch{return {id:`${job.id}-${index}`,name:path,status:'missing'};}
@@ -273,10 +283,17 @@ export class TaskManager {
       if(task.kind==='agent'){
         this.syncInbox(task);
         const specPath=join(this.directory(job),'agent-spec.json');
+        let bridge=this.bridge;
+        if(bridge&&task.policyVersion>=2&&this.runtimeBridge){
+          const token=randomBytes(32).toString('hex'),tokenPath=join(this.directory(job),'bridge.token');
+          writeFileSync(tokenPath,token,{mode:0o600});
+          run.toolTokenHash=hash(token);this.put('run',run);
+          bridge={url:bridge.url,tokenPath,scoped:true,hostTools:this.runtimeBridge.hostTools};
+        }
         saveJson(specPath,{taskId:task.id,runId:run.id,runNumber:run.number,runDir:this.directory(job),agentHome:this.agentHome(task),source:task.cwd,
           employee:run.employee,assignmentVersion:run.assignmentVersion,workspaceMode:task.workspaceMode,inputFiles:task.inputFiles,
-          sessionId:task.sessionId,goal:task.goal,constraints:task.constraints,mode:task.mode,maxSteps:task.maxSteps,tokenBudget:task.tokenBudget,
-          timeoutMs:task.timeoutMs,instruction:run.instruction,eventContext:run.eventContext,checksEnabled:this.automation.canCheck(task.id),bridge:this.bridge,providerModule:this.agentProviderModule,agentPluginModule:this.agentPluginModule});
+          sessionId:task.sessionId,goal:task.goal,constraints:task.constraints,mode:task.mode,permission:task.permission,policyVersion:task.policyVersion,maxSteps:task.maxSteps,tokenBudget:task.tokenBudget,
+          timeoutMs:task.timeoutMs,instruction:run.instruction,eventContext:run.eventContext,checksEnabled:this.automation.canCheck(task.id),bridge,providerModule:this.agentProviderModule,agentPluginModule:this.agentPluginModule,researchConfig:this.agentResearchConfig});
         const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
         command=[process.execPath,fileURLToPath(new URL('./agent-runner.mjs',import.meta.url)),specPath].map(quote).join(' ');
       }
@@ -379,8 +396,8 @@ export function taskTools(tasks,getRequest){
   return [
     ['background_agent_rule','只有用户明确要求时，为指定任务配置事件接续规则。type=check/task/file/github；source 必须按类型精确指定。默认停用，enabled=true 表示用户授权启用。',{taskId:{type:'string',required:true},type:{type:'string',enum:['check','task','file','github'],required:true},instruction:{type:'string',required:true},source:{type:'object',additionalProperties:false,properties:{taskId:{type:'string'},runId:{type:'string'},paths:{type:'array',items:{type:'string'}},repository:{type:'string'},number:{type:'integer'},authors:{type:'array',items:{type:'string'}}},description:'task: taskId/runId；file: paths；github: repository/number/authors（仅 /opennova 前缀评论）。'},maxRuns:{type:'number'},ttlHours:{type:'number'},enabled:{type:'boolean'}},a=>tasks.ruleCreate({...a,id:hash(request().id+'\0rule\0'+JSON.stringify(a))})],
     ['background_agent_automation','按用户要求暂停或恢复该任务的自动接续。暂停自动接续不停止已运行的轮次；要立即停止请用 background_agent_pause。',{id:{type:'string',required:true},paused:{type:'boolean',required:true}},a=>{request();return tasks.automationPause(a);}],
-    ['background_agent_start','创建独立后台 Agent 工作会话。默认 mode=edit，允许在任务工作区读写成果，代码任务还可运行命令；资料任务不运行命令。只有用户明确要求只读、不写文件时才用 analysis；生成报告文件应使用 edit。提交后立即结束本轮等待，主对话仍可交流。',{
-      assignedBotId:{type:'string',description:'team_list 返回的员工 ID；省略由总管负责。'},workspaceMode:{type:'string',enum:['code','documents']},inputFiles:{type:'array',items:{type:'string'},description:'资料模式输入：项目内文本文件相对路径，最多10项。'},title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},mode:{type:'string',enum:['analysis','edit'],description:'默认 edit。生成或修改成果文件需要 edit；只有明确只读、不写文件的任务选择 analysis。不修改原资料并不等于不能在独立目录生成成果。'},timeoutMs:{type:'number'},maxSteps:{type:'number'},tokenBudget:{type:'number'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
+    ['background_agent_start','创建独立后台数字员工工作会话。默认 permission=full，可使用已接入的文件、命令、联网、浏览器工具；明确只读时用 read-only。workspaceMode仅决定目录准备：默认general、代码快照code、文本输入documents。需要的输入文件用inputFiles指定。提交后立即结束本轮等待，主对话仍可交流。',{
+      assignedBotId:{type:'string',description:'team_list 返回的员工 ID；省略由总管负责。'},workspaceMode:{type:'string',enum:['general','code','documents'],description:'任务模板，默认general；code准备Git快照，documents复制文本资料。模板不限制工具权限。'},inputFiles:{type:'array',items:{type:'string'},description:'general/documents 模板复制的输入文件：项目内相对路径。general可省略，最多20个文件、每个20MiB；documents为文本文件，最多10个、每个64KiB。'},title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},permission:{type:'string',enum:['full','read-only'],description:'执行权限，默认full；只有用户明确要求只读时选择read-only。完整执行使用已接入且已授权的工具，不新增外部账号。'},mode:{type:'string',enum:['analysis','edit'],description:'旧客户端兼容字段，优先使用permission；analysis对应read-only，edit对应full，不得冲突。'},timeoutMs:{type:'number'},maxSteps:{type:'number'},tokenBudget:{type:'number'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
     },a=>{const r=request(),input={...a,kind:'agent'};return tasks.create({...input,id:hash(r.id+'\0'+JSON.stringify(tasks.spec(input)))},{requestId:r.id,source:'assistant'});}],
     ['background_agent_message','向指定后台 Agent 任务补充要求。只表示消息已保存，不能声称正在执行的操作已经按新要求修改。',{id:{type:'string',required:true},text:{type:'string',required:true}},a=>tasks.message({...a,messageId:hash(request().id+'\0'+a.id+'\0'+a.text)})],
     ['background_agent_pause','暂停后台 Agent，停止模型和工具，保留工作区和会话供继续。先查询当前 runId。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>{request();return tasks.pause(a);}],

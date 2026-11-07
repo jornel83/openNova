@@ -60,8 +60,18 @@ test('team roster, assigned document work, task snapshots and restart use real B
   const task=await waitFor(async()=>{const {tasks}=await api('/background-tasks');return tasks.find(t=>t.requestId==='assigned-work');});
   const done=await waitFor(async()=>{const d=await api('/background-task',{id:task.id});if(d.task.status==='failed')throw Error(JSON.stringify(d));return d.task.status==='completed'&&d;});
   assert.equal(done.task.assignedBotId,member.id);assert.equal(done.task.ownerName,member.name);assert.equal(done.runs[0].employee.role,'资料整理员');
-  assert.equal(done.task.mode,'edit');
+  assert.equal(done.task.mode,'edit');assert.equal(done.task.permission,'full');assert.equal(done.task.policyVersion,2);
   assert.match(done.runs[0].result.text,/employee=true/);assert.equal(done.workspace.kind,'documents');assert.ok(done.runs[0].job.artifacts.length,JSON.stringify(done));assert.equal(done.runs[0].job.artifacts[0].name,'report.md');
+  assert.equal(readFileSync(join(b.workspace,'sample.txt'),'utf8'),'original\n');
+  // A research specialty is routing context, not a permission boundary. The
+  // same employee can execute a general task that uses files and a command.
+  await api('/ask',{id:'general-work',text:'agent:'+JSON.stringify({title:'跨场景处理',goal:'FIXTURE_GENERIC_PIPELINE',inputFiles:['sample.txt'],assignedBotId:member.id}),source:'voice'});
+  await waitFor(async()=>(await api('/result',{id:'general-work'})).status==='completed');
+  const generic=await waitFor(async()=>{const {tasks}=await api('/background-tasks');return tasks.find(t=>t.requestId==='general-work');});
+  const processed=await waitFor(async()=>{const d=await api('/background-task',{id:generic.id});if(d.task.status==='failed')throw Error(JSON.stringify(d));return d.task.status==='completed'&&d;});
+  assert.equal(processed.task.assignedBotId,member.id);assert.equal(processed.task.workspaceMode,'general');
+  assert.equal(processed.runs[0].jobs.find(j=>j.tool==='task_command')?.exitCode,0);
+  assert.equal(readFileSync(join(processed.workspace.path,'processed.md'),'utf8'),'ORIGINAL\n');
   assert.equal(readFileSync(join(b.workspace,'sample.txt'),'utf8'),'original\n');
   await api('/team-member',{...input,action:'update',actionId:'rename',id:member.id,revision:member.revision,name:'资料专家',role:'新职责'});
   const changed=await api('/background-task',{id:task.id});assert.equal(changed.task.ownerName,'资料专家');assert.equal(changed.runs[0].employee.role,'资料整理员');

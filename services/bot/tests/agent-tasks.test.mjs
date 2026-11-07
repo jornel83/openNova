@@ -18,7 +18,7 @@ async function fixture(t){
   t.after(async()=>{for(const manager of managers)await manager.close();ops.close();rmSync(home,{recursive:true,force:true});});return {home,workspace,ops,tasks,managers};
 }
 const done=(tasks,id)=>until(()=>{const d=tasks.detail(id);return !['running','queued','cancelling','pausing'].includes(d.task.status)&&d.task.cleanupConfirmed&&d;});
-const start=(tasks,goal,extra={})=>tasks.create({id:'agent',kind:'agent',title:'Fixture',goal,timeoutMs:60000,...extra});
+const start=(tasks,goal,extra={})=>tasks.create({id:'agent',kind:'agent',workspaceMode:'code',title:'Fixture',goal,timeoutMs:60000,...extra});
 test('default mode performs native read/write/test in isolation and continues its persisted session',async t=>{
   const {tasks,workspace}=await fixture(t);start(tasks,'FIXTURE_EDIT REMEMBER_ALPHA');
   const d=await done(tasks,'agent');assert.equal(d.task.status,'completed',tasks.log({id:'agent'}).text);

@@ -27,7 +27,7 @@ async function fixture(t,{manual=false,eventOptions={}}={}){
   reopen();t.after(async()=>{for(const manager of managers)await manager.close();await new Promise(resolve=>server.close(resolve));ops.close();rmSync(home,{recursive:true,force:true});});
   return {home,workspace,ops,tasks,reopen};
 }
-function agent(tasks,extra={}){return tasks.create({id:'agent',kind:'agent',title:'Event fixture',goal:'FIXTURE_EVENT_LOOP',mode:'edit',timeoutMs:60000,...extra});}
+function agent(tasks,extra={}){return tasks.create({id:'agent',kind:'agent',workspaceMode:'code',title:'Event fixture',goal:'FIXTURE_EVENT_LOOP',mode:'edit',timeoutMs:60000,...extra});}
 function complete(tasks,id='agent',status='completed'){
   const task=tasks.row('task',id),run=tasks.row('run',task.runId),job=tasks.row('job',run.jobId);
   tasks.atomic(()=>{tasks.put('task',{...task,status});tasks.put('run',{...run,status});tasks.put('job',{...job,status,cleanupConfirmed:true});});
@@ -46,6 +46,16 @@ test('real Harness releases its slot, resumes the same session after failed chec
   for(const child of result.checks){const run=tasks.row('run',child.runId);tasks.atomic(()=>tasks.automation.recordCompletion(tasks.row('task',child.id),run,tasks.row('job',run.jobId)));}
   tasks.automation.dispatch();assert.equal(tasks.detail('agent').runs.length,3);
   await tasks.close();const restarted=reopen();await delay(500);assert.equal(restarted.detail('agent').runs.length,3);assert.equal(restarted.detail('agent').automation.deliveries.length,2);
+});
+test('document templates with full permission can run an explicit check and resume from its result',async t=>{
+  const {tasks,workspace}=await fixture(t);
+  const first=agent(tasks,{workspaceMode:'documents',inputFiles:['sample.txt'],permission:'full',autoContinue:2});
+  const result=await until(()=>{const d=tasks.detail('agent');return d.runs.length===3&&d.task.status==='completed'&&d.task.cleanupConfirmed&&d;});
+  assert.equal(result.task.sessionId,first.task.sessionId);assert.equal(result.task.permission,'full');
+  assert.equal(result.workspace.kind,'documents');assert.deepEqual(result.runs.map(r=>r.status),['waiting_event','waiting_event','completed']);
+  assert.deepEqual(result.checks.map(c=>c.exitCode).sort(),[0,7]);
+  assert.equal(readFileSync(join(result.workspace.path,'sample.txt'),'utf8'),'updated\n');
+  assert.equal(readFileSync(join(workspace,'sample.txt'),'utf8'),'original\n');
 });
 test('file baseline, debounce, coalescing and pause survive restart; consumption rolls back as one transaction',async t=>{
   let now=Date.now();const {tasks,workspace,reopen}=await fixture(t,{manual:true,eventOptions:{now:()=>now}});

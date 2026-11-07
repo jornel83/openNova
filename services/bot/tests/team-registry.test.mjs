@@ -20,10 +20,12 @@ test('roster intents reconcile after upstream saved but local acknowledgement wa
  const restarted=new TeamRegistry({rt,db,workspace:rt.home});await restarted.recover();await restarted.mutate(create);assert.equal(Object.keys(rt.state.bots).length,2);
  assert.equal(restarted.view().members[1].model,'opennova-chatgpt/gpt-6.1-sol');await assert.rejects(restarted.mutate({...create,name:'另一个'}),/team_action_conflict/);
 });
-test('membership revisions, explicit assignments, disabled members and legacy ownership',async t=>{
+test('specialties do not restrict assignments; membership revisions, enablement and legacy ownership still apply',async t=>{
  const {team}=fixture(t);await team.mutate(create);const m=team.view().members[1];
  assert.equal(team.assignment({kind:'agent',workspaceMode:'documents',assignedBotId:m.id}).routing,'employee-background');
- assert.throws(()=>team.assignment({kind:'agent',assignedBotId:m.id}),/member_task_type_unavailable/);
+ for(const workspaceMode of ['general','code','documents'])assert.equal(team.assignment({kind:'agent',workspaceMode,assignedBotId:m.id}).assignedBotId,m.id);
+ assert.equal(team.assignment({command:'true',assignedBotId:m.id}).assignedBotId,m.id);
+ assert.equal(team.assignment({command:'true',parentTaskId:'document-task',assignedBotId:m.id}).assignedBotId,m.id);
  assert.equal(team.assignment({command:'true'}).assignedBotId,'chief');assert.equal(team.owner({}).ownershipOrigin,'legacy');
  team.tasks={all:()=>[{assignedBotId:m.id,status:'waiting_input'}]};
  await assert.rejects(team.mutate({...create,action:'update',actionId:'disable',id:m.id,revision:m.revision,enabled:false}),/unfinished/);
@@ -31,6 +33,19 @@ test('membership revisions, explicit assignments, disabled members and legacy ow
  await assert.rejects(team.mutate({...create,action:'update',actionId:'stale',id:m.id,revision:m.revision}),/member_changed/);
  await team.mutate({action:'toggle',actionId:'off',enabled:false});assert.throws(()=>team.assignment({kind:'agent',workspaceMode:'documents',assignedBotId:m.id}),/team_disabled/);
  assert.equal(team.assignment({command:'true'}).assignedBotId,'chief');
+});
+test('employees default to general work and omitted specialties preserve existing employee settings',async t=>{
+ const {team}=fixture(t);const {taskTypes,...generic}=create;
+ await team.mutate(generic);const member=team.view().members[1];assert.deepEqual(member.taskTypes,[]);
+ assert.equal(team.assignment({kind:'agent',workspaceMode:'general',assignedBotId:member.id}).assignedBotId,member.id);
+ await team.mutate({...create,action:'update',actionId:'specialize',id:member.id,revision:member.revision});
+ let current=team.view().members[1];assert.deepEqual(current.taskTypes,['documents']);
+ await team.mutate({...generic,action:'update',actionId:'rename',id:member.id,revision:current.revision,name:'研究员'});
+ current=team.view().members[1];assert.deepEqual(current.taskTypes,['documents']);assert.equal(current.name,'研究员');
+ await team.mutate({...generic,action:'update',actionId:'general',id:member.id,revision:current.revision,taskTypes:[]});
+ current=team.view().members[1];assert.deepEqual(current.taskTypes,[]);
+ await team.mutate({...generic,action:'update',actionId:'disable',id:member.id,revision:current.revision,enabled:false});
+ assert.throws(()=>team.assignment({kind:'agent',workspaceMode:'general',assignedBotId:member.id}),/team_member_disabled/);
 });
 test('context includes only the assigned employee and team memory',async t=>{
  const {team,home}=fixture(t);await team.mutate(create);for(const [dir,text] of [['bots/b1','OWN'],['bots/chief','CHIEF_PRIVATE'],['team','SHARED']]){mkdirSync(join(home,'memory',dir),{recursive:true});writeFileSync(join(home,'memory',dir,'MEMORY.md'),text);}

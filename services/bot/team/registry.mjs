@@ -41,8 +41,11 @@ export class TeamRegistry {
       this.put('settings',{schemaVersion:1,enabled:input.enabled});
     }else{
       if(!this.enabled())throw Error('team_disabled');
-      const {name,role,instructions,taskTypes}=input;
-      if(typeof name!=='string'||!name.trim()||name.length>40||typeof role!=='string'||role.length>24||typeof instructions!=='string'||instructions.length>4000||!Array.isArray(taskTypes)||!taskTypes.length||taskTypes.some(t=>!['code','documents','command'].includes(t)))throw Error('invalid_team_member');
+      const {name,role,instructions}=input;
+      // Historical taskTypes describe specialties only. They never grant or
+      // remove execution authority; an empty list means general work.
+      const taskTypes=input.taskTypes??(action==='update'?this.profile(input.id).taskTypes:[]);
+      if(typeof name!=='string'||!name.trim()||name.length>40||typeof role!=='string'||role.length>24||typeof instructions!=='string'||instructions.length>4000||!Array.isArray(taskTypes)||taskTypes.some(t=>!['code','documents','command'].includes(t)))throw Error('invalid_team_member');
       if(nameProblem(name)||input.enabled!==undefined&&typeof input.enabled!=='boolean')throw Error('invalid_team_member');
       if(!op&&Object.values(this.rt.state.bots).some(b=>b.name===name.trim()&&(action==='create'||b.id!==input.id)))throw Error('team_name_taken');
       if(action==='create'&&Object.keys(this.rt.state.bots).length>=20)throw Error('team_member_limit');
@@ -62,11 +65,9 @@ export class TeamRegistry {
     this.put('op:'+actionId,{input,fingerprint,status:'completed'});this.changed();return this.view();
   }
   assignment(input){
-    const id=input.assignedBotId||this.chiefId,bot=this.bot(id),profile=this.profile(id);
+    const id=input.assignedBotId||this.chiefId,profile=this.profile(id);this.bot(id);
     if(id!==this.chiefId&&!this.enabled())throw Error('team_disabled');
     if(!profile.enabled)throw Error('team_member_disabled');
-    const type=input.parentTaskId?'code':input.kind==='agent'?(input.workspaceMode==='documents'?'documents':'code'):'command';
-    if(!profile.taskTypes.includes(type))throw Error('member_task_type_unavailable');
     return {assignedBotId:id,supervisorBotId:this.chiefId,reportTo:this.chiefId,assignmentVersion:1,
       routing:id===this.chiefId?'chief-background':'employee-background'};
   }

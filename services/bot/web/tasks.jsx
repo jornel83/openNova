@@ -106,7 +106,7 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       <AgentTaskForm team={team} action={action} onSelect={onSelect} disabled={!online||pending}/>
       <details className="task-create"><summary>直接运行命令</summary>
         <form onSubmit={submit}>
-          <AssigneeSelect team={team} type="command" value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v})}/>
+          <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v})}/>
           <label>任务名称<input required maxLength={160} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label>
           <label>命令<textarea required maxLength={16000} rows={3} value={form.command} onChange={e=>setForm({...form,command:e.target.value})}/></label>
           <label>项目内工作目录<input required value={form.workdir} onChange={e=>setForm({...form,workdir:e.target.value})}/></label>
@@ -135,8 +135,8 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       <pre className="task-log" aria-label="任务日志">{log?.text||'暂时没有输出。'}</pre>
       <details className="task-command"><summary>已保存日志的位置</summary><p>{currentRun?.job.logPath}</p></details>
       {currentRun?.job.exitCode!=null&&<p className="subtle">退出码：{currentRun.job.exitCode}</p>}
-      {(detail.task.kind!=='agent'||detail.task.workspaceMode==='documents')&&<><h4>结果文件</h4>
-      {currentRun?.job.artifacts?.length?<ul className="task-artifacts">{currentRun.job.artifacts.map(file=><li key={file.id}><span>{file.name}</span>{file.status==='available'?<button type="button" disabled={!online||busy||pending} onClick={()=>void action('background-task-open',{id:detail.task.id,runId:currentRun.id,artifactId:file.id,actionId:crypto.randomUUID()})}>打开文件</button>:<small>未生成或不可读取</small>}</li>)}</ul>:<p className="subtle">{detail.task.artifacts.length?'任务结束后核对结果文件。':'未指定结果文件。执行结果可查看上方日志。'}</p>}</>}
+      {(detail.task.kind!=='agent'||['general','documents'].includes(detail.task.workspaceMode))&&<><h4>结果文件</h4>
+      {currentRun?.job.artifacts?.length?<ul className="task-artifacts">{currentRun.job.artifacts.map(file=><li key={file.id}><span>{file.name}</span>{file.status==='available'?<button type="button" disabled={!online||busy||pending} onClick={()=>void action('background-task-open',{id:detail.task.id,runId:currentRun.id,artifactId:file.id,actionId:crypto.randomUUID()})}>打开文件</button>:<small>未生成或不可读取</small>}</li>)}</ul>:<p className="subtle">{detail.task.kind==='agent'?'本轮暂无交付文件；任务结束后在此展示，文字结果可查看本轮报告。':detail.task.artifacts.length?'任务结束后核对结果文件。':'未指定结果文件。执行结果可查看上方日志。'}</p>}</>}
     </>:<p className="task-empty">正在读取任务…</p>}
   </section>;
 }

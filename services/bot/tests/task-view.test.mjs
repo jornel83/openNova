@@ -16,4 +16,6 @@ test('task presentation distinguishes uncertain cleanup, timeout and a failed ex
  assert.match(taskReason({status:'failed',error:'task_timeout',cleanupConfirmed:true}),/超过时限/);
  assert.match(taskReason({status:'failed',exitCode:7,cleanupConfirmed:true}),/退出码 7/);
  assert.equal(taskDuration({startedAt:1000,finishedAt:62000},90000),'1 分 1 秒');
+ for(const workspaceMode of ['general','documents'])assert.match(taskReason({kind:'agent',status:'completed',workspaceMode,permission:'full'}),/结果文件/);
+ assert.doesNotMatch(taskReason({kind:'agent',status:'completed',workspaceMode:'general',permission:'read-only'}),/文件差异|结果文件/);
 });

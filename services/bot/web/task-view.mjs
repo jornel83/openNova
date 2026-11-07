@@ -7,7 +7,7 @@ export function taskReason(task){
   if(task.status==='waiting_event')return task.automationPaused?'自动接续已暂停，后台验证记录和工作目录已保留。':'本轮已释放执行队列，等待后台验证结果按规则接续。';
   if(task.status==='waiting_input')return task.question||'需要补充信息后继续。';
   if(task.status==='pausing')return '正在停止模型与工具，确认退出后可继续。';
-  if(task.kind==='agent'&&task.status==='completed')return task.workspaceMode==='documents'?'本轮已结束；请查看报告、工具步骤和结果文件。':'本轮已结束；请查看报告、工具退出码和文件差异。';
+  if(task.kind==='agent'&&task.status==='completed')return task.permission==='read-only'||task.mode==='analysis'?'本轮已结束；请查看报告和工具记录。':['general','documents'].includes(task.workspaceMode)?'本轮已结束；请查看报告、工具步骤和结果文件。':'本轮已结束；请查看报告、工具退出码和文件差异。';
   if(task.status==='cancelling')return '正在停止作业并确认进程退出。';
   if(task.status==='interrupted')return '服务中断，执行已停止；已完成的文件修改仍然保留。';
   if(task.status==='failed')return task.exitCode!=null?`命令退出码 ${task.exitCode}，请查看日志。`:'作业未能完成，请查看日志与运行环境。';

@@ -14,6 +14,8 @@ import {TeamRegistry} from './team/registry.mjs';
 import {TeamActors} from './team/actor.mjs';
 import {teamTools} from './team/tools.mjs';
 import {TaskManager,taskTools} from './tasks/manager.mjs';
+import {createTaskHostTools,HOST_TOOL_NAMES} from './tasks/host-tools.mjs';
+import {createTaskRuntimeBridge} from './tasks/bridge.mjs';
 import {researchTools} from './research/config.mjs';
 import {createContentFetcher} from '../agent/web-fetch-content.mjs';
 import {installResearch} from './research/runtime.mjs';
@@ -79,6 +81,11 @@ export async function apply(ctx,config) {
   const documents=createDocumentOpener({workspace:config.workspace,ops,context});
   let desktop;const runtimeId=randomUUID();
   requests=new Requests(ops,run,{context,events,replyStream});
+  const taskHostTools=createTaskHostTools({tasks,ops,foregroundBusy:()=>!!(requests.active||requests.mutation),
+    bridge:{execute:(...args)=>desktop?desktop.execute(...args):Promise.resolve({status:'failed',error:'browser_not_enabled'})}});
+  resources.add(()=>taskHostTools.close());
+  tasks.runtimeBridge={hostTools:config.desktop?HOST_TOOL_NAMES:['document_open']};
+  const taskRuntime=createTaskRuntimeBridge({tasks,actors,hostTools:taskHostTools,foregroundBusy:()=>!!(requests.active||requests.mutation)});
   ctx.on('opennova/reply-stream',frame=>replyStream.observe(frame,requests.active));
   resources.add(()=>requests.close());
   const transport=config.research.mode==='legacy'?(await createContentFetcher(config.harnessRoot)).transport:undefined;
@@ -119,7 +126,7 @@ export async function apply(ctx,config) {
     const sessionId=exec.agent?.session?.id??exec.agent?.id;
     if(![bot.id,rt.chatOf(bot.id)].includes(sessionId)||!requests.active)throw Error('actor_denied');
     const actor=actors.issue({kind:'user',botId:bot.id,request:requests.active});
-    try{return JSON.stringify(await actors.run(actor,()=>execute(a)));}finally{actors.revoke(actor);}
+    try{return JSON.stringify(await actors.run(actor,()=>HOST_TOOL_NAMES.includes(name)?taskHostTools.foreground(()=>execute(a),{signal:requests.active.signal}):execute(a)));}finally{actors.revoke(actor);}
   }})));
   ctx.tools.guard(exec=>allowed.has(exec.name)?undefined:'Tool is outside the OpenNova experiment scope.');
   ctx.on('agent/pre-step',(payload,next)=>staleRequest(payload.messages,requests.active)?{kind:'reject'}:next(),{prepend:true});
@@ -174,18 +181,20 @@ export async function apply(ctx,config) {
   ops.recoverDirectFiles();
   await memory.recover();
   resources.assertOpen();
-  const handle=createControls({ops,requests,tasks,team,memory,context,documents,events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
-    desktopOpen:()=>desktop?desktop.handle('/desktop/open',{activate:true}):Promise.reject(Error('browser_not_enabled')),
-    health:()=>({team:{version:1,enabled:team.enabled()},backgroundTasks:{version:3,agentSessions:true,eventContinuation:true,concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
+  const handle=createControls({ops,requests,tasks,team,memory,context,documents:{...documents,open:(...args)=>taskHostTools.foreground(()=>documents.open(...args))},events,voice,research,replyStream,browserState:()=>desktop?.status()??{connected:false},
+    desktopOpen:()=>desktop?taskHostTools.foreground(()=>desktop.handle('/desktop/open',{activate:true})):Promise.reject(Error('browser_not_enabled')),
+    health:()=>({team:{version:2,enabled:team.enabled()},backgroundTasks:{version:4,agentSessions:true,eventContinuation:true,executionPolicy:2,permissions:['full','read-only'],templates:['general','code','documents'],concurrency:1,defaultTimeoutMs:1800000,maxTimeoutMs:7200000},research:research.health(),modelRetry:MODEL_RETRY_POLICY,runtimeId,desktopEnabled:!!desktop,ready:!requests.closed,model:bot.model,botId:bot.id,sessionId:rt.chatOf(bot.id),workspace:config.workspace,permission:bot.permission,projectTools:PROJECT_TOOLS,turnTimeoutMs:TURN_TIMEOUT_MS,outputMode:replyStream.enabled?'hybrid-stream':'settled-answer',replyStreaming:{version:1,enabled:replyStream.enabled,event:'reply.stream',endpoint:'/events'},executionMode:'direct',webUrl:config.webAssets?config.url:undefined}),
     memoryView:()=>rt.memoryEndpoint('memory-view',{botId:bot.id}),
     shutdown:()=>{setTimeout(()=>process.kill(process.pid,'SIGTERM'),100);return {stopping:true};},
   });
-  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),events,
-    handle:(path,body)=>path.startsWith('/desktop/')&&desktop?desktop.handle(path,body):handle(path,body),
+  const server=createBridge({token:readFileSync(config.tokenPath,'utf8').trim(),events,taskRuntime,
+    handle:(path,body)=>path.startsWith('/desktop/')&&desktop?
+      ['/desktop/status','/desktop/context','/desktop/pair'].includes(path)?desktop.handle(path,body):taskHostTools.foreground(()=>desktop.handle(path,body)):handle(path,body),
     extension:(req,res)=>desktop?.handleHttp(req,res),web:config.webAssets?{assets:config.webAssets,events}:undefined});
   if(config.desktop){
     const {createDesktop}=await import('./desktop/controller.mjs');
-    desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/',context});
+    desktop=createDesktop({server,home:config.home,chatUrl:config.url+'/',context:{...context,
+      updateBrowser:(value,flags)=>{if(taskHostTools.observeContext(value,flags))context.invalidate();else context.updateBrowser(value,flags);}}});
   }
   resources.add(async()=>{requests.closed=true;await desktop?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,'127.0.0.1',resolve);});

@@ -20,7 +20,13 @@ export async function apply(ctx,config){
       if(prompt.includes('RESUME_ONLY')){yield* responseToolChunks({streamItems:async()=>({output:[{type:'message',id:'msg_'+randomUUID(),role:'assistant',status:'completed',content:[{type:'output_text',text:'resumed; remembered='+history.includes('REMEMBER_ALPHA'),annotations:[]}]}]})},options,config.allowedTools);return;}
       if(prompt.includes('FIXTURE_DELAY'))await delay(1200,undefined,{signal:options.signal});
       if(prompt.includes('FIXTURE_SLOW'))await delay(30000,undefined,{signal:options.signal});
-      if(prompt.includes('FIXTURE_DOCUMENT')&&!prior){tool='write';args={file_path:'report.md',content:'资料整理完成。'};}
+      if(prompt.includes('FIXTURE_GENERIC_PIPELINE')){
+        const actions=[['read',{file_path:'sample.txt'}],['write',{file_path:'process.cjs',content:"const fs = require('node:fs');\nfs.writeFileSync('processed.md', fs.readFileSync('sample.txt', 'utf8').toUpperCase());\nconsole.log('processed input');\n"}],['task_command',{command:'node process.cjs'}],['read',{file_path:'processed.md'}]];
+        [tool,args]=actions[prior]||[];
+      }
+      else if(prompt.includes('FIXTURE_FORBIDDEN_WRITE')&&!prior){tool='write';args={file_path:'forbidden.txt',content:'must not be written'};}
+      else if(prompt.includes('FIXTURE_FORBIDDEN_COMMAND')&&!prior){tool='task_command';args={command:"node -e \"require('fs').writeFileSync('forbidden.txt','must not run')\""};}
+      else if(prompt.includes('FIXTURE_DOCUMENT')&&!prior){tool='write';args={file_path:'report.md',content:'资料整理完成。'};}
       else if(prompt.includes('FIXTURE_EVENT_SLOW_CHECK')&&!prior){tool='task_check';args={command:"node -e \"require('fs').writeFileSync('check-pid',String(process.pid));setInterval(()=>{},1000)\"",timeoutMs:60000};}
       else if(prompt.includes('FIXTURE_EVENT_LOOP')){
         const event=prompt.includes('"type":"command.finished"');
