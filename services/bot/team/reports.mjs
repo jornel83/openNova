@@ -1,35 +1,48 @@
 /** Immutable deliverables and their event/outbox records share task completion. */
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync,readFileSync,writeFileSync,renameSync,realpathSync,lstatSync,existsSync} from 'node:fs';
-import {join,resolve,relative,isAbsolute,basename} from 'node:path';
+import {mkdirSync,readFileSync,writeFileSync,renameSync,realpathSync,lstatSync,existsSync,openSync,readSync,fstatSync,closeSync,copyFileSync,chmodSync,rmSync,constants} from 'node:fs';
+import {join,resolve,relative,isAbsolute,basename,extname} from 'node:path';
 import {readJson,saveJson,readSteps} from '../tasks/agent-files.mjs';
 import {enqueueTeamEvent,ensureDeliveryTables} from './outbox.mjs';
 import {captureTaskContext} from './task-context.mjs';
+import {hasFullFilesystemAccess} from '../tasks/execution.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const terminal=new Set(['completed','failed','interrupted','cancelled','paused','waiting_input','waiting_event']);
 const inside=(root,path)=>{const p=relative(root,path);return p!=='..'&&!p.startsWith('../')&&!isAbsolute(p);};
 const clipped=(value,n=16000)=>typeof value==='string'?value.slice(0,n):'';
 const readLog=path=>{try{const bytes=readFileSync(path);return {log:bytes.subarray(Math.max(0,bytes.length-16000)).toString('utf8'),logHash:hash(bytes),logTruncated:bytes.length>16000};}catch{return {log:'',logMissing:true};}};
-function fileStatus(path,sha256){try{if(!lstatSync(path).isFile()||lstatSync(path).isSymbolicLink())return 'changed';return hash(readFileSync(path))===sha256?'available':'changed';}catch{return 'missing';}}
+const signature=stat=>[stat.dev,stat.ino,stat.size,stat.mtimeMs,stat.ctimeMs].join(':');
+function fileHash(path){
+  const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+  try{
+    const before=fstatSync(fd);if(!before.isFile())throw Error('artifact_path_invalid');
+    const digest=createHash('sha256'),buffer=Buffer.allocUnsafe(1024*1024);let length;
+    while((length=readSync(fd,buffer,0,buffer.length,null))>0)digest.update(buffer.subarray(0,length));
+    if(signature(before)!==signature(fstatSync(fd)))throw Error('artifact_changed_during_capture');
+    return digest.digest('hex');
+  }finally{closeSync(fd);}
+}
+function fileStatus(path,sha256){try{const stat=lstatSync(path);if(!stat.isFile()||stat.isSymbolicLink())return 'changed';return fileHash(path)===sha256?'available':'changed';}catch(error){return error.code==='ENOENT'?'missing':'changed';}}
+const mediaExtensions=new Set(['.mp4','.mov','.m4v','.webm','.mkv','.avi']);
 export class TeamReports {
-  constructor(tasks,{now=Date.now,maxFileBytes=20*1024*1024,maxTotalBytes=64*1024*1024}={}){
-    Object.assign(this,{tasks,db:tasks.db,now,maxFileBytes,maxTotalBytes});this.fileCache=new Map();this.root=join(tasks.root,'reports');mkdirSync(this.root,{recursive:true,mode:0o700});
+  constructor(tasks,{now=Date.now,maxFileBytes=20*1024*1024,maxTotalBytes=64*1024*1024,maxMediaFileBytes=512*1024*1024,maxMediaTotalBytes=1024*1024*1024}={}){
+    Object.assign(this,{tasks,db:tasks.db,now,maxFileBytes,maxTotalBytes,maxMediaFileBytes,maxMediaTotalBytes});this.fileCache=new Map();this.root=join(tasks.root,'reports');mkdirSync(this.root,{recursive:true,mode:0o700});
     this.db.exec(`CREATE TABLE IF NOT EXISTS team_report (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS team_report_task_version ON team_report(json_extract(body,'$.taskId'),json_extract(body,'$.version') DESC);
       CREATE INDEX IF NOT EXISTS team_report_current ON team_report(json_extract(body,'$.taskId'),json_extract(body,'$.runId'),json_extract(body,'$.assignmentVersion'),json_extract(body,'$.version') DESC)`);ensureDeliveryTables(this.db);
   }
   raw(id){const row=this.db.prepare('SELECT body FROM team_report WHERE id=?').get(id);if(!row)throw Error('unknown_team_report');return JSON.parse(row.body);}
   fileStatus(path,sha256,fresh=false){
-    if(!path)return 'missing';let signature;try{const s=lstatSync(path);signature=[s.ino,s.size,s.mtimeMs,s.ctimeMs].join(':');}catch{return 'missing';}
+    if(!path)return 'missing';let currentSignature;try{currentSignature=signature(lstatSync(path));}catch{return 'missing';}
     const key=path+'\0'+sha256,cached=this.fileCache.get(key);
-    if(!fresh&&cached?.signature===signature&&this.now()-cached.at<2000)return cached.status;
-    const status=fileStatus(path,sha256);this.fileCache.set(key,{signature,status,at:this.now()});return status;
+    if(!fresh&&cached?.signature===currentSignature)return cached.status;
+    const status=fileStatus(path,sha256);this.fileCache.set(key,{signature:currentSignature,status,at:this.now()});return status;
   }
   get(id,{fresh=false}={}){const report=this.raw(id),delivery=this.db.prepare('SELECT body FROM team_outbox WHERE id=?').get(report.eventId);
     return {...report,delivery:delivery?JSON.parse(delivery.body).status:'pending',artifacts:report.artifacts.map(a=>({...a,
       status:a.status==='available'?this.fileStatus(a.path,a.sha256,fresh):a.status,
-      sourceStatus:a.sourcePath?this.fileStatus(a.sourcePath,a.sha256,fresh):'available'}))};
+      sourceStatus:a.sourcePath?(a.sha256?this.fileStatus(a.sourcePath,a.sha256,fresh):'unverified'):'available'}))};
   }
   history(taskId){return this.db.prepare("SELECT id FROM team_report WHERE json_extract(body,'$.taskId')=? ORDER BY json_extract(body,'$.version') DESC").all(taskId).map(r=>this.get(r.id));}
   currentId(task){return this.db.prepare("SELECT id FROM team_report WHERE json_extract(body,'$.taskId')=? AND json_extract(body,'$.runId')=? AND json_extract(body,'$.assignmentVersion')=? ORDER BY json_extract(body,'$.version') DESC LIMIT 1").get(task.id,task.runId,task.assignmentVersion??1)?.id??null;}
@@ -54,19 +67,34 @@ export class TeamReports {
     const directory=join(this.root,id),manifest=join(directory,'report.json');mkdirSync(join(directory,'artifacts'),{recursive:true,mode:0o700});
     let report=readJson(manifest);
     if(!report){
-      let total=0;const artifacts=[],jobDir=this.tasks.directory(job),workspace=readJson(join(this.tasks.agentHome(task),'workspace.json'));
+      let total=0,mediaTotal=0;const artifacts=[],jobDir=this.tasks.directory(job),workspace=readJson(join(this.tasks.agentHome(task),'workspace.json'));
       const allowedRoot=workspace?.path??task.cwd;
+      // Both views are host-owned, persisted receipts scoped to this exact task and Run.
+      const videoEvidence=this.tasks.video?.evidence(task.id,run.id)??[],videoArtifacts=this.tasks.video?.artifacts(task.id,run.id)??[];
+      const media=new Map(videoArtifacts.filter(file=>typeof file.path==='string'&&isAbsolute(file.path)&&Number.isSafeInteger(file.size)&&file.size>0&&mediaExtensions.has(extname(file.path).toLowerCase())&&videoEvidence.some(action=>['video_download','video_edit'].includes(action.tool)&&['succeeded','completed'].includes(action.status)&&!action.result?.error&&action.result?.path===file.path&&action.result?.size_bytes===file.size)).map(file=>[file.path,file]));
       const snapshot=(name,sourcePath,bytes)=>{
         const artifactId='artifact-'+hash((sourcePath?'file:':'generated:')+name),path=join(directory,'artifacts',artifactId+'-'+basename(name).slice(0,80));
         const record={id:artifactId,name,sourcePath,status:'available'};
         try{
-          if(sourcePath){const actual=realpathSync(sourcePath),root=realpathSync(allowedRoot),rel=relative(resolve(allowedRoot),resolve(sourcePath));if(!inside(root,actual)||actual!==resolve(root,rel)||!lstatSync(sourcePath).isFile())throw Error('artifact_path_invalid');record.sourcePath=actual;
-            if(lstatSync(sourcePath).size>this.maxFileBytes)throw Error('artifact_too_large');bytes=readFileSync(sourcePath);}
-          if(bytes.length>this.maxFileBytes||total+bytes.length>this.maxTotalBytes)throw Error('artifact_too_large');
-          const sha256=hash(bytes);writeFileSync(path+'.tmp',bytes,{mode:0o600});renameSync(path+'.tmp',path);total+=bytes.length;
-          if(sourcePath&&fileStatus(sourcePath,sha256)!=='available')throw Error('artifact_changed_during_capture');
-          Object.assign(record,{path,size:bytes.length,sha256});
-        }catch(error){record.status=error.message==='artifact_too_large'?'too_large':error.code==='ENOENT'?'missing':'changed';record.error=error.code??error.message;}
+          let sha256,size,sourceSignature,isMedia=false;
+          if(sourcePath){
+            const actual=realpathSync(sourcePath),root=realpathSync(allowedRoot),rel=relative(resolve(allowedRoot),resolve(sourcePath)),before=lstatSync(sourcePath),receipt=media.get(sourcePath);
+            isMedia=!!receipt&&actual===sourcePath&&before.size===receipt.size;
+            if(!before.isFile()||before.isSymbolicLink()||(!inside(root,actual)||actual!==resolve(root,rel))&&!(isMedia&&hasFullFilesystemAccess(task)))throw Error('artifact_path_invalid');
+            if(receipt&&!isMedia)throw Error('artifact_changed_during_capture');
+            record.sourcePath=actual;size=before.size;sourceSignature=signature(before);
+            if(size>(isMedia?this.maxMediaFileBytes:this.maxFileBytes)||(isMedia?mediaTotal+size>this.maxMediaTotalBytes:total+size>this.maxTotalBytes))throw Error('artifact_too_large');
+            sha256=fileHash(sourcePath);copyFileSync(sourcePath,path+'.tmp',constants.COPYFILE_FICLONE);chmodSync(path+'.tmp',0o600);
+            if(realpathSync(sourcePath)!==actual||signature(lstatSync(sourcePath))!==sourceSignature||fileHash(sourcePath)!==sha256||fileHash(path+'.tmp')!==sha256||signature(lstatSync(sourcePath))!==sourceSignature||realpathSync(sourcePath)!==actual)throw Error('artifact_changed_during_capture');
+          }else{
+            size=bytes.length;if(size>this.maxFileBytes||total+size>this.maxTotalBytes)throw Error('artifact_too_large');
+            sha256=hash(bytes);writeFileSync(path+'.tmp',bytes,{mode:0o600});
+          }
+          renameSync(path+'.tmp',path);if(isMedia)mediaTotal+=size;else total+=size;
+          Object.assign(record,{path,size,sha256,...isMedia?{media:true}: {}});
+          this.fileCache.set(path+'\0'+sha256,{signature:signature(lstatSync(path)),status:'available',at:this.now()});
+          if(record.sourcePath)this.fileCache.set(record.sourcePath+'\0'+sha256,{signature:sourceSignature,status:'available',at:this.now()});
+        }catch(error){rmSync(path+'.tmp',{force:true});record.status=error.message==='artifact_too_large'?'too_large':error.code==='ENOENT'?'missing':'changed';record.error=error.code??error.message;}
         artifacts.push(record);
       };
       const candidates=new Map((job.artifacts??[]).map(a=>[a.name,a.path]));
@@ -80,8 +108,14 @@ export class TeamReports {
           if(patch){let name='changes.patch',index=2;while(candidates.has(name))name='changes-'+(index++)+'.patch';snapshot(name,undefined,Buffer.from(patch));}
         }catch(error){codeError=error.message;}
       }
+      for(const [path,file] of media){
+        const existing=[...candidates].find(([,candidate])=>{try{return realpathSync(candidate)===path;}catch{return false;}});
+        if(existing)candidates.set(existing[0],path);
+        else{let name=inside(allowedRoot,path)?relative(allowedRoot,path):file.name||basename(path),index=2;while(candidates.has(name))name='video-'+(index++)+'-'+basename(path);candidates.set(name,path);}
+      }
       const remainingArtifacts=Math.max(0,50-artifacts.length);
-      for(const [name,path] of [...candidates].slice(0,remainingArtifacts))if(typeof path==='string')snapshot(name,path);else artifacts.push({id:'artifact-'+hash(name),name,status:'missing'});
+      const selected=[...candidates].sort((a,b)=>Number(media.has(b[1]))-Number(media.has(a[1])));
+      for(const [name,path] of selected.slice(0,remainingArtifacts))if(typeof path==='string')snapshot(name,path);else artifacts.push({id:'artifact-'+hash(name),name,status:'missing'});
       const rawSteps=readSteps(jobDir),steps=rawSteps.map(s=>({id:s.id,tool:s.tool,status:s.status,exitCode:s.exitCode,output:clipped(s.output),error:clipped(s.error,500)}));
       const commands=rawSteps.filter(s=>s.tool==='task_command').map(s=>({stepId:s.id,status:s.status,exitCode:s.exitCode,
         command:clipped(s.arguments?.command),workdir:clipped(s.arguments?.workdir||'.',1000),...readLog(join(jobDir,'commands',s.id,'output.log'))}));
@@ -93,7 +127,7 @@ export class TeamReports {
       report={id,eventId:'event-'+id,taskId:task.id,runId:run.id,assignmentVersion:task.assignmentVersion??1,assignedBotId:task.assignedBotId,recipientBotId:task.reportTo??task.supervisorBotId??this.tasks.team?.chiefId,
         version,status:job.status,error:job.error,createdAt,goal:task.goal??task.command,constraints:task.constraints,acceptanceCriteria:task.acceptanceCriteria,
         summary:clipped(job.agentResult?.text||job.error||`${task.title}：${job.status}${job.exitCode===undefined?'':'，退出码 '+job.exitCode}`),question:job.agentResult?.question,
-        taskContext:captureTaskContext(this.tasks,task,run,job),artifacts,evidence:{execution:{status:job.status,exitCode:job.exitCode,cleanupConfirmed:job.cleanupConfirmed,error:job.error},steps,commands,checks,codeChanges,captureIncomplete:!!codeError||candidates.size>remainingArtifacts,...codeError?{codeError}:{}},sources};
+        taskContext:captureTaskContext(this.tasks,task,run,job),artifacts,evidence:{execution:{status:job.status,exitCode:job.exitCode,cleanupConfirmed:job.cleanupConfirmed,error:job.error},steps,commands,checks,codeChanges,video:videoEvidence,captureIncomplete:!!codeError||candidates.size>remainingArtifacts,...codeError?{codeError}:{}},sources};
       saveJson(manifest,report);
     }
     if(report.taskId!==task.id||report.runId!==run.id||report.assignmentVersion!==(task.assignmentVersion??1))throw Error('team_report_binding_mismatch');

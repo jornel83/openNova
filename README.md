@@ -58,6 +58,8 @@ pnpm start
 
 不再需要的任务可以在详情点击“关闭任务”，也可以用语音或对话提出关闭。停止后续跟进并确认进程清理后，任务移出默认列表；原执行结果、日志和成果仍保留。通过“任务记录 → 已关闭”查看或恢复；恢复只重新显示，执行需另行接续或重试。“取消执行”仍只停止本次执行，不等同于关闭。
 
+技能库复用 Harness 的技能加载和 DeepSeek Bot 的员工绑定。已有 `video-production` 可分配给员工，任务固定技能与资源版本；视频等待释放执行槽，重启后查询同一远端任务。新成果验收后默认只读整理经验候选，检查保存后供后续任务复用，支持更新、停用与回退。个人技能、候选及版本继续放在仓库外。详见 [M5 技能与经验沉淀](docs/research/opennova-team-m5-verification.md) 和 [人工测试用例](docs/research/opennova-team-m5-test-cases.md)。
+
 ## 工程结构
 
 | 目录 | 职责 |
@@ -67,7 +69,8 @@ pnpm start
 | `engine/siwc/` | 完整 SIWC DevKit 及已应用的 OpenNova 工具流扩展 |
 | `services/runtime/` | 仓库内源码定位、版本验证与 Harness 包解析 |
 | `services/agent/` | OpenNova 模型适配、授权、流式会话与联网策略 |
-| `services/bot/` | OpenNova Bot 宿主、请求与记忆策略、网页及工具操作记录 |
+| `services/bot/` | OpenNova Bot 宿主、任务与团队、技能与经验、网页及工具操作记录 |
+| `skills/`、`tools/video/` | 内置技能与视频工具源码 |
 | `services/tts/` | Studio Vivian / MLX、豆包云端 TTS |
 | `tools/voice/`、`tools/asr/` | 音频、VAD、ASR、持续语音与播放 |
 | `scripts/` | 根目录安装、构建、诊断和离线回归 |

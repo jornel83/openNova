@@ -25,6 +25,7 @@ export class TeamSupervisor {
   put(value){
     const previous=this.get(value.id);
     this.db.prepare('INSERT INTO team_review VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(value.id,JSON.stringify(value));
+    if(value.status==='accepted'&&previous?.status!=='accepted')this.tasks.skillService?.accepted(value);
     if(value.source!=='user'&&previous?.status!==value.status&&['accepted','needs_user','budget_exhausted','failed'].includes(value.status)){
       const task=this.tasks.row('task',value.taskId);if(!taskIsClosed(task)&&task.runId===value.runId&&task.assignmentVersion===value.assignmentVersion)this.tasks.put('task',{...task,unread:true});
     }

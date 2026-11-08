@@ -1,6 +1,7 @@
 import React,{useRef,useState} from 'react';
 import {errorText} from './api.mjs';
 import {taskLabels} from './task-view.mjs';
+import {EmployeeSkills} from './skills.jsx';
 const fresh={name:'',role:'',instructions:'',taskTypes:[],enabled:true};
 const labels={idle:'空闲',working:'执行中',queued:'排队中',blocked:'等待前置条件',waiting_input:'等待信息',paused:'已暂停或等待事件'};
 export function TeamPanel({api,team,disabled,onSelect}){
@@ -14,7 +15,8 @@ export function TeamPanel({api,team,disabled,onSelect}){
     {error&&<p role="alert" className="error">{error}</p>}
     <div className="team-members">{team.members.map(m=><article key={m.id} className="team-member"><strong>{m.name}{m.chief?' · 总管':''}</strong><span>{m.role} · {m.enabled?labels[m.status]:'已停用'}</span><small>{m.taskTypes?.length?'擅长：'+m.taskTypes.map(t=>({code:'代码',documents:'资料',command:'命令'})[t]).join(' / '):'通用工作'}</small>
       {m.tasks.map(t=><button key={t.id} onClick={()=>onSelect(t.id)}>{t.title} · {taskLabels[t.status]||'待接续'}</button>)}
-      {!m.chief&&<button disabled={disabled||pending||!team.enabled} onClick={()=>{submission.current=null;setEdit({id:m.id,revision:m.revision,name:m.name,role:m.role,instructions:m.instructions,taskTypes:m.taskTypes??[],enabled:m.enabled,chief:m.chief});}}>编辑员工</button>}</article>)}</div>
+      {!m.chief&&<button disabled={disabled||pending||!team.enabled} onClick={()=>{submission.current=null;setEdit({id:m.id,revision:m.revision,name:m.name,role:m.role,instructions:m.instructions,taskTypes:m.taskTypes??[],enabled:m.enabled,chief:m.chief});}}>编辑员工</button>}
+      <EmployeeSkills api={api} member={m} disabled={disabled||pending||!team.enabled}/></article>)}</div>
     {edit&&<form className="team-edit" onSubmit={save}><h4>{edit.id?'编辑员工':'添加员工'}</h4>
       <label>姓名<input required maxLength={40} value={edit.name} onChange={e=>setEdit({...edit,name:e.target.value})}/></label>
       <label>职责名称<input required maxLength={24} value={edit.role} onChange={e=>setEdit({...edit,role:e.target.value})}/></label>

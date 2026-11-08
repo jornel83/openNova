@@ -425,3 +425,99 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
   assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
   assert.equal(rt.capabilityStatusesView().chief.team, undefined)
 })
+
+test('versioned skill resources and invocation policies reach every bound Agent', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const { rt, mounts, skills } = env
+  const resourceBase = { kind: 'directory', path: join(env.home, 'archived-skill') }
+  const invocation = { modelInvocable: false, userInvocable: true }
+  await rt.capabilitySave({ name: 'guide', kind: 'skill', description: 'Bound guide', content: 'Read references/input.md.', resourceBase, skillVersion: 'version-one', invocation }, { botId: 'chief' })
+  await rt.changeCapabilityAttachment('attach', { name: 'guide' }, 'chief')
+  const chief = testAgent('chief', mounts, skills), room = testAgent('room-chief', mounts, skills)
+  t.after(() => { chief.ctx.dispose(); room.ctx.dispose() })
+  await created(env)({ agent: chief, source: 'startup' })
+  await created(env)({ agent: room, source: 'startup' })
+  for (const sessionId of ['chief', 'room-chief']) {
+    const registered = skills.get(sessionId).get('guide')
+    assert.deepEqual(registered.resourceBase, resourceBase)
+    assert.deepEqual(registered.metadata, { version: 'version-one' })
+    assert.deepEqual(registered.invocation, invocation)
+  }
+  const originalMounts = [...mounts]
+  await rt.capabilitySave({ name: 'guide', kind: 'skill', description: 'Revised guide', content: 'Read references/input.md.', skillVersion: 'version-two', invocation: { modelInvocable: true, userInvocable: false } }, { botId: 'chief' })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.ok(originalMounts.every(mount => mount.disposed))
+  assert.deepEqual(skills.get('chief').get('guide').resourceBase, resourceBase)
+  assert.deepEqual(skills.get('chief').get('guide').metadata, { version: 'version-two' })
+  assert.deepEqual(skills.get('chief').get('guide').invocation, { modelInvocable: true, userInvocable: false })
+})
+
+test('disabled skills remove registrations, retain pack attachments and stay disabled across ordinary edits', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const { rt, mounts, skills } = env
+  const resourceBase = { kind: 'directory', path: join(env.home, 'guide') }
+  const invocation = { modelInvocable: true, userInvocable: false }
+  const guide = { name: 'guide', kind: 'skill', description: 'Guide', content: 'Do the work.' }
+  await rt.capabilitySave({ ...guide, resourceBase, skillVersion: 'stable', invocation }, { botId: 'chief' })
+  await rt.capabilitySave({ name: 'bundle', kind: 'pack', items: ['guide'] }, { botId: 'chief' })
+  await rt.changeCapabilityAttachment('attach', { name: 'bundle' }, 'chief')
+  const chief = testAgent('chief', mounts, skills)
+  t.after(() => chief.ctx.dispose())
+  await created(env)({ agent: chief, source: 'startup' })
+  assert.equal(skills.get('chief').has('guide'), true)
+  await rt.capabilitySave({ ...guide, enabled: false }, { botId: 'chief' })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.equal(skills.get('chief').has('guide'), false)
+  assert.equal(mounts[0].disposed, true)
+  assert.deepEqual(rt.state.bots.chief.capabilities, ['bundle'])
+  assert.equal(rt.capabilityStatusesView().chief.bundle.state, 'disabled')
+  await rt.capabilitySave({ ...guide, description: 'Metadata edit' }, { botId: 'chief' })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.equal(skills.get('chief').has('guide'), false)
+  assert.equal(rt.state.capabilities.items.guide.enabled, false)
+  assert.deepEqual(rt.state.capabilities.items.guide.resourceBase, resourceBase)
+  assert.equal(rt.state.capabilities.items.guide.skillVersion, 'stable')
+  assert.deepEqual(rt.state.capabilities.items.guide.invocation, invocation)
+  await rt.capabilitySave({ ...guide, enabled: true }, { botId: 'chief' })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.equal(skills.get('chief').has('guide'), true)
+  assert.equal(rt.capabilityStatusesView().chief.bundle.state, 'ready')
+  assert.deepEqual(skills.get('chief').get('guide').invocation, invocation)
+  assert.deepEqual(rt.state.bots.chief.capabilities, ['bundle'])
+})
+
+test('invalid host skill fields reject the update without changing the saved capability', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const guide = { name: 'guide', kind: 'skill', description: 'Guide', content: 'Instructions', enabled: false }
+  await env.rt.capabilitySave(guide, { botId: 'chief' })
+  const original = structuredClone(env.rt.state.capabilities.items.guide)
+  for (const patch of [
+    { enabled: 'false' }, { enabled: null },
+    { resourceBase: null }, { resourceBase: { kind: 'directory', path: 'relative/path' } },
+    { resourceBase: { kind: 'url', path: '/tmp' } }, { resourceBase: { kind: 'directory', path: '/tmp/\0invalid' } },
+    { skillVersion: '' }, { skillVersion: 1 }, { skillVersion: 'a'.repeat(129) }, { skillVersion: 'x\0y' },
+    { invocation: null }, { invocation: {} }, { invocation: { modelInvocable: false } },
+    { invocation: { modelInvocable: 'false', userInvocable: true } },
+  ]) {
+    await assert.rejects(env.rt.capabilitySave({ ...guide, ...patch }, { botId: 'chief' }), /Skill|skill/)
+    assert.deepEqual(env.rt.state.capabilities.items.guide, original)
+  }
+})
+
+test('legacy text skills do not override Harness invocation defaults', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  await env.rt.capabilitySave({ name: 'guide', kind: 'skill', content: 'Legacy guide.' }, { botId: 'chief' })
+  await env.rt.changeCapabilityAttachment('attach', { name: 'guide' }, 'chief')
+  const chief = testAgent('chief', env.mounts, env.skills)
+  t.after(() => chief.ctx.dispose())
+  await created(env)({ agent: chief, source: 'startup' })
+  const registered = env.skills.get('chief').get('guide')
+  assert.equal(registered.invocation, undefined)
+  assert.equal(registered.resourceBase, undefined)
+  assert.equal(registered.metadata, undefined)
+  assert.equal(env.rt.capabilityStatusesView().chief.guide.state, 'ready')
+})

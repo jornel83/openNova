@@ -125,14 +125,17 @@ export async function runTeamSoak(options){
     const accepted=await waitFor(async()=>{const d=await api('/background-task',{id:agentId});if(['failed','needs_user','budget_exhausted'].includes(d.task.reviewStatus)||d.task.status==='failed')throw Error('soak_review_failed: '+JSON.stringify({status:d.task.status,review:d.task.reviewStatus}));return d.task.reviewStatus==='accepted'&&d;});
     assert.equal(accepted.runs.length,2);assert.equal(accepted.task.management.usedReworks,1);assert.equal(accepted.task.tokenBudget,0);assert.equal(accepted.task.timeoutMs,0);assert.equal(accepted.task.maxSteps,0);
     assert.match(readFileSync(join(accepted.workspace.path,'report.md'),'utf8'),/COMPLETE_MARKER/);
+    const learned=await waitFor(async()=>{const detail=await api('/background-task',{id:agentId}),candidate=detail.skillCandidates?.find(c=>c.source.runId===detail.task.runId);if(candidate?.status==='failed')throw Error('soak_skill_learning_failed');return candidate?.status==='ready'&&detail;});
+    assert.equal(learned.skills.length,1);assert.equal(learned.skills[0].name,'soak-report');
+    state.skillExtractions=(state.skillExtractions??0)+1;
     const cancelId='cancel-'+number,pidFile='cancel-'+number+'.pid';
     await api('/background-task-start',{id:cancelId,title:'Soak cancellation '+number,command:`node -e "require('node:fs').writeFileSync('${pidFile}',String(process.pid));setInterval(()=>{},1000)"`,timeoutMs:60000});
     await waitFor(()=>existsSync(join(b.workspace,pidFile)));const pid=Number(readFileSync(join(b.workspace,pidFile),'utf8'));assert.ok(alive(pid));
     const running=await api('/background-task',{id:cancelId});await api('/background-task-cancel',{id:cancelId,runId:running.task.runId});const cancelled=await settled(cancelId);assert.equal(cancelled.task.status,'cancelled');assert.equal(alive(pid),false);state.cancellations++;
     const snapshot=await api('/snapshot');assert.equal(snapshot.team.chiefBotId,chiefId);assert.equal(snapshot.tasks.activeCount,0);assert.equal(snapshot.team.members.length,2);state.reconnections++;
     await waitFor(()=>counts(home).pendingDelivery===0);state.database=counts(home);
-    state.duplicateExecutions=Math.max(state.duplicateExecutions,state.database.runs-number*6,0);
-    assert.equal(state.database.tasks,number*5);assert.equal(state.database.runs,number*6);assert.equal(state.database.managementTasks,number*2);assert.equal(state.database.reports,number*4);assert.equal(state.database.events,state.database.delivered);
+    state.duplicateExecutions=Math.max(state.duplicateExecutions,state.database.runs-number*7,0);
+    assert.equal(state.database.tasks,number*6);assert.equal(state.database.runs,number*7);assert.equal(state.database.managementTasks,number*3);assert.equal(state.database.reports,number*4);assert.equal(state.database.events,state.database.delivered);
     if(options.restartEvery&&number%options.restartEvery===0){await stop();await start();state.restarts++;const restored=await api('/background-task',{id:agentId});assert.equal(restored.task.runId,accepted.task.runId);assert.equal(restored.task.reviewStatus,'accepted');assert.equal(restored.runs.length,2);assert.equal((await api('/team')).chiefBotId,chiefId);}
   }
   try{
@@ -143,7 +146,10 @@ export async function runTeamSoak(options){
     const patch=runtimePatch({bot:b,agent:{harnessRoot:sources.harnessRoot},webAssets:join(ROOT,'output/bot/web'),desktop:false});
     const plugins=patch.find(row=>row.insert).insert;plugins.find(row=>row.id==='opennova-chatgpt').name=join(ROOT,'services/bot/tests/fixtures/mock-provider.mjs');plugins.find(row=>row.id==='opennova-bot').config.agentProviderModule=join(ROOT,'services/bot/tests/fixtures/management-provider.mjs');
     saveJson(join(home,'patch.json'),patch);state.url=b.url;sample();timer=setInterval(tickSample,options.sampleMs);await start();
-    const team=await api('/team-member',{action:'create',actionId:'soak-employee',name:'Soak employee',role:'验证报告交付',instructions:'按任务要求完成工作。',taskTypes:[]});chiefId=team.chiefBotId;employeeId=team.members.find(member=>!member.chief).id;state.status='running';publish();
+    const team=await api('/team-member',{action:'create',actionId:'soak-employee',name:'Soak employee',role:'验证报告交付',instructions:'按任务要求完成工作。',taskTypes:[]});chiefId=team.chiefBotId;employeeId=team.members.find(member=>!member.chief).id;await api('/skill-action',{action:'save',actionId:'soak-save-skill',name:'soak-report',description:'整理并核验报告的完整结论。',content:'# 报告\n读取本次输入，生成报告并检查所需结论，缺少时补齐。'});
+    const binding=(await api('/skills',{botId:employeeId})).assignment;
+    await api('/skill-action',{action:'assign',actionId:'soak-assign-skill',botId:employeeId,names:['soak-report'],revision:binding.revision});
+    state.status='running';publish();
     do{const cycleAt=Date.now();await cycle(state.cycles+1);state.cycles++;publish();console.log(JSON.stringify({cycles:state.cycles,elapsedMs:state.elapsedMs,requestedDurationMs:options.durationMs,home}));
       const wait=Math.min(options.intervalMs-(Date.now()-cycleAt),options.durationMs-(Date.now()-startedAt));if(wait>0)await delay(wait,undefined,{signal:abort.signal});
     }while(Date.now()-startedAt<options.durationMs);

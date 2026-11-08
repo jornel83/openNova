@@ -12,6 +12,7 @@ import {prepareDesktop} from '../../tools/desktop/start.mjs';
 import {loadResearchConfig} from './research/config.mjs';
 import {runtimePatch} from './configuration.mjs';
 import {assertRestoreLocation} from '../../tools/bot/state-backup.mjs';
+import {launchEnvironment} from './launch-environment.mjs';
 
 process.umask(0o077);
 const b=botSettings(),s=loadSettings(),research=loadResearchConfig();
@@ -45,7 +46,7 @@ if(!existsSync(b.tokenPath))writeFileSync(b.tokenPath,randomBytes(32).toString('
 const patch=runtimePatch({bot:b,agent:s,webAssets,desktop:true,research});
 // JSON is valid YAML; no shell interpolation or generated executable expressions.
 const patchPath=join(b.home,'experiment.patch.yml');writeFileSync(patchPath,JSON.stringify(patch,null,2));
-const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>!/(KEY|TOKEN|SECRET|PASSWORD)/.test(k)&&!['DSH_HOME','NODE_OPTIONS'].includes(k)));
+const env=launchEnvironment();
 Object.assign(env,research.childEnv,{DSH_HOME:join(b.home,'harness'),OPENNOVA_BOT_PLUGIN:b.plugin,OPENNOVA_HARNESS_ROOT:s.harnessRoot,
   PATH:dirname(process.execPath)+':'+(env.PATH||'/usr/bin:/bin'),
   OPENNOVA_SIWC_ROOT:s.siwcRoot,OPENNOVA_SIWC_STORAGE:s.storageDir,OPENNOVA_KEYCHAIN_HELPER:s.keychainPath,

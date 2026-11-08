@@ -13,13 +13,14 @@ import {runtimePatch} from '../../configuration.mjs';
 
 export const alive=pid=>{try{process.kill(pid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}};
 async function freePort(){const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port;}
-export async function lifecycleHost(t,{provider='task-provider.mjs'}={}){
+export async function lifecycleHost(t,{provider='task-provider.mjs',foregroundProvider='lifecycle-provider.mjs',videoTransportModule}={}){
   const sources=requireBuiltHarness(),home=mkdtempSync(join(tmpdir(),'nova-team-lifecycle-')),port=await freePort();let webPort=await freePort();while(webPort===port)webPort=await freePort();
   const b={...botSettings({OPENNOVA_BOT_HOME:home,OPENNOVA_BOT_PORT:String(port),OPENNOVA_BOT_WEB_PORT:String(webPort)}),workspace:join(home,'workspace')};
   mkdirSync(b.workspace);writeFileSync(join(b.workspace,'sample.txt'),'original\n');writeFileSync(b.tokenPath,'offline-fixture-token');
   const patch=runtimePatch({bot:b,agent:{harnessRoot:sources.harnessRoot},webAssets:join(ROOT,'output/bot/web'),desktop:true}),insert=patch.find(row=>row.insert).insert;
-  insert.find(plugin=>plugin.id==='opennova-chatgpt').name=join(ROOT,'services/bot/tests/fixtures/lifecycle-provider.mjs');
+  insert.find(plugin=>plugin.id==='opennova-chatgpt').name=join(ROOT,'services/bot/tests/fixtures',foregroundProvider);
   insert.find(plugin=>plugin.id==='opennova-bot').config.agentProviderModule=join(ROOT,'services/bot/tests/fixtures',provider);
+  if(videoTransportModule)insert.find(plugin=>plugin.id==='opennova-bot').config.videoTransportModule=join(ROOT,'services/bot/tests/fixtures',videoTransportModule);
   const patchPath=join(home,'fixture.patch.json');writeFileSync(patchPath,JSON.stringify(patch));let child,logs='',sequence=0;
   async function api(path,body={},status=200){
     const response=await fetch(b.url+path,{method:'POST',headers:{Authorization:'Bearer offline-fixture-token','Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});

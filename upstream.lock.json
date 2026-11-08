@@ -31,7 +31,13 @@
       "revision": "20ebc9213cbbde7249d71786765f86be00dc6663",
       "version": "0.1.5",
       "license": "Apache-2.0",
-      "localPatches": []
+      "localPatches": [
+        {
+          "path": "patches/bot/0001-skill-bundles.patch",
+          "sha256": "72fbf38623e1f66eb02a340dd12199007da99a7d07e65e83a1ceb782d0fed0f4",
+          "description": "Preserve immutable skill resource directories, versions, invocation policy and disabled mounts; already applied to tracked source"
+        }
+      ]
     },
     "siwc": {
       "path": "engine/siwc",

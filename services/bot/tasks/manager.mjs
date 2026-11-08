@@ -97,8 +97,10 @@ export class TaskManager {
       if(!validBudget(timeoutMs,1000,7200000))throw Error('invalid_task_timeout');
       const workspaceMode=input.workspaceMode??'general';
       if(!['general','code','documents'].includes(workspaceMode))throw Error('invalid_workspace_mode');
+      if(input.skillNames!==undefined&&(!Array.isArray(input.skillNames)||input.skillNames.length>20||input.skillNames.some(name=>typeof name!=='string'||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))))throw Error('invalid_task_skills');
+      const skillSelection=input.skillNames===undefined?{}:{skillNames:[...new Set(input.skillNames)]};
       const inputFiles=workspaceMode==='code'?[]:(workspaceMode==='documents'?validateInputFiles:validateGeneralInputs)(root,input.inputFiles??[]);
-      return {...assignment,...work,...execution,workspaceMode,inputFiles,kind:'agent',title:title.trim(),goal,constraints,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[],...(autoContinue?{autoContinue}:{})};
+      return {...assignment,...work,...execution,...skillSelection,workspaceMode,inputFiles,kind:'agent',title:title.trim(),goal,constraints,timeoutMs,maxSteps,tokenBudget,cwd:this.workspace,artifacts:[],...(autoContinue?{autoContinue}:{})};
     }
     if(input.kind&&input.kind!=='command')throw Error('invalid_task_kind');
     const {title,command}=input;
@@ -160,8 +162,10 @@ export class TaskManager {
     this.assertOpen(task);
     const stored=this.db.prepare('SELECT body FROM background_task WHERE id=?').get(task.id);if(stored)this.assertOpen(JSON.parse(stored.body));
     const employee=this.team?.snapshot(task);
+    const previous=task.runId?this.row('run',task.runId):null;
+    const skills=task.kind==='agent'&&!task.managementReview?(previous&&previous.assignmentVersion===task.assignmentVersion&&previous.skills!==undefined?previous.skills:this.skills?.snapshot(task)??[]):[];
     const budget=this.runBudget(task);if(budget)extra={...extra,executionBudget:{tokenBudget:capBudget(budget.tokenBudget,extra.executionBudget?.tokenBudget),timeoutMs:capBudget(budget.timeoutMs,extra.executionBudget?.timeoutMs)}};
-    const run={employee,assignmentVersion:task.assignmentVersion,permission:task.permission,policyVersion:task.policyVersion,id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
+    const run={employee,skills,assignmentVersion:task.assignmentVersion,permission:task.permission,policyVersion:task.policyVersion,id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
     const job={id:run.jobId,runId:run.id,taskId:task.id,status:'queued',cleanupConfirmed:true,createdAt:run.createdAt,kind:task.kind??'command'};
     task.runId=run.id;task.status='queued';task.updatedAt=run.createdAt;task.unread=false;
     this.put('job',job);this.put('run',run);this.put('task',task);
@@ -173,7 +177,7 @@ export class TaskManager {
   }
   detail(id){
     const task=this.row('task',id),runs=this.db.prepare("SELECT body FROM background_run WHERE json_extract(body,'$.taskId')=? ORDER BY rowid").all(id).map(r=>JSON.parse(r.body));
-    return {task:this.summary(task),runs:runs.map(run=>{
+    return {task:this.summary(task),skills:runs.find(run=>run.id===task.runId)?.skills??[],skillCandidates:this.skills?.candidates({taskId:id})??[],video:this.video?.view(id)??[],runs:runs.map(run=>{
       const job=this.row('job',run.jobId),directory=this.directory(job);
       return {...run,activity:this.activity(task,run,job),job:{...job,logPath:join(directory,'output.log')},...(task.kind==='agent'?{
         jobs:readSteps(directory),progress:readJson(join(directory,'progress.json')),result:job.agentResult??readJson(join(directory,'agent-result.json')),
@@ -226,6 +230,7 @@ export class TaskManager {
     if(task.runId!==runId)throw Error('task_run_changed');
     if(task.handoff?.status==='stopping'&&handoffActionId!==task.handoff.actionId)task.handoff={...task.handoff,status:'cancelled',reason:'user_paused'};
     task.automationPaused=true;task.management={...task.management,paused:true};this.put('task',task);this.stopChecks(task);
+    this.video?.stop(task.id);
     if(!live.has(task.status)){if(task.status==='waiting_event'){const r=this.row('run',runId);this.finish(task,r,this.row('job',r.jobId),{status:'paused',cleanupConfirmed:true});}this.changed(task);return this.detail(id);}
     if(task.status==='cancelling')return this.detail(id);
     const run=this.row('run',runId),job=this.row('job',run.jobId);
@@ -247,6 +252,18 @@ export class TaskManager {
     task.lastContinueAction=actionId;task.lastContinueText=text;delete task.stopIntent;
     this.atomic(()=>this.newRun(task,this.row('run',runId).number+1,text||'请继续完成原任务，先核对已有结果。',{instructionSource:{kind:'user',actionId,previousRunId:runId}}));
     this.changed(task);queueMicrotask(()=>this.tick());return this.detail(id);
+  }
+  resumeVideo(record){
+    const actionId='video-'+hash(record.id+'\0'+record.runId).slice(0,60),task=this.row('task',record.taskId);
+    if(task.lastVideoResumeAction===actionId)return true;
+    if(this.closed||this.applying||task.runId!==record.runId||task.assignmentVersion!==record.assignmentVersion||task.status!=='waiting_event'||task.automationPaused||task.management?.paused||taskIsClosed(task))return false;
+    this.assertOpen(task);
+    const run=this.row('run',record.runId),job=this.row('job',run.jobId);
+    if(job.cleanupConfirmed!==true||this.workers.has(job.id)||job.agentResult?.awaiting?.videoRecordId!==record.id)return false;
+    const context={kind:'video',recordId:record.id,remoteTaskId:record.remoteTaskId,remoteStatus:record.remoteStatus,outputDir:record.outputDir,waitingTimedOut:!!record.waitingTimedOut};
+    task.lastVideoResumeAction=actionId;
+    this.atomic(()=>this.newRun(task,run.number+1,'视频后台跟进返回：'+JSON.stringify(context)+'。核对同一远端任务；成功后下载和完成交付，仍在运行则继续查询或登记等待。不可因等待超时重复提交。',{instructionSource:{kind:'video',actionId,previousRunId:run.id},eventContext:context}));
+    this.changed(task);queueMicrotask(()=>this.tick());return true;
   }
   async diff({id,runId}){
     const task=this.row('task',id);if(task.runId!==runId)throw Error('task_run_changed');
@@ -310,6 +327,7 @@ export class TaskManager {
       task={...task,status,updatedAt:finishedAt,unread:true};this.put('task',task);
       this.automation.recordCompletion(task,{...run,status},{...job,...result,status});
       this.reports.capture(task,finalRun,finalJob);
+      if(finalRun.skills?.length)this.skills?.recordUsage({taskId:task.id,runId:run.id,skills:finalRun.skills,status});
     });
     this.changed(task);
   }
@@ -347,7 +365,7 @@ export class TaskManager {
       }
       this.closures.tick();
       void this.outbox?.tick().catch(()=>{});
-      this.automation.tick();this.supervisor?.tick();this.assignments.tick();this.watch?.tick();this.lastError=null;
+      this.automation.tick();this.supervisor?.tick();this.assignments.tick();this.watch?.tick();void this.video?.tick().catch(()=>{});this.skillService?.tick();this.lastError=null;
       // One active project command. Unconfirmed cleanup also holds the slot.
       if(this.applying||this.workers.size||this.queries.holdsSlot())return;
       if(this.foregroundBusy?.())return;
@@ -376,7 +394,7 @@ export class TaskManager {
           bridge={url:bridge.url,tokenPath,scoped:true,hostTools:this.runtimeBridge.hostTools};
         }
         saveJson(specPath,{taskId:task.id,runId:run.id,runNumber:run.number,runDir:this.directory(job),agentHome:this.agentHome(task),source:task.cwd,
-          employee:run.employee,assignmentVersion:run.assignmentVersion,workspaceMode:task.workspaceMode,inputFiles:task.inputFiles,
+          employee:run.employee,skills:run.skills??[],assignmentVersion:run.assignmentVersion,workspaceMode:task.workspaceMode,inputFiles:task.inputFiles,
           sessionId:task.sessionId,goal:task.goal,constraints:task.constraints,acceptanceCriteria:task.acceptanceCriteria,managementReview:task.managementReview,transferInputs:task.transferInputs,dependencyInputs:task.dependencyInputs,mode:task.mode,permission:task.permission,policyVersion:task.policyVersion,maxSteps:task.maxSteps,tokenBudget:run.executionBudget?.tokenBudget??task.tokenBudget,
           timeoutMs:run.executionBudget?.timeoutMs??task.timeoutMs,instruction:run.instruction,eventContext:run.eventContext,checksEnabled:this.automation.canCheck(task.id),bridge,providerModule:this.agentProviderModule,agentPluginModule:this.agentPluginModule,researchConfig:this.agentResearchConfig});
         const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
@@ -410,6 +428,7 @@ export class TaskManager {
   cancel(id,expectedRunId){
     const task=this.row('task',id),run=this.row('run',task.runId),job=this.row('job',run.jobId);
     if(expectedRunId&&expectedRunId!==task.runId)throw Error('task_run_changed');
+    this.video?.stop(task.id);
     if(task.kind==='agent'){task.automationPaused=true;task.management={...task.management,paused:true};if(task.handoff?.status==='stopping')task.handoff={...task.handoff,status:'cancelled',reason:'user_cancelled'};this.put('task',task);this.stopChecks(task);}
     if(['paused','waiting_input','waiting_event'].includes(task.status)){delete task.stopIntent;this.finish(task,run,job,{status:'cancelled',cleanupConfirmed:true});return this.detail(id);}
     if(!live.has(task.status))return this.detail(id);
@@ -464,6 +483,8 @@ export class TaskManager {
     if(this.closing)return this.closing;
     this.closed=true;clearInterval(this.timer);
     return this.closing=(async()=>{
+      await this.skillService?.syncing;
+      await this.video?.close();
       await this.outbox?.close();
       await this.automation.close();
       await Promise.all([...this.workers.values()].map(child=>new Promise(resolveDone=>{
@@ -489,7 +510,7 @@ export function taskTools(tasks,getRequest){
     ['background_agent_automation','按用户要求暂停或恢复该任务的自动接续。暂停自动接续不停止已运行的轮次；要立即停止请用 background_agent_pause。',{id:{type:'string',required:true},paused:{type:'boolean',required:true}},a=>{request();return tasks.automationPause(a);}],
     ['background_agent_start','创建独立后台数字员工工作会话。默认 permission=full，可使用已接入的文件、命令、联网、浏览器工具；明确只读时用 read-only。workspaceMode仅决定目录准备：默认general、代码快照code、文本输入documents。需要的输入文件用inputFiles指定。提交后立即结束本轮等待，主对话仍可交流。',{
       acceptanceCriteria:{type:'string',description:'从用户目标提取的可验证交付标准，不添加用户未要求的工作。'},managementEnabled:{type:'boolean',description:'员工任务默认启用总管跟进；用户明确关闭时设false。'},maxReworks:{type:'integer',description:'默认最多两次自动返工，只有用户要求调整时填写，0–5。'},managementTokenBudget:{type:'integer',description:'可选累计Token预算，默认0表示不限制；只有用户明确要求设置上限时填写有限值。'},managementTimeBudgetMs:{type:'integer',description:'可选累计执行时长毫秒，默认0表示不限制；只有用户明确要求设置上限时填写有限值。'},dependsOn:{type:'array',items:{type:'string'},description:'用户明确指定的前置任务ID，等待其已验收成果。'},priority:{type:'string',enum:['low','normal','high']},dueAt:{type:'number',description:'用户明确的截止时间，Unix毫秒；用于排序提醒，独立于执行超时。'},
-      assignedBotId:{type:'string',description:'team_list 返回的员工 ID；省略由总管负责。'},workspaceMode:{type:'string',enum:['general','code','documents'],description:'任务模板，默认general；code准备Git快照，documents复制文本资料。模板不限制工具权限。'},inputFiles:{type:'array',items:{type:'string'},description:'general/documents 模板复制的输入文件：项目内相对路径。general可省略，最多20个文件、每个20MiB；documents为文本文件，最多10个、每个64KiB。'},title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},permission:{type:'string',enum:['full','read-only'],description:'执行权限，默认full；只有用户明确要求只读时选择read-only。完整执行使用已接入且已授权的工具，不新增外部账号。'},mode:{type:'string',enum:['analysis','edit'],description:'旧客户端兼容字段，优先使用permission；analysis对应read-only，edit对应full，不得冲突。'},timeoutMs:{type:'number',description:'每轮执行时限毫秒，默认0不限制；只有用户明确要求时设置有限值。'},maxSteps:{type:'number',description:'每轮模型步骤上限，默认0不限制；只有用户明确要求时设置有限值。'},tokenBudget:{type:'number',description:'每轮Token预算，默认0不限制；只有用户明确要求时设置有限值。'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
+      assignedBotId:{type:'string',description:'team_list 返回的员工 ID；省略由总管负责。'},skillNames:{type:'array',items:{type:'string'},description:'指定该员工已绑定的技能名称；省略自动匹配，空数组不使用技能。'},workspaceMode:{type:'string',enum:['general','code','documents'],description:'任务模板，默认general；code准备Git快照，documents复制文本资料。模板不限制工具权限。'},inputFiles:{type:'array',items:{type:'string'},description:'general/documents 模板复制的输入文件：项目内相对路径。general可省略，最多20个文件、每个20MiB；documents为文本文件，最多10个、每个64KiB。'},title:{type:'string',required:true},goal:{type:'string',required:true},constraints:{type:'string'},permission:{type:'string',enum:['full','read-only'],description:'执行权限，默认full；只有用户明确要求只读时选择read-only。完整执行使用已接入且已授权的工具，不新增外部账号。'},mode:{type:'string',enum:['analysis','edit'],description:'旧客户端兼容字段，优先使用permission；analysis对应read-only，edit对应full，不得冲突。'},timeoutMs:{type:'number',description:'每轮执行时限毫秒，默认0不限制；只有用户明确要求时设置有限值。'},maxSteps:{type:'number',description:'每轮模型步骤上限，默认0不限制；只有用户明确要求时设置有限值。'},tokenBudget:{type:'number',description:'每轮Token预算，默认0不限制；只有用户明确要求时设置有限值。'},autoContinue:{type:'number',description:'仅用户明确要求测试完成自动接续时设置，1–5 次；默认关闭。'},
     },a=>{const r=request(),input={...a,kind:'agent'};return tasks.create({...input,id:hash(r.id+'\0'+JSON.stringify(tasks.spec(input)))},{requestId:r.id,source:'assistant'});}],
     ['background_agent_message','向指定后台 Agent 任务补充要求。只表示消息已保存，不能声称正在执行的操作已经按新要求修改。',{id:{type:'string',required:true},text:{type:'string',required:true}},a=>tasks.message({...a,messageId:hash(request().id+'\0'+a.id+'\0'+a.text)})],
     ['background_agent_pause','暂停后台 Agent，停止模型和工具，保留工作区和会话供继续。先查询当前 runId。',{id:{type:'string',required:true},runId:{type:'string',required:true}},a=>{request();return tasks.pause(a);}],

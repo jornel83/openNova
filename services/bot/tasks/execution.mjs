@@ -16,9 +16,10 @@ export function executionSpec(input){
   return {permission,mode,policyVersion:EXECUTION_POLICY_VERSION};
 }
 export function allowedTaskTools(config){
-  if(config.managementReview)return ['glob','grep','read','review_decide'];
+  if(config.managementReview)return ['glob','grep','read',config.managementReview.kind==='skill-extraction'?'skill_draft':'review_decide'];
   const writable=(config.permission??(config.mode==='analysis'?'read-only':'full'))==='full';
   const tools=new Set(LOCAL_TASK_TOOLS);
+  if(config.skills?.length){tools.add('skill');if(writable&&config.skills.some(skill=>skill.name==='video-production'))for(const name of ['video_validate','video_submit','video_status','video_wait','video_download','video_edit'])tools.add(name);}
   if(!writable)for(const name of ['write','edit','task_command','task_check'])tools.delete(name);
   if(!config.checksEnabled)tools.delete('task_check');
   if(config.policyVersion>=EXECUTION_POLICY_VERSION){

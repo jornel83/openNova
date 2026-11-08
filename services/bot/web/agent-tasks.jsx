@@ -6,13 +6,15 @@ import {TaskPlanningFields} from './team-results.jsx';
 import {errorText} from './api.mjs';
 import {activeTask,taskLabels,appendTaskLog,taskUnavailable} from './task-view.mjs';
 import {agentExecutionBudget,executionBudgetLabel} from './task-budget.mjs';
-const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',acceptanceCriteria:'',permission:'full',minutes:'',maxSteps:'',tokenBudget:'',autoContinue:0,managementEnabled:null,maxReworks:2,dependsOn:[],priority:'normal',dueAt:''};
-export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
+import {TaskSkillSelect,TaskSkillUsage,TaskVideoProgress} from './skills.jsx';
+import {skillSelection} from './skill-view.mjs';
+const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',acceptanceCriteria:'',permission:'full',minutes:'',maxSteps:'',tokenBudget:'',autoContinue:0,managementEnabled:null,maxReworks:2,dependsOn:[],priority:'normal',dueAt:'',skillMode:'auto',skillNames:[]};
+export function AgentTaskForm({api,action,onSelect,disabled,team,tasks=[]}){
   const [form,setForm]=useState(fresh),submission=useRef(null);
   const budget=agentExecutionBudget(form);
   const field=(key,value)=>setForm({...form,[key]:value});
   async function submit(e){
-    e.preventDefault();if(!budget)return;submission.current??={...form,...budget,assignedBotId:form.assignedBotId||undefined,inputFiles:form.inputs.split('\n').map(s=>s.trim()).filter(Boolean),id:crypto.randomUUID(),kind:'agent',autoContinue:form.permission==='full'?Number(form.autoContinue):0,
+    e.preventDefault();if(!budget||form.skillMode==='explicit'&&!form.skillNames.length)return;const {skillMode,skillNames,...fields}=form;submission.current??={...fields,...skillSelection(skillMode,skillNames),...budget,assignedBotId:form.assignedBotId||undefined,inputFiles:form.inputs.split('\n').map(s=>s.trim()).filter(Boolean),id:crypto.randomUUID(),kind:'agent',autoContinue:form.permission==='full'?Number(form.autoContinue):0,
       managementEnabled:!!form.assignedBotId&&(form.managementEnabled??true),maxReworks:Number(form.maxReworks),dueAt:form.dueAt?new Date(form.dueAt).getTime():null};
     try{
       const result=await action('background-task-start',submission.current,{rethrow:true});
@@ -22,19 +24,20 @@ export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
   return <details className="task-create"><summary>新建 Agent 工作任务</summary><form onSubmit={submit}>
     <label>任务模板<select value={form.workspaceMode} onChange={e=>field('workspaceMode',e.target.value)}><option value="general">通用工作（默认）</option><option value="code">代码工程</option><option value="documents">文本资料整理</option></select></label>
     <p className="subtle">{form.workspaceMode==='code'?'复制当前代码工程到独立工作目录，可查看差异并按需应用成果。':form.workspaceMode==='documents'?'将指定的文本资料复制到独立工作目录，成果单独保存。':'创建独立工作目录，可按需带入文件，保存脚本、报告和其他成果。'}模板只决定工作目录与输入，不限制员工的工具权限。</p>
-    <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v,managementEnabled:null})}/>
+    <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v,managementEnabled:null,skillNames:[]})}/>
     {form.workspaceMode!=='code'&&<label>输入文件{form.workspaceMode==='general'?'（选填）':''}（项目内相对路径，每行一个）<textarea rows={3} required={form.workspaceMode==='documents'} value={form.inputs} onChange={e=>field('inputs',e.target.value)}/></label>}
     <label>任务名称<input required maxLength={160} value={form.title} onChange={e=>field('title',e.target.value)}/></label>
     <label>任务目标<textarea required rows={4} maxLength={8000} value={form.goal} onChange={e=>field('goal',e.target.value)}/></label>
     <label>约束<textarea rows={3} maxLength={4000} value={form.constraints} onChange={e=>field('constraints',e.target.value)}/></label>
     <label>验收标准（选填）<textarea rows={3} maxLength={4000} value={form.acceptanceCriteria} onChange={e=>field('acceptanceCriteria',e.target.value)} placeholder="例如：交付报告，列出来源，验证脚本退出码为 0"/></label>
+    {api&&<TaskSkillSelect api={api} botId={form.assignedBotId||team?.chiefBotId} mode={form.skillMode} names={form.skillNames} onChange={({mode,names})=>setForm({...form,skillMode:mode,skillNames:names})} disabled={disabled}/>}
     {form.assignedBotId?<><label className="task-check"><input type="checkbox" checked={form.managementEnabled??true} onChange={e=>field('managementEnabled',e.target.checked)}/>由总管检查成果并跟进</label>{(form.managementEnabled??true)&&<label>最多自动返工次数<input type="number" required min={0} max={5} value={form.maxReworks} onChange={e=>field('maxReworks',Number(e.target.value))}/></label>}<p className="subtle">总管依据验收标准和实际执行记录检查成果。需要你决策时会出现在待处理事项中。</p></>:<p className="subtle">总管亲自执行，完成后由你查看并验收成果。</p>}
     <TaskPlanningFields value={form} tasks={tasks} onChange={patch=>setForm({...form,...patch})}/>
     <label>执行权限<select value={form.permission} onChange={e=>field('permission',e.target.value)}><option value="full">完整执行（Full Access，默认）</option><option value="read-only">只读</option></select></label>
     <p className="subtle">{form.permission==='read-only'?'读取任务目录内的资料并查询信息；不写文件、不运行命令。':'可读写当前系统用户有权访问的任意目录，并使用已接入的命令、联网及浏览器工具。成果默认保存在独立目录，仍遵守任务约束。'}</p>
     {form.permission==='full'&&<><label className="task-check"><input type="checkbox" checked={!!form.autoContinue} onChange={e=>field('autoContinue',e.target.checked?2:0)}/>测试完成后自动接续</label>{!!form.autoContinue&&<label>最多自动接续次数<input required type="number" min={1} max={5} value={form.autoContinue} onChange={e=>field('autoContinue',Number(e.target.value))}/></label>}<p className="subtle">默认关闭。启用后允许 Agent 提交后台验证，结果到达时按规则接续；规则有效期 24 小时。</p></>}
     <details><summary>执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><p className="subtle">默认不限制；需要上限时填写，留空可取消该项限制。</p><label>最多模型步骤<input type="number" min={1} max={128} placeholder="不限制" value={form.maxSteps} onChange={e=>field('maxSteps',e.target.value)}/></label><label>Token 预算<input type="number" min={1000} max={1000000} placeholder="不限制" value={form.tokenBudget} onChange={e=>field('tokenBudget',e.target.value)}/></label><label>最长运行时间（分钟）<input type="number" min={1/60} max={120} step="any" placeholder="不限制" value={form.minutes} onChange={e=>field('minutes',e.target.value)}/></label></details>
-    <button className="task-primary" disabled={disabled||!budget} type="submit">{submission.current?'重试原任务提交':'提交 Agent 任务'}</button>
+    <button className="task-primary" disabled={disabled||!budget||form.skillMode==='explicit'&&!form.skillNames.length} type="submit">{submission.current?'重试原任务提交':'提交 Agent 任务'}</button>
   </form></details>;
 }
 const deliveryLabels={pending:'待处理',sending:'正在提交',delivered:'已接收',unknown:'接收情况待核对'};
@@ -57,6 +60,8 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
     {!readonly&&task.policyVersion>=2&&<p className="subtle">可访问当前系统用户有权访问的任意目录；仍须遵守下方目标与约束，系统权限不会自动提升。</p>}
     {!readonly&&!(task.policyVersion>=2)&&<p className="subtle">此任务保留创建时的工具权限。新建任务可使用通用执行能力。</p>}
     <details className="task-command" open><summary>目标与约束</summary><p>{task.goal}</p>{task.constraints&&<p>{task.constraints}</p>}</details>
+    <TaskSkillUsage detail={detail} currentRun={currentRun}/>
+    <TaskVideoProgress detail={detail} currentRun={currentRun}/>
     {currentRun?.instruction&&<p className="task-intro">本轮接续要求：{currentRun.instruction}</p>}
     {task.question&&<p className="task-question" role="status">{unavailable?'本轮问题：':'需要补充信息：'}{task.question}</p>}
     {!unavailable&&<><div className="task-actions">{(activeTask(task)||task.status==='waiting_event')&&!['cancelling','pausing'].includes(task.status)&&<button disabled={disabled} onClick={()=>void dispatch('background-task-pause')}>暂停任务</button>}</div>

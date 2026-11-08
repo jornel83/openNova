@@ -5,6 +5,7 @@ import {taskLabels,taskActivityText,taskUnavailable} from './task-view.mjs';
 import {errorText} from './api.mjs';
 import {reviewView,reviewLabels,priorityLabels,localDateValue,canEditDependencies,artifactLabel,employeeTask,dependencyReason} from './team-view.mjs';
 import {budgetInput,budgetMinutesInput,managementExecutionBudget,managementUsageLabel} from './task-budget.mjs';
+import {ResultSkills} from './skills.jsx';
 
 export function TaskPlanningFields({value,tasks=[],onChange,taskId,disabled=false}){
   const selected=value.dependsOn??[];
@@ -28,7 +29,7 @@ function useBoundAction(action){
   };
 }
 
-export function TeamResults({detail,currentRun,action,disabled=false,busy=false}){
+export function TeamResults({api,detail,currentRun,action,disabled=false,busy=false}){
   const view=reviewView(detail,currentRun?.id),{report,review,binding}=view,readOnly=taskUnavailable(detail.task);
   const [text,setText]=useState(''),send=useBoundAction(action);
   useEffect(()=>setText(''),[report?.id]);
@@ -58,6 +59,7 @@ export function TeamResults({detail,currentRun,action,disabled=false,busy=false}
       {!commands.length&&!checks.length&&<p className="subtle">本版没有命令或测试记录；完成摘要不代表测试已通过。</p>}
     </details>
     {review?.decision?.summary&&<p className="team-callout">处理意见：{review.decision.summary}</p>}
+    {api&&!readOnly&&<ResultSkills api={api} detail={detail} report={report} review={review} latest={view.latest&&!view.evidenceChanged&&!view.verificationFailed} disabled={disabled||busy}/>}
     {!readOnly&&view.latest&&<div className="team-review-actions"><label>回答问题或说明返工要求<textarea rows={3} maxLength={4000} value={text} onChange={e=>setText(e.target.value)} placeholder="说明缺少什么、需要调整什么，或回答总管的问题"/></label>
       <div className="task-actions"><button type="button" disabled={disabled||!view.canAccept} onClick={()=>void decide('accept')}>验收通过</button><button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('request_changes')}>要求返工</button>{report.status==='waiting_input'&&<button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('answer')}>提交回答</button>}<button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('needs_user')}>留待我处理</button></div>
       <p className="subtle">打开文件、验收成果和应用代码是独立操作。验收通过不会自动合入原工程。</p>

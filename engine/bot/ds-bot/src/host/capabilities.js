@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
@@ -117,6 +118,27 @@ export function install(rt) {
       }
     } else if (kind === 'skill') {
       item.content = String(body.content ?? '').trim()
+      // Hosts may bind a versioned local bundle; instructions alone lose relative resources.
+      const enabled = body.enabled === undefined ? previous?.enabled : body.enabled
+      if (enabled !== undefined) {
+        if (typeof enabled !== 'boolean') throw new Error('Skill enabled must be a boolean.')
+        item.enabled = enabled
+      }
+      const base = body.resourceBase === undefined ? previous?.resourceBase : body.resourceBase
+      if (base !== undefined) {
+        if (!base || base.kind !== 'directory' || typeof base.path !== 'string' || !isAbsolute(base.path) || base.path.includes('\0')) throw new Error('Skill resources require an absolute directory.')
+        item.resourceBase = { kind: 'directory', path: base.path }
+      }
+      const version = body.skillVersion === undefined ? previous?.skillVersion : body.skillVersion
+      if (version !== undefined) {
+        if (typeof version !== 'string' || !version.trim() || version.length > 128 || version.includes('\0')) throw new Error('Invalid skill version.')
+        item.skillVersion = version
+      }
+      const invocation = body.invocation === undefined ? previous?.invocation : body.invocation
+      if (invocation !== undefined) {
+        if (!invocation || typeof invocation.modelInvocable !== 'boolean' || typeof invocation.userInvocable !== 'boolean') throw new Error('Skill invocation requires modelInvocable and userInvocable booleans.')
+        item.invocation = { modelInvocable: invocation.modelInvocable, userInvocable: invocation.userInvocable }
+      }
     } else {
       const names = [...new Set(strings(body.items))]
       for (const childName of names) {
@@ -202,6 +224,7 @@ export function install(rt) {
     const values = [...(sessionStatuses.get(botId)?.get(name)?.values() ?? [])]
     if (values.some(status => status.state === 'error')) return values.find(status => status.state === 'error')
     if (values.some(status => status.state === 'needs-approval')) return { state: 'needs-approval' }
+    if (values.some(status => status.state === 'disabled')) return { state: 'disabled' }
     if (values.some(status => status.state === 'connecting')) return { state: 'connecting' }
     return values.length > 0 ? { state: 'ready' } : undefined
   }
@@ -220,6 +243,7 @@ export function install(rt) {
         const children = (item.items ?? []).map(child => statusFor(bot.id, child)).filter(Boolean)
         const status = children.find(status => status.state === 'error')
           ?? children.find(status => status.state === 'needs-approval')
+          ?? children.find(status => status.state === 'disabled')
           ?? children.find(status => status.state === 'connecting')
           ?? children[0]
         if (status) statuses[name] = status
@@ -259,7 +283,7 @@ export function install(rt) {
     return resolved
   }
   const configFor = (item, botId) => {
-    if (item.kind === 'skill') return { name: item.name, description: item.description, content: item.content }
+    if (item.kind === 'skill') return { name: item.name, description: item.description, content: item.content, resourceBase: item.resourceBase, metadata: item.skillVersion ? { version: item.skillVersion } : undefined, invocation: item.invocation }
     if (item.transport === 'stdio') return { transport: 'stdio', serverName: item.name, command: item.command, args: item.args ?? [], env: resolveValues(item.env, botId), failOnStartupError: true }
     return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
   }
@@ -272,6 +296,11 @@ export function install(rt) {
     const drop = async () => {
       await disposeMount(agentMounts.get(name))
       agentMounts.delete(name)
+    }
+    if (item.kind === 'skill' && item.enabled === false) {
+      await drop()
+      statusSet(bot.id, name, sessionId, { state: 'disabled' })
+      return
     }
     if (item.kind === 'mcp' && item.transport === 'stdio' && item.approved !== true) {
       await drop()
@@ -296,7 +325,7 @@ export function install(rt) {
           name: `ds-bot-capability-skill-${name}`,
           inject: ['skills'],
           apply(c) {
-            c.effect(() => c.skills.register({ name: config.name, description: config.description, source: 'runtime', content: config.content }))
+            c.effect(() => c.skills.register({ ...config, source: 'runtime' }))
           },
         }
         : await loadMcpPlugin()

@@ -10,6 +10,13 @@ export function resolveTaskPath(config,value,{directory=false}={}){
   if(typeof value!=='string'||!value||value.includes('\0'))throw Error('invalid_file_path');
   const path=resolve(config.workspace,value);
   if(!hasFullFilesystemAccess(config)){
+    // Read-only tasks may inspect their immutable skill resources, not arbitrary homes.
+    const skillRoot=!directory&&(config.skills??[]).map(skill=>skill.archiveRoot).find(root=>typeof root==='string'&&inside(root,path));
+    if(skillRoot){
+      let existing=path;while(!existsSync(existing)&&existing!==dirname(existing))existing=dirname(existing);
+      if(!inside(realpathSync(skillRoot),realpathSync(existing)))throw Error('outside_task_workspace');
+      return path;
+    }
     if(!inside(config.workspace,path)||relative(config.workspace,path).split('/').includes('.git'))throw Error('outside_task_workspace');
     let existing=path;while(!existsSync(existing)&&existing!==dirname(existing))existing=dirname(existing);
     if(!inside(config.workspace,realpathSync(existing)))throw Error('outside_task_workspace');

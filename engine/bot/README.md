@@ -68,6 +68,8 @@ Any bot can hand work to another bot with @. That bot does the work on its own, 
 
 Settings → **Capabilities** is a shared library of MCP servers, skills and packs. Add a capability to a Bot in its settings; it is available from that Bot's next message in its own chat and group chats. A local MCP command that a Bot adds needs your approval before it can run. While other Bots use a capability, only you or a Main Bot can change or delete it.
 
+The bundled OpenNova host can supply a skill's resource directory, version and model/user invocation policy. These fields are preserved when omitted from later updates. Disabling a skill removes its runtime registration while retaining Bot attachments; enabling it restores the registration for subsequent messages. Existing text-only skills keep Harness's default invocation policy.
+
 ### Usage
 
 In **Settings** → **Usage**, you can see token usage by time, by bot and by model.

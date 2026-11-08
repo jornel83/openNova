@@ -8,6 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {Operations} from '../operations.mjs';
 import {TaskManager} from '../tasks/manager.mjs';
 import {prepareReviewEvidence} from '../team/review.mjs';
+import {archiveBundle,skillDocument} from '../skills/bundle.mjs';
 
 const provider=fileURLToPath(new URL('./fixtures/filesystem-provider.mjs',import.meta.url));
 const plan=actions=>'FS_ACCESS_PLAN='+Buffer.from(JSON.stringify(actions)).toString('base64');
@@ -83,6 +84,33 @@ test('read-only tasks cannot access outside files, mutate them or invoke a comma
     if(tool==='read')assert.equal(d.runs[0].jobs[0].error,'outside_task_workspace');
   }
   assert.equal(existsSync(target),false);assert.equal(readFileSync(join(external,'sample.txt'),'utf8'),'HOST_FILE_MARKER\n');
+});
+
+test('native read-only skill tools read pinned references but reject escape paths and writes',{timeout:60000},async t=>{
+  const {tasks,home,external}=fixture(t),name='reference-guide',description='Read-only reference fixture',content='Read references/guide.md for the fixed procedure.';
+  const skill=archiveBundle(home,{name,description,content,source:'personal',files:new Map([
+    ['skills/'+name+'/SKILL.md',Buffer.from(skillDocument(name,description,content))],
+    ['skills/'+name+'/references/guide.md',Buffer.from('PINNED_SKILL_REFERENCE\n')],
+  ])});
+  // Extra filesystem entries are not trusted resources and must still pass the path guard.
+  const escape=join(skill.archiveRoot,'escape');symlinkSync(external,escape);
+  tasks.skills={snapshot:()=>[skill],candidates:()=>[],recordUsage:()=>{}};
+  const resource=join(skill.resourceBase.path,'references/guide.md'),target=join(skill.resourceBase.path,'references/forbidden.md');
+  start(tasks,'readonly-skill-resource',[
+    ['skill',{name}],['read',{file_path:resource}],
+    ['glob',{path:join(skill.resourceBase.path,'references'),pattern:'*.md'}],
+    ['grep',{path:resource,pattern:'PINNED_SKILL_REFERENCE'}],
+    ['read',{file_path:join(escape,'sample.txt')}],
+    ['read',{file_path:join(external,'sample.txt')}],
+  ],{permission:'read-only'});
+  const d=await done(tasks,'readonly-skill-resource');
+  assert.equal(d.task.status,'completed',tasks.log({id:d.task.id}).text);
+  const jobs=d.runs[0].jobs;assert.deepEqual(jobs.slice(0,4).map(job=>[job.tool,job.status]),[['skill','completed'],['read','completed'],['glob','completed'],['grep','completed']]);
+  assert.match(jobs[1].output,/PINNED_SKILL_REFERENCE/);assert.match(jobs[2].output,/guide\.md/);assert.match(jobs[3].output,/PINNED_SKILL_REFERENCE/);
+  for(const job of jobs.slice(4,6)){assert.equal(job.status,'failed');assert.equal(job.error,'outside_task_workspace');assert.doesNotMatch(job.output??'',/HOST_FILE_MARKER/);}
+  start(tasks,'readonly-skill-write',[['write',{file_path:target,content:'must not be written'}]],{permission:'read-only'});
+  const denied=await done(tasks,'readonly-skill-write');assert.ok(!denied.runs[0].jobs.some(job=>job.tool==='write'&&job.status==='completed'));assert.equal(existsSync(target),false);
+  assert.equal(readFileSync(resource,'utf8'),'PINNED_SKILL_REFERENCE\n');assert.equal(d.skills[0].version,skill.version);
 });
 
 test('legacy writable tasks retain their scoped path contract',{timeout:60000},async t=>{

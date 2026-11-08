@@ -7,6 +7,7 @@ import {TeamResults,TaskCoordination} from './team-results.jsx';
 import {reviewLabels,reviewConflict,employeeTask} from './team-view.mjs';
 import {errorText} from './api.mjs';
 import {taskLabels,activeTask,taskReason,taskDuration,appendTaskLog,taskActivityText,taskClosureStatus,taskClosureLabel,taskUnavailable} from './task-view.mjs';
+import {SkillLibrary} from './skills.jsx';
 
 export function TaskCard({task,onOpen}){
   return <button type="button" className="task-card" onClick={()=>onOpen(task.id)}>
@@ -139,13 +140,14 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       <TeamOverview overview={currentOverview} owner={owner} onSelect={onSelect} onOwner={chooseOwner} onFilter={chooseFilter}/>
       <TeamWatch key={'watch:'+owner} api={api} watch={currentOverview?.watch} owner={owner} disabled={!online||pending} onSelect={onSelect} onRefresh={()=>setOverviewVersion(n=>n+1)}/>
       <details className="team-management"><summary>管理员工</summary><TeamPanel api={api} team={team} disabled={!online||busy} onSelect={onSelect}/></details>
+      <SkillLibrary api={api} disabled={!online||busy||pending}/>
       <details className="task-history" open={historyOpen} onToggle={event=>setHistoryOpen(event.currentTarget.open)}><summary>任务记录{currentPage?` · ${currentPage.total??tasks.length} 项`:''}</summary>
         <div className="task-filters" aria-label="任务筛选">{[['all','全部'],['active','进行中'],['attention','需要你处理'],['recent','最近成果'],['closed','已关闭']].map(([value,label])=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>chooseFilter(value)}>{label}</button>)}</div>
         <div className="task-list">{tasks.map(task=><TaskCard key={task.id} task={task} onOpen={onSelect}/>)}{!tasks.length&&<p className="task-empty">{listLoading?'正在读取任务…':'这里暂时没有任务。'}</p>}</div>
         {currentPage?.hasMore&&<button className="task-more" type="button" disabled={listLoading} onClick={()=>setPageLimit(n=>n+50)}>{listLoading?'正在读取…':'加载更多任务'}</button>}
       </details>
       <p className="task-intro">可以直接对 Nova 说任务要求，或补充员工需要的信息。任务执行期间，你可以继续聊天。</p>
-      <AgentTaskForm team={team} tasks={choices} action={action} onSelect={onSelect} disabled={!online||pending}/>
+      <AgentTaskForm api={api} team={team} tasks={choices} action={action} onSelect={onSelect} disabled={!online||pending}/>
       <details className="task-create"><summary>直接运行命令</summary>
         <form onSubmit={submit}>
           <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v})}/>
@@ -174,7 +176,7 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       {detail.task.kind!=='agent'&&<details className="task-command"><summary>执行命令与目录</summary><pre>{detail.task.command}</pre><p>{detail.task.cwd}</p><p>任务 ID：{detail.task.id}</p><p>执行 ID：{detail.task.runId}</p><p>最长运行 {detail.task.timeoutMs/60000} 分钟</p></details>}
       <label className="task-attempt">执行记录<select value={logRun||''} onChange={e=>setRunId(e.target.value)}>{detail.runs.map(run=><option key={run.id} value={run.id}>第 {run.number} 次 · {taskLabels[run.status]}</option>)}</select></label>
       {!taskUnavailable(detail.task)&&taskActivityText(currentRun,clock)&&<p className="task-intro" aria-label="执行活动">{taskActivityText(currentRun,clock)}</p>}
-      <TeamResults detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>
+      <TeamResults api={api} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy}/>
       <TaskCoordination key={'coordination:'+detail.task.id} detail={detail} team={team} tasks={choices} action={action} disabled={!online||pending}/>
       {detail.task.kind==='agent'&&<AgentTaskDetail api={api} key={detail.task.id} detail={detail} currentRun={currentRun} action={action} disabled={!online||pending} busy={busy} onSelect={onSelect}/>}
       <h4>运行日志</h4>

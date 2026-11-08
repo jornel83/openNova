@@ -2,14 +2,14 @@
 
 `scripts/team-soak.mjs` 使用真实 bundled Bot、Harness、SQLite、文件和子进程，模型为离线 fixture。运行数据必须放在仓库外的全新目录。前台对话、员工返工验收和命令任务使用同一个宿主与串行调度；不会访问日常 Bot、账号、麦克风或扬声器。
 
-每轮验证前台回复、后台命令的重复提交、员工交付 → 总管返工 → 新成果验收、员工执行期间前台继续对话、取消并核对命令 PID 退出，以及重新连接后读取状态。默认每 60 秒发起一轮，每 60 轮重启一次宿主，核对员工身份、任务 Run 和已验收成果没有重复。每 5 秒记录宿主进程树、RSS、CPU 和 runner 资源；汇总实际 Task / Run / 报告 / 文件 / 投递数量。
+每轮验证前台回复、后台命令的重复提交、员工交付 → 总管返工 → 新成果验收、员工执行期间前台继续对话、取消并核对命令 PID 退出，以及重新连接后读取状态。M5 还验证员工加载固定版本技能，验收成果经过独立只读会话生成经验候选；每轮累计 6 个 Task、7 个 Run、4 份成果，其中 3 个为内部验收/提炼任务，不计作用户工作。默认每 60 秒发起一轮，每 60 轮重启一次宿主，核对员工身份、任务 Run 和已验收成果没有重复。每 5 秒记录宿主进程树、RSS、CPU 和 runner 资源；汇总实际 Task / Run / 报告 / 文件 / 投递数量。
 
 在所有代码修改、回归和构建完成后启动：
 
 ```sh
 export PATH=/opt/homebrew/opt/node@24/bin:$PATH
 caffeinate -i node scripts/team-soak.mjs \
-  --home "$HOME/.local/share/opennova/verification/team-soak-20261107-run1"
+  --home "$HOME/.local/share/opennova/verification/team-m5-soak-new-run"
 ```
 
 默认实际观察 28,800,000 毫秒，即 8 小时。`caffeinate -i` 仅在测试运行期间阻止系统空闲睡眠；合盖等导致的观察中断仍会记录。超过 30 秒（或采样间隔四倍，以更大者为准）的采样空档会使耐久验收失败；不把睡眠或加速时钟计作连续观察通过。宿主进程树默认 RSS 上限为 2 GiB，可用 `--rss-limit-mb` 明确调整测试判据；此判据不是产品的任务执行预算。

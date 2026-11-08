@@ -11,6 +11,6 @@ export function botSettings(env=process.env) {
   if(![port,webPort].every(n=>Number.isInteger(n)&&n>1024&&n<65536)||port===webPort)throw Error('invalid_bot_ports');
   const replyMode=env.OPENNOVA_REPLY_MODE||'streaming';
   if(!['streaming','settled'].includes(replyMode))throw Error('invalid_reply_mode');
-  return {home,port,webPort,replyMode,githubTokenPath:resolve(env.OPENNOVA_GITHUB_TOKEN_FILE||join(homedir(),'.config/opennova/github.token')),workspace:ROOT,legacyWorkspace:join(home,'project'),tokenPath:join(home,'client.token'),
+  return {home,port,webPort,replyMode,videoKeyPath:resolve(env.OPENNOVA_ARK_KEY_FILE||join(homedir(),'.config/opennova/ark.key')),githubTokenPath:resolve(env.OPENNOVA_GITHUB_TOKEN_FILE||join(homedir(),'.config/opennova/github.token')),workspace:ROOT,legacyWorkspace:join(home,'project'),tokenPath:join(home,'client.token'),
     plugin:runtimeSources().botRoot,url:`http://127.0.0.1:${port}`};
 }

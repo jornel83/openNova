@@ -9,6 +9,8 @@ export function runtimePatch({bot:b,agent:s,webAssets,root=ROOT,desktop=false,re
 return [
   ...['llm-deepseek','llm-deepseek-account','llm-pi-ai','session-title-llm','hmr'].map(id=>({id,disabled:true})),
   {id:'llm-retry',disabled:false},
+  {id:'skill-filesystem',disabled:true},
+  {id:'tool-skill',disabled:false},
   {id:'agent-default-model',config:{provider:'opennova-chatgpt',model:'gpt-6.1-sol'}},
   {id:'bash-sandbox',config:{timeoutMs:120000}},
   {id:'preset-standard',config:{id:'standard',order:1,plugins:PROJECT_PLUGINS}},

@@ -11,6 +11,7 @@ export const errorText=error=>error?.diagnostic?diagnosticText(error.diagnostic)
 Object.assign(labels,{invalid_task_closure:'任务关闭信息不完整，请刷新后重试。',task_closed:'任务正在关闭或已关闭；请先恢复到任务列表，再决定是否执行。',task_reopen_unavailable:'任务尚未完成关闭，请等待清理完成后再恢复。',task_assignment_changed:'任务负责人已变化，请刷新后核对。'});
 Object.assign(labels,{task_dependency_closed:'前置任务已关闭，请先恢复该任务，或重新选择前置成果。',event_source_closed:'事件来源任务已关闭，请选择仍开放的来源。'});
 Object.assign(labels,{invalid_team_overview:'团队查询条件无效，请刷新后重试。',invalid_watch_page:'值守提醒查询条件无效。',invalid_watch_policy:'值守设置无效；时间须为 0（停用）或 1 秒至 7 天。',watch_policy_changed:'值守设置已被更新，请刷新后重新修改。',watch_action_conflict:'这次操作编号已被使用，请刷新后重新操作。',watch_alert_stale:'提醒对应的任务或执行轮已变化，请查看最新状态。',unknown_watch_alert:'未找到这条值守提醒，请刷新。',invalid_watch_ack:'提醒信息不完整，请刷新后重试。'});
+Object.assign(labels,{unknown_skill:'未找到这项技能，请刷新技能库。',unknown_skill_version:'未找到这个技能版本，请刷新版本记录。',skill_changed:'技能已被更新，已重新读取，请核对后再操作。',skill_assignment_changed:'员工技能配置已变化，请刷新后重新选择。',skill_policy_changed:'经验沉淀设置已变化，请刷新后重新保存。',skill_action_conflict:'这次操作与已保存请求不一致，请刷新后重试。',invalid_skill_name:'技能名称须为小写字母、数字及短横线，最多 32 个字符。',invalid_skill:'请填写有效的技能名称、适用场景和工作方法。',invalid_skill_selection:'技能选择无效，请重新选择。',skill_not_available:'这项技能未启用或尚未分配给当前负责人，请检查员工技能配置。',skill_content_unavailable:'技能正文暂不可读取，请刷新版本记录。',skill_source_not_accepted:'来源成果尚未验收通过，请查看当前成果。',skill_source_changed:'来源成果或验收已变化，请核对最新版本后重新整理。',skill_candidate_already_promoted:'这份经验已保存为技能，请刷新查看。',unknown_skill_candidate:'未找到这份经验候选，请刷新后重试。',skill_candidate_not_ready:'工作方法仍在整理中，完成后才能保存为技能。',skill_extraction_failed:'工作方法未能整理完成，可以重新整理。',skill_snapshot_changed:'本轮技能文件已有变化，请核对技能版本后再接续。',video_credentials_unavailable:'尚未配置视频服务凭据，请在本机配置后重试。',video_skill_required:'当前任务尚未使用视频制作技能。',video_submission_not_confirmed:'视频提交结果尚未确认，请先核对原远端任务，避免重复提交。',video_actor_stale:'任务执行轮已变化，请查看最新进度。',video_permission_denied:'当前任务的执行权限不允许这项视频操作。'});
 // browserHandler rejects these credentials before dispatching any operation. A
 // different tab may already have refreshed the shared cookie after a restart,
 // leaving this tab's CSRF stale; other 403 errors must never replay an operation.
@@ -18,6 +19,7 @@ const sessionExpired=(response,value)=>response.status===401||(response.status==
 Object.assign(labels,{unsupported_file_type:'当前文件类型暂不支持直接打开，请按结果路径查看。',open_failed:'本机应用未能打开文件，请检查文件类型与默认应用。',open_timeout:'打开请求暂未确认，请检查本机应用。'});
 
 Object.assign(labels,{invalid_task_command:'请填写任务名称和命令。',invalid_task_workdir:'请选择当前项目内存在的目录。',invalid_task_timeout:'运行时限应在 1 秒到 2 小时之间。',invalid_task_artifacts:'结果文件请使用项目内相对路径，最多 20 项。',task_id_conflict:'这次提交与已有任务不一致，请查看原任务。',task_run_changed:'任务已经开始新的执行，请刷新后操作。',task_retry_unavailable:'当前任务尚不能重试，请先核对是否已停止。',task_queue_full:'待处理任务已达上限，请先完成或取消部分任务。',unknown_task:'没有找到这项任务。',task_artifact_missing:'结果文件尚未生成或不可读取。',task_artifact_changed:'结果文件已发生变化，请重新核对后打开。'});
+Object.assign(labels,{invalid_skill_candidate:'经验整理请求不完整，请刷新成果后重试。',skill_candidate_changed:'经验候选已有更新，请刷新后核对。',skill_candidate_source_changed:'经验来源已变化，请重新核对当前成果。',skill_candidate_private_literal:'工作方法中仍包含个人路径或凭据内容，请调整后重新整理。',video_followup_retry:'暂时未能刷新远端进度，后台会继续查询同一个任务。'});
 
 export class WebApi {
   constructor(base=''){this.base=base;}

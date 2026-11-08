@@ -14,8 +14,12 @@ function approvalPreview(record) {
 
 const operationRecords=ops=>[...ops.list('approval'),...ops.list('tool')].sort((a,b)=>b.createdAt-a.createdAt);
 
-export function createControls({ops,requests,tasks,team,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
+export function createControls({ops,requests,tasks,team,skills,memory,health,memoryView,shutdown,desktopOpen,context,documents,events,voice,research,replyStream,browserState=()=>({connected:false}),voiceState=()=>({connected:false})}) {
   return async(path,body)=>{
+    if(path==='/skills')return skills.catalog(body);
+    if(path==='/skill-action')return requests.exclusive(()=>skills.mutate(body));
+    if(path==='/skill-history')return skills.store.history(body.name);
+    if(path==='/skill-candidate')return requests.exclusive(()=>skills.candidate(body));
     if(path==='/team')return team?.view()??null;
     if(path==='/team-member')return requests.exclusive(()=>team.mutate(body));
     if(path==='/team-overview')return team.overview.view(body);

@@ -1,6 +1,6 @@
 /** Per-Run credentials authorize only that Run's runtime routes, never Bot controls. */
 import {createHash,timingSafeEqual} from 'node:crypto';
-const paths=new Set(['/task-runtime/admission','/task-runtime/check','/task-runtime/tool']);
+const paths=new Set(['/task-runtime/admission','/task-runtime/check','/task-runtime/tool','/task-runtime/video']);
 export function createTaskRuntimeBridge({tasks,actors,hostTools,foregroundBusy}){
   function authorize(body,token){
     const task=tasks.row('task',body.taskId),run=tasks.row('run',body.runId);
@@ -21,7 +21,7 @@ export function createTaskRuntimeBridge({tasks,actors,hostTools,foregroundBusy})
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');
       const token=(req.headers.authorization??'').startsWith('Bearer ')?req.headers.authorization.slice(7):'';
       const {task,run}=authorize(body,token);
-      const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(30000)]);
+      const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(req.url==='/task-runtime/video'?180000:30000)]);
       actor=actors?.issue({kind:task.managementReview?'supervisor':'worker',botId:task.assignedBotId,taskId:task.id,runId:run.id,assignmentVersion:run.assignmentVersion,request:{id:run.id,signal}});
       if(actor)actors.check(actor,task.id);
       interval=setInterval(()=>{try{authorize(body,token);if(actor)actors.check(actor,task.id);}catch(error){controller.abort(error);}},100);interval.unref();
@@ -30,6 +30,10 @@ export function createTaskRuntimeBridge({tasks,actors,hostTools,foregroundBusy})
       else if(req.url==='/task-runtime/check'){
         if(task.permission!=='full')throw Error('task_tool_denied');
         result=tasks.createCheck({...body,taskId:task.id,runId:run.id});
+      }
+      else if(req.url==='/task-runtime/video'){
+        if(task.permission!=='full'||!tasks.video)throw Error('task_tool_denied');
+        result=await tasks.video.execute({taskId:task.id,runId:run.id,stepId:body.actionId,name:body.name,args:body.args,signal});
       }
       else{
         if(task.permission!=='full'||!hostTools)throw Error('task_tool_denied');

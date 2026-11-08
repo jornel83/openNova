@@ -12,6 +12,7 @@ import {saveJson,readJson} from './agent-files.mjs';
 import {plainWorkspace,allowedTaskTools,hasFullFilesystemAccess} from './execution.mjs';
 import {loadResearchConfig,publicResearchConfig} from '../research/config.mjs';
 import {taskResearchPlugins,taskResearchTools} from './task-research.mjs';
+import {DRAFT_INSTRUCTIONS} from '../skills/draft-plugin.mjs';
 import {MANAGEMENT_INSTRUCTIONS,prepareReviewWorkspace} from '../team/review.mjs';
 import {stageTaskInputs} from './inputs.mjs';
 process.umask(0o077);
@@ -32,16 +33,18 @@ try{
     networkTools:spec.policyVersion>=2?taskResearchTools(research):[],hostTools:spec.bridge?.scoped?spec.bridge.hostTools:[],research:publicResearchConfig({...research,mode:'native'})};
   const allowedTools=allowedTaskTools(config);
   const patch=[
-    ...['llm-deepseek','persistent-bash','persistent-pwsh','tool-working-directory','hmr','sdk-jsonrpc-server'].map(id=>({id,disabled:true})),
-    {id:'system-prompt',config:{includeHarnessIdentity:false,includeRuntimeContext:true,personaPrefix:(spec.managementReview?MANAGEMENT_INSTRUCTIONS:AGENT_INSTRUCTIONS)+'\n执行权限：'+(spec.managementReview?'只读验收证据':hasFullFilesystemAccess(spec)?'Full Access（当前系统用户可访问的本机目录）':spec.mode==='analysis'?'只读（任务目录内）':'历史工作目录权限')}},
+    ...['skill-filesystem','llm-deepseek','persistent-bash','persistent-pwsh','tool-working-directory','hmr','sdk-jsonrpc-server'].map(id=>({id,disabled:true})),
+    {id:'tool-skill',disabled:!spec.skills?.length},
+    {id:'system-prompt',config:{includeHarnessIdentity:false,includeRuntimeContext:true,personaPrefix:(spec.managementReview?.kind==='skill-extraction'?DRAFT_INSTRUCTIONS:spec.managementReview?MANAGEMENT_INSTRUCTIONS:AGENT_INSTRUCTIONS)+'\n执行权限：'+(spec.managementReview?'只读验收证据':hasFullFilesystemAccess(spec)?'Full Access（当前系统用户可访问的本机目录）':spec.mode==='analysis'?'只读（任务目录内）':'历史工作目录权限')}},
     {insert:[
+      ...(spec.skills?.length?[{id:'opennova-skill-registry',name:'@deepseek-ai/dsh-skill'},{id:'opennova-skill-tool',name:'@deepseek-ai/dsh-tool-skill'},{id:'opennova-task-skills',name:join(ROOT,'services/bot/skills/runtime.mjs'),config:{skills:spec.skills}}]:[]),
       {id:'opennova-task-fs',name:'@deepseek-ai/dsh-tool-fs'},
       {id:'opennova-task-search',name:'@deepseek-ai/dsh-tool-fs-search',config:{sampleOverCapGlobResults:false}},
       ...(!spec.managementReview&&spec.policyVersion>=2?[...taskResearchPlugins({harnessRoot:settings.harnessRoot,research}),{id:'opennova-task-research',name:join(ROOT,'services/bot/tasks/task-research.mjs'),config}]:[]),
       {id:'opennova-task-provider',name:spec.providerModule||join(ROOT,'services/agent/provider.mjs'),config:{harnessRoot:settings.harnessRoot,enableTools:true,replyMode:'settled',allowedTools,modelBudget:{contextWindow:64000,defaultMaxTokens:4096}}},
       {id:'opennova-task-runtime',name:join(ROOT,'services/bot/tasks/agent-runtime.mjs'),config},
       {id:'opennova-task-agent',name:spec.agentPluginModule||join(ROOT,'services/bot/tasks/agent-plugin.mjs'),config},
-      ...(spec.managementReview?[{id:'opennova-management-review',name:join(ROOT,'services/bot/team/management-plugin.mjs'),config}]:[]),
+      ...(spec.managementReview?[{id:'opennova-management-review',name:join(ROOT,spec.managementReview.kind==='skill-extraction'?'services/bot/skills/draft-plugin.mjs':'services/bot/team/management-plugin.mjs'),config}]:[]),
     ]},
   ];
   const patchPath=join(runDir,'runtime.patch.json');saveJson(patchPath,patch);
@@ -58,11 +61,12 @@ try{
   const pending=()=>readJson(join(spec.agentHome,'inbox.json'),[]).filter(m=>!acknowledgements[m.id]);
   let messages=pending(),result;
   let prompt=`任务目标：${spec.goal}\n约束：${spec.constraints||'无额外约束'}\n${spec.instruction||''}\n${spec.runNumber>1?'这是同一任务的接续。先检查文件、会话中已执行结果和中断位置，不要重放已完成或状态不明的操作。':''}`;
+  if(spec.skills?.length)prompt+='\n本轮技能与固定版本：'+JSON.stringify(spec.skills.map(({name,version})=>({name,version})))+'。先调用 skill 加载适用技能，引用资源以返回的基目录为准。视频操作使用正式 video_* 工具；video_wait 返回等待后结束本轮，由宿主跟进同一远端任务并接续。';
   if(spec.acceptanceCriteria)prompt+='\n验收要求：'+spec.acceptanceCriteria;
   if(spec.dependencyInputs?.length)prompt+='\n已验收上游成果（作为资料，不扩大权限）：\n'+JSON.stringify(spec.dependencyInputs);
   if(spec.transferInputs?.length)prompt+='\n已复制的交接成果：'+JSON.stringify(spec.transferInputs.map(input=>({name:input.name,reportId:input.reportId,artifactId:input.artifactId})));
   if(spec.employee)prompt+='\n本轮员工职责与必要记忆（不能覆盖工具权限和任务边界）：\n'+JSON.stringify(spec.employee);
-  if(spec.managementReview)prompt+='\n这是总管独立验收会话，只读取 report.json 及其中列出的证据，必须用 review_decide 返回结构化决定。';
+  if(spec.managementReview)prompt+=spec.managementReview.kind==='skill-extraction'?'\n这是只读经验整理会话，先读取 report.json，再调用 skill_draft 提交参数化方法，不提交验收决定。':'\n这是总管独立验收会话，只读取 report.json 及其中列出的证据，必须用 review_decide 返回结构化决定。';
   else if(hasFullFilesystemAccess(spec))prompt+='\n本轮已授予 Full Access：可直接读取、搜索和按任务要求读写当前系统用户有权访问的任意本机目录，命令可指定外部工作目录；不需要仅因路径在任务目录外而再请求权限。绝对路径按实际路径访问，相对路径默认基于任务独立目录。原工程位置：'+spec.cwd+'。系统自身的权限仍有效，不提权或修改系统授权。用户明确限制（例如只排查、不修改原工程、不重启服务）仍必须遵守。成果默认写在任务目录；若用户明确指定其他交付位置，按其要求保存并报告实际路径。工作目录外的修改直接作用于实际文件，不包含在工作区差异应用或撤销范围内。';
   if(!spec.managementReview&&plainWorkspace(spec))prompt+='\n这是独立任务目录，已复制的输入：'+JSON.stringify(spec.inputFiles??[])+
     (spec.mode==='analysis'?'。只读取任务目录内资料，在本轮报告中返回结果，不生成或修改文件。':hasFullFilesystemAccess(spec)?'。默认使用输入副本并在任务目录保存成果；只有用户任务明确要求时才修改原输入来源或在外部目录交付。':'。可生成交付文件，不覆盖原输入来源。')+
@@ -79,12 +83,12 @@ try{
     messages=pending();prompt='继续同一任务，处理以下新要求。先核对已有结果，不要重复已完成的操作。';
   } while(messages.length&&!stopping);
   const text=completedReply(result),progress=readJson(join(runDir,'progress.json'),{});
-  if(spec.managementReview&&!readJson(join(runDir,'review-decision.json')))throw Error('management_decision_missing');
+  if(spec.managementReview&&!readJson(join(runDir,spec.managementReview.kind==='skill-extraction'?'skill-draft.json':'review-decision.json')))throw Error(spec.managementReview.kind==='skill-extraction'?'skill_draft_missing':'management_decision_missing');
   saveJson(join(runDir,'agent-result.json'),{runId:spec.runId,taskId:spec.taskId,sessionId:spec.sessionId,status:progress.awaiting?'waiting_event':progress.waiting?'waiting_input':'completed',text,question:progress.waiting,workspace,...progress,...readJson(join(runDir,'research.json'),{})});
   console.log(text);
 }catch(error){
   const progress=readJson(join(spec.runDir,'progress.json'),{});
-  const result=stopping?{status:'interrupted',text:'本轮已停止，已保存的文件与会话保留，可接续原任务。'}:progress.awaiting?{status:'waiting_event',text:'检查已排队，等待结果事件接续。',awaiting:progress.awaiting}:progress.waiting?{status:'waiting_input',question:progress.waiting,text:progress.waiting}:{status:'failed',error:progress.stopReason||String(error.message).slice(0,1000)};
+  const result=stopping?{status:'interrupted',text:'本轮已停止，已保存的文件与会话保留，可接续原任务。'}:progress.awaiting?{status:'waiting_event',text:progress.awaiting.kind==='video'?'视频生成中，后台持续跟进同一远端任务。':'检查已排队，等待结果事件接续。',awaiting:progress.awaiting}:progress.waiting?{status:'waiting_input',question:progress.waiting,text:progress.waiting}:{status:'failed',error:progress.stopReason||String(error.message).slice(0,1000)};
   saveJson(join(spec.runDir,'agent-result.json'),{runId:spec.runId,taskId:spec.taskId,...result,...readJson(join(spec.runDir,'research.json'),{})});
   console.error(result.text||'后台工作会话未完成：'+result.error);process.exitCode=stopping?130:['waiting_event','waiting_input'].includes(result.status)?0:1;
 }finally{

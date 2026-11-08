@@ -1,0 +1,214 @@
+diff --git a/engine/bot/README.md b/engine/bot/README.md
+index 14a59eb1b8..d50cb84986 100644
+--- a/engine/bot/README.md
++++ b/engine/bot/README.md
+@@ -68,6 +68,8 @@ Any bot can hand work to another bot with @. That bot does the work on its own,
+ 
+ Settings → **Capabilities** is a shared library of MCP servers, skills and packs. Add a capability to a Bot in its settings; it is available from that Bot's next message in its own chat and group chats. A local MCP command that a Bot adds needs your approval before it can run. While other Bots use a capability, only you or a Main Bot can change or delete it.
+ 
++The bundled OpenNova host can supply a skill's resource directory, version and model/user invocation policy. These fields are preserved when omitted from later updates. Disabling a skill removes its runtime registration while retaining Bot attachments; enabling it restores the registration for subsequent messages. Existing text-only skills keep Harness's default invocation policy.
++
+ ### Usage
+ 
+ In **Settings** → **Usage**, you can see token usage by time, by bot and by model.
+diff --git a/engine/bot/README.zh.md b/engine/bot/README.zh.md
+index b2871ee2e4..bc73c916ad 100644
+--- a/engine/bot/README.zh.md
++++ b/engine/bot/README.zh.md
+@@ -68,6 +68,8 @@ ds bot 拥有群聊功能。群聊是非常好的多 bot 协作方式，但它
+ 
+ 设置 → **能力** 是团队共享的 MCP 服务、技能和能力包列表。在 Bot 设置中启用能力后，从该 Bot 下一条消息开始生效，也适用于它参与的群聊。Bot 添加的本地 MCP 命令需要你先批准才能运行。有其他 Bot 在用的能力，只有你或主 Bot 能修改、删除。
+ 
++内置 OpenNova 宿主可以提供技能的资源目录、版本以及模型／用户调用策略；后续更新未填写这些字段时保留原值。停用技能会移除运行时注册并保留员工绑定，重新启用后从后续消息恢复使用。已有纯文本技能沿用 Harness 的默认调用策略。
++
+ ### 用量
+ 
+ 在 设置 → 用量 里，可以按时间、按 bot、按模型查看 Token 用量。
+diff --git a/engine/bot/ds-bot/src/host/capabilities.js b/engine/bot/ds-bot/src/host/capabilities.js
+index de5f272e0c..9f1dda5f3b 100644
+--- a/engine/bot/ds-bot/src/host/capabilities.js
++++ b/engine/bot/ds-bot/src/host/capabilities.js
+@@ -1,4 +1,5 @@
+ import { createHash } from 'node:crypto'
++import { isAbsolute } from 'node:path'
+ 
+ const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
+ const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+@@ -117,6 +118,27 @@ export function install(rt) {
+       }
+     } else if (kind === 'skill') {
+       item.content = String(body.content ?? '').trim()
++      // Hosts may bind a versioned local bundle; instructions alone lose relative resources.
++      const enabled = body.enabled === undefined ? previous?.enabled : body.enabled
++      if (enabled !== undefined) {
++        if (typeof enabled !== 'boolean') throw new Error('Skill enabled must be a boolean.')
++        item.enabled = enabled
++      }
++      const base = body.resourceBase === undefined ? previous?.resourceBase : body.resourceBase
++      if (base !== undefined) {
++        if (!base || base.kind !== 'directory' || typeof base.path !== 'string' || !isAbsolute(base.path) || base.path.includes('\0')) throw new Error('Skill resources require an absolute directory.')
++        item.resourceBase = { kind: 'directory', path: base.path }
++      }
++      const version = body.skillVersion === undefined ? previous?.skillVersion : body.skillVersion
++      if (version !== undefined) {
++        if (typeof version !== 'string' || !version.trim() || version.length > 128 || version.includes('\0')) throw new Error('Invalid skill version.')
++        item.skillVersion = version
++      }
++      const invocation = body.invocation === undefined ? previous?.invocation : body.invocation
++      if (invocation !== undefined) {
++        if (!invocation || typeof invocation.modelInvocable !== 'boolean' || typeof invocation.userInvocable !== 'boolean') throw new Error('Skill invocation requires modelInvocable and userInvocable booleans.')
++        item.invocation = { modelInvocable: invocation.modelInvocable, userInvocable: invocation.userInvocable }
++      }
+     } else {
+       const names = [...new Set(strings(body.items))]
+       for (const childName of names) {
+@@ -202,6 +224,7 @@ export function install(rt) {
+     const values = [...(sessionStatuses.get(botId)?.get(name)?.values() ?? [])]
+     if (values.some(status => status.state === 'error')) return values.find(status => status.state === 'error')
+     if (values.some(status => status.state === 'needs-approval')) return { state: 'needs-approval' }
++    if (values.some(status => status.state === 'disabled')) return { state: 'disabled' }
+     if (values.some(status => status.state === 'connecting')) return { state: 'connecting' }
+     return values.length > 0 ? { state: 'ready' } : undefined
+   }
+@@ -220,6 +243,7 @@ export function install(rt) {
+         const children = (item.items ?? []).map(child => statusFor(bot.id, child)).filter(Boolean)
+         const status = children.find(status => status.state === 'error')
+           ?? children.find(status => status.state === 'needs-approval')
++          ?? children.find(status => status.state === 'disabled')
+           ?? children.find(status => status.state === 'connecting')
+           ?? children[0]
+         if (status) statuses[name] = status
+@@ -259,7 +283,7 @@ export function install(rt) {
+     return resolved
+   }
+   const configFor = (item, botId) => {
+-    if (item.kind === 'skill') return { name: item.name, description: item.description, content: item.content }
++    if (item.kind === 'skill') return { name: item.name, description: item.description, content: item.content, resourceBase: item.resourceBase, metadata: item.skillVersion ? { version: item.skillVersion } : undefined, invocation: item.invocation }
+     if (item.transport === 'stdio') return { transport: 'stdio', serverName: item.name, command: item.command, args: item.args ?? [], env: resolveValues(item.env, botId), failOnStartupError: true }
+     return { transport: 'streamable-http', serverName: item.name, url: item.url, headers: resolveValues(item.headers, botId), failOnStartupError: true }
+   }
+@@ -273,6 +297,11 @@ export function install(rt) {
+       await disposeMount(agentMounts.get(name))
+       agentMounts.delete(name)
+     }
++    if (item.kind === 'skill' && item.enabled === false) {
++      await drop()
++      statusSet(bot.id, name, sessionId, { state: 'disabled' })
++      return
++    }
+     if (item.kind === 'mcp' && item.transport === 'stdio' && item.approved !== true) {
+       await drop()
+       statusSet(bot.id, name, sessionId, { state: 'needs-approval' })
+@@ -296,7 +325,7 @@ export function install(rt) {
+           name: `ds-bot-capability-skill-${name}`,
+           inject: ['skills'],
+           apply(c) {
+-            c.effect(() => c.skills.register({ name: config.name, description: config.description, source: 'runtime', content: config.content }))
++            c.effect(() => c.skills.register({ ...config, source: 'runtime' }))
+           },
+         }
+         : await loadMcpPlugin()
+diff --git a/engine/bot/ds-bot/test/capabilities.test.js b/engine/bot/ds-bot/test/capabilities.test.js
+index bbcb8ec936..f3b7defcbf 100644
+--- a/engine/bot/ds-bot/test/capabilities.test.js
++++ b/engine/bot/ds-bot/test/capabilities.test.js
+@@ -425,3 +425,99 @@ test('mounts agent-only MCP and skills, remounts changed config, resolves scoped
+   assert.equal(mounts.findLast(mount => mount.sessionId === 'chief' && mount.plugin.inject?.includes('skills')).disposed, true)
+   assert.equal(rt.capabilityStatusesView().chief.team, undefined)
+ })
++
++test('versioned skill resources and invocation policies reach every bound Agent', async t => {
++  const env = await setup()
++  t.after(() => env.dispose())
++  const { rt, mounts, skills } = env
++  const resourceBase = { kind: 'directory', path: join(env.home, 'archived-skill') }
++  const invocation = { modelInvocable: false, userInvocable: true }
++  await rt.capabilitySave({ name: 'guide', kind: 'skill', description: 'Bound guide', content: 'Read references/input.md.', resourceBase, skillVersion: 'version-one', invocation }, { botId: 'chief' })
++  await rt.changeCapabilityAttachment('attach', { name: 'guide' }, 'chief')
++  const chief = testAgent('chief', mounts, skills), room = testAgent('room-chief', mounts, skills)
++  t.after(() => { chief.ctx.dispose(); room.ctx.dispose() })
++  await created(env)({ agent: chief, source: 'startup' })
++  await created(env)({ agent: room, source: 'startup' })
++  for (const sessionId of ['chief', 'room-chief']) {
++    const registered = skills.get(sessionId).get('guide')
++    assert.deepEqual(registered.resourceBase, resourceBase)
++    assert.deepEqual(registered.metadata, { version: 'version-one' })
++    assert.deepEqual(registered.invocation, invocation)
++  }
++  const originalMounts = [...mounts]
++  await rt.capabilitySave({ name: 'guide', kind: 'skill', description: 'Revised guide', content: 'Read references/input.md.', skillVersion: 'version-two', invocation: { modelInvocable: true, userInvocable: false } }, { botId: 'chief' })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.ok(originalMounts.every(mount => mount.disposed))
++  assert.deepEqual(skills.get('chief').get('guide').resourceBase, resourceBase)
++  assert.deepEqual(skills.get('chief').get('guide').metadata, { version: 'version-two' })
++  assert.deepEqual(skills.get('chief').get('guide').invocation, { modelInvocable: true, userInvocable: false })
++})
++
++test('disabled skills remove registrations, retain pack attachments and stay disabled across ordinary edits', async t => {
++  const env = await setup()
++  t.after(() => env.dispose())
++  const { rt, mounts, skills } = env
++  const resourceBase = { kind: 'directory', path: join(env.home, 'guide') }
++  const invocation = { modelInvocable: true, userInvocable: false }
++  const guide = { name: 'guide', kind: 'skill', description: 'Guide', content: 'Do the work.' }
++  await rt.capabilitySave({ ...guide, resourceBase, skillVersion: 'stable', invocation }, { botId: 'chief' })
++  await rt.capabilitySave({ name: 'bundle', kind: 'pack', items: ['guide'] }, { botId: 'chief' })
++  await rt.changeCapabilityAttachment('attach', { name: 'bundle' }, 'chief')
++  const chief = testAgent('chief', mounts, skills)
++  t.after(() => chief.ctx.dispose())
++  await created(env)({ agent: chief, source: 'startup' })
++  assert.equal(skills.get('chief').has('guide'), true)
++  await rt.capabilitySave({ ...guide, enabled: false }, { botId: 'chief' })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.equal(skills.get('chief').has('guide'), false)
++  assert.equal(mounts[0].disposed, true)
++  assert.deepEqual(rt.state.bots.chief.capabilities, ['bundle'])
++  assert.equal(rt.capabilityStatusesView().chief.bundle.state, 'disabled')
++  await rt.capabilitySave({ ...guide, description: 'Metadata edit' }, { botId: 'chief' })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.equal(skills.get('chief').has('guide'), false)
++  assert.equal(rt.state.capabilities.items.guide.enabled, false)
++  assert.deepEqual(rt.state.capabilities.items.guide.resourceBase, resourceBase)
++  assert.equal(rt.state.capabilities.items.guide.skillVersion, 'stable')
++  assert.deepEqual(rt.state.capabilities.items.guide.invocation, invocation)
++  await rt.capabilitySave({ ...guide, enabled: true }, { botId: 'chief' })
++  await rt.scheduleCapabilitiesReconcile()
++  assert.equal(skills.get('chief').has('guide'), true)
++  assert.equal(rt.capabilityStatusesView().chief.bundle.state, 'ready')
++  assert.deepEqual(skills.get('chief').get('guide').invocation, invocation)
++  assert.deepEqual(rt.state.bots.chief.capabilities, ['bundle'])
++})
++
++test('invalid host skill fields reject the update without changing the saved capability', async t => {
++  const env = await setup()
++  t.after(() => env.dispose())
++  const guide = { name: 'guide', kind: 'skill', description: 'Guide', content: 'Instructions', enabled: false }
++  await env.rt.capabilitySave(guide, { botId: 'chief' })
++  const original = structuredClone(env.rt.state.capabilities.items.guide)
++  for (const patch of [
++    { enabled: 'false' }, { enabled: null },
++    { resourceBase: null }, { resourceBase: { kind: 'directory', path: 'relative/path' } },
++    { resourceBase: { kind: 'url', path: '/tmp' } }, { resourceBase: { kind: 'directory', path: '/tmp/\0invalid' } },
++    { skillVersion: '' }, { skillVersion: 1 }, { skillVersion: 'a'.repeat(129) }, { skillVersion: 'x\0y' },
++    { invocation: null }, { invocation: {} }, { invocation: { modelInvocable: false } },
++    { invocation: { modelInvocable: 'false', userInvocable: true } },
++  ]) {
++    await assert.rejects(env.rt.capabilitySave({ ...guide, ...patch }, { botId: 'chief' }), /Skill|skill/)
++    assert.deepEqual(env.rt.state.capabilities.items.guide, original)
++  }
++})
++
++test('legacy text skills do not override Harness invocation defaults', async t => {
++  const env = await setup()
++  t.after(() => env.dispose())
++  await env.rt.capabilitySave({ name: 'guide', kind: 'skill', content: 'Legacy guide.' }, { botId: 'chief' })
++  await env.rt.changeCapabilityAttachment('attach', { name: 'guide' }, 'chief')
++  const chief = testAgent('chief', env.mounts, env.skills)
++  t.after(() => chief.ctx.dispose())
++  await created(env)({ agent: chief, source: 'startup' })
++  const registered = env.skills.get('chief').get('guide')
++  assert.equal(registered.invocation, undefined)
++  assert.equal(registered.resourceBase, undefined)
++  assert.equal(registered.metadata, undefined)
++  assert.equal(env.rt.capabilityStatusesView().chief.guide.state, 'ready')
++})

@@ -1,4 +1,6 @@
 /** Tools and accounting belong exclusively to one background Harness process. */
+import {videoToolDefinitions} from '../skills/video.mjs';
+import {ROOT} from '../../runtime/sources.mjs';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
@@ -33,7 +35,7 @@ export async function apply(ctx,config){
     if(!config.bridge)throw Error('task_host_unavailable');
     const endpoint=config.bridge.scoped?'/task-runtime/'+route:route==='admission'?'/background-task-admission':'/background-task-check';
     const response=await fetch(config.bridge.url+endpoint,{method:'POST',headers:{Authorization:'Bearer '+readFileSync(config.bridge.tokenPath,'utf8').trim(),'Content-Type':'application/json'},
-      body:JSON.stringify({...body,taskId:config.taskId,runId:config.runId,assignmentVersion:config.assignmentVersion}),signal:AbortSignal.any([AbortSignal.timeout(30000),...(signal?[signal]:[])])});
+      body:JSON.stringify({...body,taskId:config.taskId,runId:config.runId,assignmentVersion:config.assignmentVersion}),signal:AbortSignal.any([AbortSignal.timeout(route==='video'?180000:30000),...(signal?[signal]:[])])});
     const result=await response.json();if(!response.ok)throw Error(result.error||'task_host_unavailable');return result;
   };
   const commandTool=async args=>{
@@ -73,6 +75,14 @@ export async function apply(ctx,config){
     }],
   ])ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute:async a=>JSON.stringify(await execute(a))})));
   const allowed=new Set(allowedTaskTools(config));
+  for(const [name,description,parameters] of videoToolDefinitions(config.skills?.find(skill=>skill.name==='video-production')?.archiveRoot??ROOT))if(allowed.has(name))ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,
+    output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},execute:async args=>{
+      const current=local.getStore();if(!current)throw Error('task_step_required');
+      const result=await callHost('video',{name,args,actionId:current.id},current.signal);
+      if(result.waitingForVideo){awaiting={kind:'video',videoRecordId:result.videoRecordId,task_id:result.task_id,output_dir:result.output_dir};progress();toolActivity();}
+      return JSON.stringify(result);
+    },
+  })));
   for(const [name,description,parameters] of hostToolDefinitions())if(allowed.has(name))ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,
     output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute:async args=>{
       const current=local.getStore();if(!current)throw Error('task_step_required');
@@ -94,7 +104,8 @@ export async function apply(ctx,config){
       if(typeof value==='string'){try{value=JSON.parse(value);}catch{}}
       const httpStatus=result.meta?.statusCode??value?.statusCode;
       const httpFailed=exec.name==='web_fetch'&&httpStatus!==undefined&&(httpStatus<200||httpStatus>=300);
-      const status=result.isError||httpFailed?'failed':['task_command',...(config.hostTools??[])].includes(exec.name)?(value?.status==='dispatched'?'completed':value?.status||'failed'):'completed';
+      const videoStatus=exec.name.startsWith('video_')?(value?.status==='unknown'?'interrupted':value?.error||['failed','expired'].includes(value?.status)?'failed':value?.status==='cancelled'?'cancelled':'completed'):null;
+      const status=result.isError||httpFailed?'failed':videoStatus??(['task_command',...(config.hostTools??[])].includes(exec.name)?(value?.status==='dispatched'?'completed':value?.status||'failed'):'completed');
       saveJson(path,{...record,status,finishedAt:Date.now(),exitCode:value?.exitCode,cleanupConfirmed:value?.cleanupConfirmed,
         output:result.content?.filter(b=>b.type==='text').map(b=>b.text).join('\n').slice(-24000),logPath:value?.logPath??record.logPath});
       return result;
