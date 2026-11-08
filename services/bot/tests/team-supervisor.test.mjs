@@ -55,6 +55,25 @@ test('incomplete delivery is reworked once and the new report can be accepted',t
   f.supervisor.tick();assert.equal(f.creates,2,'management reports do not start a review loop');
   f.tasks.put('task',{...f.tasks.row('task',f.base.id),unread:false});f.supervisor.tick();assert.equal(f.tasks.row('task',f.base.id).unread,false,'unchanged acceptance must not renew the unread notification');
 });
+
+test('closure pauses pending review and rejects late decisions or automatic continuation',t=>{
+  const f=fixture(t);f.supervisor.tick();const review=f.decide({action:'request_changes',summary:'late',instruction:'continue'});
+  f.tasks.put('task',{...f.tasks.row('task',f.base.id),closure:{status:'closing'},unread:false});f.supervisor.tick();
+  assert.equal(f.supervisor.get(review.id).status,'paused');assert.equal(f.supervisor.get(review.id).error,'task_closed');
+  assert.equal(f.tasks.row('task',f.base.id).runId,f.base.runId);assert.equal(f.tasks.row('task',f.base.id).unread,false);
+  assert.throws(()=>f.supervisor.apply(review,{action:'request_changes',summary:'late',instruction:'continue'}),/task_closed/);
+  assert.throws(()=>f.supervisor.userDecision({id:f.base.id,runId:f.base.runId,reportId:f.report.id,action:'accept',text:'yes',actionId:'late-user'}),/task_closed/);
+  assert.throws(()=>f.supervisor.configure({id:f.base.id,runId:f.base.runId,paused:false}),/task_closed/);
+  assert.deepEqual(f.supervisor.continuationBudget(f.tasks.row('task',f.base.id)),{reason:'task_closed'});
+  f.tasks.put('task',{...f.tasks.row('task',f.base.id),closure:{status:'closed'}});f.supervisor.tick();assert.equal(f.creates,1);
+});
+
+test('closed acceptance remains historical evidence but cannot authorize new dependencies',t=>{
+  const f=fixture(t);f.supervisor.userDecision({id:f.base.id,runId:f.base.runId,reportId:f.report.id,action:'accept',text:'用户验收',actionId:'accept-before-close'});
+  f.tasks.put('task',{...f.tasks.row('task',f.base.id),closure:{status:'closed'}});
+  assert.equal(f.supervisor.summary(f.tasks.row('task',f.base.id)).reviewStatus,'accepted');
+  assert.equal(f.supervisor.isAccepted(f.report),false);
+});
 test('paused management and cumulative rework/token budgets prevent automatic continuation',t=>{
   const f=fixture(t);f.supervisor.configure({id:f.base.id,runId:f.base.runId,paused:true});f.supervisor.tick();assert.equal(f.creates,0);
   f.supervisor.configure({id:f.base.id,runId:f.base.runId,paused:false,maxReworks:0});f.supervisor.tick();f.decide({action:'request_changes',summary:'不完整',instruction:'补充'});f.supervisor.tick();

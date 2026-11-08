@@ -65,6 +65,41 @@ test('attention binds reviews and watch alerts to the current task Run and assig
   f.tasks.put('task',{...busy,status:'completed'});assert.equal(f.tasks.list({filter:'attention'}).total,3,'unconfirmed cleanup after execution remains actionable');
 });
 
+test('closed history requires its own filter while closing remains visible and holds cleanup slots',t=>{
+  const f=fixture(t);
+  for(const status of ['failed','waiting_input','queued','completed']){
+    const task=f.record('closed-'+status,{status,closure:{status:'closed'},unread:true});f.report(task);
+  }
+  const closing=f.record('closing',{status:'cancelled',closure:{status:'closing'}});
+  f.record('open',{status:'queued'});
+  assert.deepEqual(f.tasks.list().tasks.map(t=>t.id),['open','closing']);
+  const closed=f.tasks.list({filter:'closed',limit:2});assert.equal(closed.total,4);assert.equal(closed.closedCount,4);assert.equal(closed.hasMore,true);assert.equal(closed.unreadCount,0);assert.equal(closed.activeCount,1);
+  assert.deepEqual(f.tasks.list({filter:'attention'}).tasks.map(t=>t.id),['closing']);
+  assert.equal(f.tasks.list({filter:'recent'}).total,0);assert.equal(f.tasks.queries.nextQueued().id,'open');
+  assert.deepEqual(f.tasks.queries.assignmentCandidates().map(t=>t.id),['open']);
+  assert.deepEqual(f.tasks.queries.unfinished().map(t=>t.id),['open']);
+  f.tasks.put('job',{...f.tasks.row('job',closing.runId+'-job'),cleanupConfirmed:false});
+  assert.equal(f.tasks.queries.holdsSlot(),true,'closing work still needs process cleanup');
+  const restored=f.tasks.row('task','closed-failed');delete restored.closure;f.tasks.put('task',restored);
+  assert.equal(f.tasks.list({filter:'closed'}).total,3);assert.equal(f.tasks.list({filter:'attention'}).total,2);
+});
+
+test('closed parent hides nested checks from live lists but preserves exact parent history',t=>{
+  const f=fixture(t),parent=f.record('parent',{status:'failed',closure:{status:'closing'}});
+  f.record('check',{status:'failed',parentTaskId:parent.id});f.record('nested-check',{status:'waiting_input',parentTaskId:'check'});
+  f.record('review-child',{status:'queued',managementReview:{targetTaskId:parent.id}});
+  f.record('review-check',{status:'failed',parentTaskId:'review-child'});
+  assert.equal(f.tasks.list({filter:'attention'}).total,4,'closing cleanup remains visible');
+  f.tasks.put('task',{...parent,closure:{status:'closed'}});
+  assert.equal(f.tasks.list().total,0);assert.equal(f.tasks.list({filter:'attention'}).total,0);
+  assert.deepEqual(f.tasks.list({filter:'closed'}).tasks.map(t=>t.id),['parent'],'closed filter contains direct user closures only');
+  assert.equal(f.tasks.queries.nextQueued(),null);
+  assert.deepEqual(f.tasks.queries.related({parentTaskId:parent.id}).map(t=>t.id),['check']);
+  assert.equal(f.tasks.row('task','check').status,'failed');assert.equal(f.tasks.row('task','check').closure,undefined);
+  const restored={...parent};delete restored.closure;f.tasks.put('task',restored);
+  assert.equal(f.tasks.list({filter:'attention'}).total,4,'restoring the parent restores visibility without rewriting child outcomes');
+});
+
 test('only current Run cleanup holds the queue and obsolete receipts cannot be consumed',t=>{
   const f=fixture(t),old=f.record('old-task');
   f.tasks.put('job',{...f.tasks.row('job',old.runId+'-job'),cleanupConfirmed:false});
@@ -101,6 +136,18 @@ test('review candidate projection handles rollback, same-Run recapture, assignme
   f.tasks.put('task',task);assert.equal(f.tasks.queries.pendingReviews().length,1);
   f.db.exec('DELETE FROM task_review_candidate');f.tasks.queries.initializeReviews();assert.equal(f.tasks.queries.pendingReviews().length,1);
   f.tasks.put('task',{...task,assignmentVersion:2});assert.equal(f.tasks.queries.pendingReviews().length,0,'old report no longer belongs to the current owner');
+});
+
+test('deployed review triggers are replaced and closure-only updates invalidate review candidates',t=>{
+  const f=fixture(t),task=f.record('employee',{management:{enabled:true,paused:false}});f.report(task);
+  f.db.exec('DROP TRIGGER task_review_candidate_task_update; CREATE TRIGGER task_review_candidate_task_update AFTER UPDATE ON background_task BEGIN SELECT 1; END;');
+  f.tasks.queries.initializeReviews();
+  for(const status of ['closing','closed']){
+    f.tasks.put('task',{...task,closure:{status}});
+    assert.equal(f.db.prepare('SELECT count(*) n FROM task_review_candidate').get().n,0,'persisted candidate set observes closure-only changes');
+    assert.deepEqual(f.tasks.queries.pendingReviews(),[]);
+    f.tasks.put('task',task);assert.equal(f.tasks.queries.pendingReviews().length,1);
+  }
 });
 
 test('thousands of accepted tasks do not enter scheduler, assignment or roster materialization',t=>{

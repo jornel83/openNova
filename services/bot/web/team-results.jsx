@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ResearchSources} from './research-sources.jsx';
 import {AssigneeSelect} from './team.jsx';
-import {taskLabels,taskActivityText} from './task-view.mjs';
+import {taskLabels,taskActivityText,taskUnavailable} from './task-view.mjs';
 import {errorText} from './api.mjs';
 import {reviewView,reviewLabels,priorityLabels,localDateValue,canEditDependencies,artifactLabel,employeeTask,dependencyReason} from './team-view.mjs';
 import {budgetInput,budgetMinutesInput,managementExecutionBudget,managementUsageLabel} from './task-budget.mjs';
@@ -29,7 +29,7 @@ function useBoundAction(action){
 }
 
 export function TeamResults({detail,currentRun,action,disabled=false,busy=false}){
-  const view=reviewView(detail,currentRun?.id),{report,review,binding}=view;
+  const view=reviewView(detail,currentRun?.id),{report,review,binding}=view,readOnly=taskUnavailable(detail.task);
   const [text,setText]=useState(''),send=useBoundAction(action);
   useEffect(()=>setText(''),[report?.id]);
   if(!report)return null;
@@ -38,13 +38,13 @@ export function TeamResults({detail,currentRun,action,disabled=false,busy=false}
   return <section className="team-results" aria-label="成果与验收">
     <div className="task-heading"><h3>成果与验收</h3><span>第 {report.version} 版</span></div>
     <div className="team-result-states"><span>执行：{taskLabels[report.status]||report.status}</span><span>验收：{reviewLabels[review?.status]||'待查看'}</span></div>
-    {view.latest&&review?.activity&&taskActivityText(review)&&<p className="subtle" aria-label="总管活动">总管：{taskActivityText(review)}</p>}
+    {!readOnly&&view.latest&&review?.activity&&taskActivityText(review)&&<p className="subtle" aria-label="总管活动">总管：{taskActivityText(review)}</p>}
     <p className="subtle">{employeeTask(detail.task)?'员工交付，按验收标准检查。':'总管亲自执行，由你查看成果。'}{report.delivery==='delivered'?' 汇报已送达管理记录。':''}</p>
-    {!view.latest&&<p className="team-callout">这是历史成果，仅供查看。请切换到最新执行记录后处理。</p>}
-    {view.latest&&view.evidenceChanged&&<p className="team-callout">当前文件或成果快照已有变化，或快照未完整保存。请核对后接续任务，形成新的成果再验收。</p>}
-    {view.verificationFailed&&<p className="team-callout">命令或检查没有全部成功，本版暂不能验收。请查看退出码和日志后决定是否返工。</p>}
+    {!view.latest&&<p className="team-callout">这是历史成果，仅供查看。{!readOnly&&'请切换到最新执行记录后处理。'}</p>}
+    {view.latest&&view.evidenceChanged&&<p className="team-callout">当前文件或成果快照已有变化，或快照未完整保存。{!readOnly&&'请核对后接续任务，形成新的成果再验收。'}</p>}
+    {view.verificationFailed&&<p className="team-callout">命令或检查没有全部成功，本版暂不能验收。{!readOnly&&'请查看退出码和日志后决定是否返工。'}</p>}
     <p className="team-result-summary">{report.summary||'尚无文字摘要，请查看执行证据。'}</p>
-    {report.question&&<p className="task-question">需要补充：{report.question}</p>}
+    {report.question&&<p className="task-question">{readOnly?'本轮问题：':'需要补充：'}{report.question}</p>}
     {detail.task.acceptanceCriteria&&<details className="task-command"><summary>验收标准</summary><p>{detail.task.acceptanceCriteria}</p></details>}
     <h4>交付文件</h4>
     {report.artifacts?.length?<ul className="task-artifacts team-result-files">{report.artifacts.map(file=><li key={file.id}><div><span>{file.name}</span>{file.sourceStatus==='changed'&&<small>工作目录原件已有新修改，此处为本版成果快照。</small>}{file.sourceStatus==='missing'&&<small>工作目录原件已移除，此处为本版成果快照。</small>}</div><button type="button" disabled={disabled||busy||file.status!=='available'} onClick={()=>void send('tasks/report-artifact',{id:detail.task.id,reportId:report.id,artifactId:file.id})}>{file.status==='available'?'打开成果':artifactLabel(file)}</button></li>)}</ul>:<p className="subtle">此版没有文件成果，可查看摘要与参考来源。</p>}
@@ -58,7 +58,7 @@ export function TeamResults({detail,currentRun,action,disabled=false,busy=false}
       {!commands.length&&!checks.length&&<p className="subtle">本版没有命令或测试记录；完成摘要不代表测试已通过。</p>}
     </details>
     {review?.decision?.summary&&<p className="team-callout">处理意见：{review.decision.summary}</p>}
-    {view.latest&&<div className="team-review-actions"><label>回答问题或说明返工要求<textarea rows={3} maxLength={4000} value={text} onChange={e=>setText(e.target.value)} placeholder="说明缺少什么、需要调整什么，或回答总管的问题"/></label>
+    {!readOnly&&view.latest&&<div className="team-review-actions"><label>回答问题或说明返工要求<textarea rows={3} maxLength={4000} value={text} onChange={e=>setText(e.target.value)} placeholder="说明缺少什么、需要调整什么，或回答总管的问题"/></label>
       <div className="task-actions"><button type="button" disabled={disabled||!view.canAccept} onClick={()=>void decide('accept')}>验收通过</button><button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('request_changes')}>要求返工</button>{report.status==='waiting_input'&&<button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('answer')}>提交回答</button>}<button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('needs_user')}>留待我处理</button></div>
       <p className="subtle">打开文件、验收成果和应用代码是独立操作。验收通过不会自动合入原工程。</p>
     </div>}
@@ -67,7 +67,7 @@ export function TeamResults({detail,currentRun,action,disabled=false,busy=false}
 }
 
 export function TaskCoordination({detail,team,tasks=[],action,disabled=false}){
-  const {task}=detail,management=detail.teamReview?.management??task.management;
+  const {task}=detail,management=detail.teamReview?.management??task.management,readOnly=taskUnavailable(task);
   const [maxReworks,setMaxReworks]=useState(management?.maxReworks??2),[assignee,setAssignee]=useState(task.assignedBotId??''),[handoff,setHandoff]=useState('');
   const [tokenBudget,setTokenBudget]=useState(budgetInput(management?.tokenBudget)),[budgetMinutes,setBudgetMinutes]=useState(budgetMinutesInput(management?.timeBudgetMs));
   const [schedule,setSchedule]=useState({dependsOn:task.dependsOn??[],priority:task.priority??'normal',dueAt:localDateValue(task.dueAt)});
@@ -78,12 +78,12 @@ export function TaskCoordination({detail,team,tasks=[],action,disabled=false}){
   const dependencies=(task.dependsOn??[]).map(id=>tasks.find(t=>t.id===id)??{id,title:id});
   return <section className="task-coordination" aria-label="任务安排">
     {management&&employeeTask(task)&&<details className="task-management" open><summary>总管跟进</summary>
-      <label className="task-check"><input type="checkbox" checked={!!management.enabled} disabled={disabled} onChange={e=>void send('tasks/management',{...bound,enabled:e.target.checked})}/>启用成果检查与跟进</label>
+      {!readOnly&&<label className="task-check"><input type="checkbox" checked={!!management.enabled} disabled={disabled} onChange={e=>void send('tasks/management',{...bound,enabled:e.target.checked})}/>启用成果检查与跟进</label>}
       <p className="subtle">已自动返工 {management.usedReworks??0} / {management.maxReworks??2} 次 · {managementUsageLabel(management)}</p>
-      <label>最多自动返工次数<input type="number" min={0} max={5} value={maxReworks} onChange={e=>setMaxReworks(Number(e.target.value))}/></label>
+      {!readOnly&&<><label>最多自动返工次数<input type="number" min={0} max={5} value={maxReworks} onChange={e=>setMaxReworks(Number(e.target.value))}/></label>
       <details><summary>累计执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><label>累计 Token 上限<input type="number" min={1000} max={3000000} placeholder="不限制" value={tokenBudget} onChange={e=>setTokenBudget(e.target.value)}/></label><label>累计运行时间（分钟）<input type="number" min={1/60} max={480} step="any" placeholder="不限制" value={budgetMinutes} onChange={e=>setBudgetMinutes(e.target.value)}/></label><p className="subtle">员工执行与总管检查共用累计预算。留空表示不限制；填写上限后，达到上限会停止自动跟进，等待你处理。修改用于后续轮次，当前执行保留本轮预算。</p></details>
-      <div className="task-actions"><button type="button" disabled={disabled||!validBudgets} onClick={()=>void send('tasks/management',{...bound,maxReworks,...budget})}>保存跟进设置</button>{management.enabled&&<button type="button" disabled={disabled} onClick={()=>void send('tasks/management',{...bound,paused:!management.paused})}>{management.paused?'恢复总管跟进':'暂停总管跟进'}</button>}</div>
-      {management.paused&&<p className="team-callout">总管跟进已暂停。恢复后会按当前成果和预算继续检查。</p>}
+      <div className="task-actions"><button type="button" disabled={disabled||!validBudgets} onClick={()=>void send('tasks/management',{...bound,maxReworks,...budget})}>保存跟进设置</button>{management.enabled&&<button type="button" disabled={disabled} onClick={()=>void send('tasks/management',{...bound,paused:!management.paused})}>{management.paused?'恢复总管跟进':'暂停总管跟进'}</button>}</div></>}
+      {management.paused&&<p className="team-callout">总管跟进已暂停。{!readOnly&&'恢复后会按当前成果和预算继续检查。'}</p>}
     </details>}
     <details className="task-command"><summary>优先级与依赖</summary><p>优先级：{priorityLabels[task.priority]||'普通'}{task.dueAt?` · 截止 ${new Date(task.dueAt).toLocaleString('zh-CN')}`:''}</p>
       {!!dependencies.length&&<ul>{dependencies.map(t=><li key={t.id}>{t.title}</li>)}</ul>}
@@ -91,7 +91,7 @@ export function TaskCoordination({detail,team,tasks=[],action,disabled=false}){
       {!!task.inputsStale?.length&&<p className="team-callout">前置成果有更新，请核对后重新安排任务。</p>}
       {canEditDependencies(detail)&&<><TaskPlanningFields value={schedule} tasks={tasks} taskId={task.id} disabled={disabled} onChange={patch=>setSchedule({...schedule,...patch})}/><button type="button" disabled={disabled} onClick={()=>void send('tasks/dependencies',{...bound,...schedule,dueAt:schedule.dueAt?new Date(schedule.dueAt).getTime():null})}>保存任务安排</button></>}
     </details>
-    {team&&task.kind==='agent'&&<details className="task-handoff"><summary>交接给其他员工</summary><AssigneeSelect team={team} value={selected} onChange={setAssignee}/><label>交接说明<textarea rows={3} maxLength={4000} value={handoff} onChange={e=>setHandoff(e.target.value)} placeholder="交代当前进度、需要保留的成果和下一步要求"/></label>
+    {!readOnly&&team&&task.kind==='agent'&&<details className="task-handoff"><summary>交接给其他员工</summary><AssigneeSelect team={team} value={selected} onChange={setAssignee}/><label>交接说明<textarea rows={3} maxLength={4000} value={handoff} onChange={e=>setHandoff(e.target.value)} placeholder="交代当前进度、需要保留的成果和下一步要求"/></label>
       <button type="button" disabled={disabled||task.kind!=='agent'||!target||target===task.assignedBotId||!handoff.trim()||task.handoff?.status==='stopping'} onClick={()=>void send('tasks/reassign',{...bound,assignmentVersion:task.assignmentVersion,assignedBotId:target,summary:handoff.trim(),...(detail.teamReview?.current?.runId===task.runId?{reportId:detail.teamReview.current.id}:{})})}>提交交接</button>
       {task.handoff&&<p className="subtle">{task.handoff.status==='stopping'?'正在停止原作业并准备交接。':'交接记录已保存。'}</p>}
     </details>}

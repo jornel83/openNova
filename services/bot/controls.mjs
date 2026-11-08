@@ -26,6 +26,8 @@ export function createControls({ops,requests,tasks,team,memory,health,memoryView
     if(path==='/background-task')return tasks.detail(body.id);
     if(path==='/background-task-start')return tasks.create(body,{source:'web'});
     if(path==='/background-task-cancel')return tasks.cancel(body.id,body.runId);
+    if(path==='/background-task-close')return tasks.closeTask(body);
+    if(path==='/background-task-reopen')return tasks.reopenTask(body);
     if(path==='/background-task-retry')return tasks.retry(body);
     if(path==='/background-task-read')return tasks.read(body);
     if(path==='/background-task-log')return tasks.log(body);

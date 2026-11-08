@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {errorText} from './api.mjs';
-import {taskLabels} from './task-view.mjs';
+import {taskLabels,taskClosureLabel} from './task-view.mjs';
 import {reviewLabels} from './team-view.mjs';
 import {attentionText,memberStatusLabels,watchTypeLabels,watchPolicyDraft,watchPolicyBody,watchError} from './team-overview-view.mjs';
 
@@ -9,7 +9,7 @@ function OverviewGroup({name,count=0,tasks=[],kind,onSelect,onFilter}){
     <div className="task-heading"><h3>{name} <span className="team-count">{count}</span></h3>{count>tasks.length&&onFilter&&<button type="button" onClick={onFilter}>查看全部</button>}</div>
     <div className="team-overview-rows">{tasks.map(task=><button key={task.id} type="button" className="team-overview-row" onClick={()=>onSelect(task.id)}>
       <strong>{task.title}</strong>
-      <span>{task.ownerName||'总管'} · {taskLabels[task.status]||task.status}{task.reviewStatus?' · '+(reviewLabels[task.reviewStatus]||task.reviewStatus):''}</span>
+      <span>{task.ownerName||'总管'} · {taskClosureLabel(task)&&taskClosureLabel(task)+' · '}{taskLabels[task.status]||task.status}{task.reviewStatus?' · '+(reviewLabels[task.reviewStatus]||task.reviewStatus):''}</span>
       {kind==='attention'&&<small>{attentionText(task)}</small>}
       {kind==='recent'&&task.resultSummary&&<small className="team-result-excerpt">{task.resultSummary}</small>}
       {kind==='recent'&&!!task.artifactNames?.length&&<small className="team-result-files">交付：{task.artifactNames.join('、')}</small>}
@@ -61,7 +61,7 @@ export function TeamWatch({api,watch,disabled,onRefresh,onSelect,owner='all'}){
   }
   const change=(key,value)=>setDraft(current=>({...current,[key]:value}));
   return <details className="team-watch"><summary>总管值守 · {watch.policy.enabled?'已开启':'已关闭'}{watch.unacknowledged>0?` · ${watch.unacknowledged} 条待知晓`:''}</summary>
-    <p className="subtle">提醒即将到期、逾期、等待较久或一段时间没有进展的任务。长期无进度只会提醒，由你决定是否接续或取消。</p>
+    <p className="subtle">提醒即将到期、逾期、等待较久或一段时间没有进展的任务。长期无进度只会提醒，由你决定是否接续或关闭。</p>
     {watch.problem&&<p className="error" role="alert">值守检查暂时不可用，请检查服务日志。任务记录仍可查看。</p>}
     {error&&<p className="error" role="alert">{error}</p>}{notice&&<p className="task-intro" role="status">{notice}</p>}
     <WatchAlerts alerts={alerts} total={view.total} pending={pending} disabled={disabled} onAcknowledge={acknowledge} onSelect={onSelect}/>

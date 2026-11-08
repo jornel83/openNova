@@ -1,5 +1,6 @@
 /** Full-population counts; only the displayed rows materialize report evidence. */
 import {currentWatchAlertSql} from './watch.mjs';
+import {closedAncestorSql} from '../tasks/closure-visibility.mjs';
 const active="('queued','blocked','running','pausing','cancelling')";
 const attentionReviews="('needs_user','budget_exhausted','failed','paused','stale')";
 const recent="reportId IS NOT NULL AND status IN ('completed','failed','waiting_input','interrupted','cancelled') AND max(finishedAt,reviewedAt)>=:since";
@@ -21,7 +22,8 @@ export class TeamOverview {
       WHERE ${currentWatchAlertSql('t','a',':now')} AND json_extract(a.body,'$.acknowledgedAt') IS NULL
     ), base AS (
       SELECT t.id,t.body,t.rowid seq,coalesce(json_extract(t.body,'$.assignedBotId'),:chief) ownerId,
-        json_extract(t.body,'$.status') status,json_extract(t.body,'$.runId') runId,
+        json_extract(t.body,'$.status') status,json_extract(t.body,'$.runId') runId,json_extract(t.body,'$.closure.status') closureStatus,
+        ${closedAncestorSql()} hiddenByClosedParent,
         coalesce(json_extract(t.body,'$.assignmentVersion'),1) assignmentVersion,
         coalesce(json_extract(r.body,'$.finishedAt'),0) finishedAt,
         json_extract(j.body,'$.cleanupConfirmed') cleanupConfirmed,
@@ -41,22 +43,23 @@ export class TeamOverview {
       WHERE json_extract(t.body,'$.managementReview') IS NULL
     ), population AS (
       SELECT b.*,status IN ${active} isActive,
-        (status IN ('failed','interrupted','waiting_input') OR (cleanupConfirmed=0 AND status NOT IN ('running','pausing','cancelling'))
+        (coalesce(closureStatus='closing',0) OR status IN ('failed','interrupted','waiting_input') OR (cleanupConfirmed=0 AND status NOT IN ('running','pausing','cancelling'))
           OR coalesce(reviewStatus IN ${attentionReviews},0) OR EXISTS(SELECT 1 FROM alerts a WHERE ${watchMatch})) needsAttention
-      FROM base b WHERE (:owner IS NULL OR ownerId=:owner)
+      FROM base b WHERE (:owner IS NULL OR ownerId=:owner) AND coalesce(closureStatus,'')<>'closed' AND NOT hiddenByClosedParent
     )`;
     const select=(sql,bindings=args)=>{const stmt=this.db.prepare(cte+sql);stmt.setAllowUnknownNamedParameters(true);return stmt.all(bindings);};
     const aggregate=`count(*) total,coalesce(sum(isActive),0) active,coalesce(sum(needsAttention),0) attention,
       coalesce(sum(status='completed' AND finishedAt>=:since),0) completed,
       coalesce(sum(reviewStatus='accepted' AND reviewedAt>=:since),0) accepted,
       coalesce(sum(${recent}),0) recent`;
-    const counts={...select(` SELECT ${aggregate} FROM population`)[0]};
+    const counts={...select(` SELECT ${aggregate},(SELECT count(*) FROM base WHERE closureStatus='closed' AND (:owner IS NULL OR ownerId=:owner)) closed FROM population`)[0]};
     const byOwner=new Map(select(` SELECT ownerId,${aggregate} FROM population GROUP BY ownerId`).map(row=>[row.ownerId,row]));
     const rows=(where,order)=>select(` SELECT * FROM population WHERE ${where} ORDER BY ${order} LIMIT :limit`);
     const cache=new Map();
     const summary=row=>{
       if(cache.has(row.id))return cache.get(row.id);
       const task=JSON.parse(row.body),value=this.tasks.summary(task),reasons=[];
+      if(task.closure?.status==='closing')reasons.push('正在关闭任务，等待执行进程与关联任务清理完成');
       if(task.status==='waiting_input')reasons.push(value.question||'等待你的补充');
       if(task.status==='failed'||task.status==='interrupted')reasons.push(value.error||'执行'+(task.status==='failed'?'失败':'中断'));
       if(value.cleanupConfirmed===false&&!['running','pausing','cancelling'].includes(task.status))reasons.push('正在确认执行进程已清理');
@@ -79,7 +82,7 @@ export class TeamOverview {
       attention:rows('needsAttention','seq DESC').map(summary),
       recent:rows(recent,'max(finishedAt,reviewedAt) DESC,seq DESC').map(summary),
       watch:this.watch.view({ownerId,limit}),
-      scope:'当前任务与当前执行轮；内部验收任务不计入员工工作。进行中、待处理为当前状态；完成和验收记录按所选时间统计。',
+      scope:'当前未关闭任务与当前执行轮；内部验收任务不计入员工工作。进行中、待处理为当前状态；完成和验收记录按所选时间统计。直接关闭的任务历史另计，不包含在当前任务总数中；关联检查记录随已关闭父任务的详情查看。',
     };
   }
 }

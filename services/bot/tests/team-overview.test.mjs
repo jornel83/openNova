@@ -35,13 +35,29 @@ test('overview counts the full population beyond the task page and bounds eviden
   f.seed('busy','running');f.put('background_job',{id:'job-busy',cleanupConfirmed:false});
   f.seed('question','waiting_input');f.seed('failed','failed');
   const v=f.overview.view({limit:3});
-  assert.deepEqual(v.counts,{total:124,active:2,attention:2,completed:120,accepted:120,recent:120});
+  assert.deepEqual(v.counts,{total:124,active:2,attention:2,completed:120,accepted:120,recent:120,closed:0});
   assert.equal(v.recent.length,3);assert.equal(v.members.find(m=>m.id==='chief').activeCount,1);
   assert.equal(v.attention.some(t=>t.id==='busy'),false,'ordinary running cleanup=false is not a cleanup failure');
   assert.ok(f.reads<=7,'only visible cards materialize report evidence');
-  assert.deepEqual(f.overview.view({ownerId:'chief'}).counts,{total:1,active:1,attention:0,completed:0,accepted:0,recent:0});
+  assert.deepEqual(f.overview.view({ownerId:'chief'}).counts,{total:1,active:1,attention:0,completed:0,accepted:0,recent:0,closed:0});
   assert.equal(f.overview.view({ownerId:'writer'}).counts.total,123);
   assert.equal(f.overview.view({ownerId:'missing'}).counts.total,0);
+});
+
+test('closed history is separate from active totals and closing cleanup remains actionable',t=>{
+  const f=fixture(t);f.report(f.seed('accepted-history','completed',{closure:{status:'closed'}}));
+  f.seed('failed-history','failed',{closure:{status:'closed'},assignedBotId:'chief'});
+  f.seed('question-history','waiting_input',{closure:{status:'closed'}});
+  f.seed('failed-check-history','failed',{parentTaskId:'accepted-history'});
+  f.seed('nested-check-history','failed',{parentTaskId:'failed-check-history'});
+  f.seed('closing','cancelled',{closure:{status:'closing'}});f.seed('open','queued');
+  const result=f.overview.view();
+  assert.deepEqual(result.counts,{total:2,active:1,attention:1,completed:0,accepted:0,recent:0,closed:3});
+  assert.deepEqual(result.attention.map(t=>t.id),['closing']);assert.match(result.attention[0].reasons.join(' '),/正在关闭/);
+  assert.deepEqual(result.active.map(t=>t.id),['open']);assert.deepEqual(result.recent,[]);
+  assert.equal(f.overview.view({ownerId:'writer'}).counts.closed,2);
+  assert.equal(result.members.find(m=>m.id==='writer').totalCount,2);
+  assert.match(result.scope,/直接关闭的任务历史另计/);
 });
 
 test('latest report, Run and assignment binding prevent stale acceptance; today uses local midnight',t=>{

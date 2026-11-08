@@ -4,7 +4,7 @@ import {EventRules} from './event-rules.jsx';
 import {ResearchSources} from './research-sources.jsx';
 import {TaskPlanningFields} from './team-results.jsx';
 import {errorText} from './api.mjs';
-import {activeTask,taskLabels,appendTaskLog} from './task-view.mjs';
+import {activeTask,taskLabels,appendTaskLog,taskUnavailable} from './task-view.mjs';
 import {agentExecutionBudget,executionBudgetLabel} from './task-budget.mjs';
 const fresh={assignedBotId:'',workspaceMode:'general',inputs:'',title:'',goal:'',constraints:'',acceptanceCriteria:'',permission:'full',minutes:'',maxSteps:'',tokenBudget:'',autoContinue:0,managementEnabled:null,maxReworks:2,dependsOn:[],priority:'normal',dueAt:''};
 export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
@@ -40,6 +40,7 @@ export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
 const deliveryLabels={pending:'待处理',sending:'正在提交',delivered:'已接收',unknown:'接收情况待核对'};
 export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSelect}){
   const {task}=detail,[text,setText]=useState(''),[diff,setDiff]=useState(null),[applied,setApplied]=useState(false);
+  const unavailable=taskUnavailable(task);
   const readonly=(task.permission??(task.mode==='analysis'?'read-only':'full'))==='read-only';
   const codeWorkspace=!task.workspaceMode||task.workspaceMode==='code';
   const permissionLabel=readonly?'只读':task.policyVersion>=2?'完整执行':'可写（历史权限）';
@@ -56,19 +57,19 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
     {!readonly&&!(task.policyVersion>=2)&&<p className="subtle">此任务保留创建时的工具权限。新建任务可使用通用执行能力。</p>}
     <details className="task-command" open><summary>目标与约束</summary><p>{task.goal}</p>{task.constraints&&<p>{task.constraints}</p>}</details>
     {currentRun?.instruction&&<p className="task-intro">本轮接续要求：{currentRun.instruction}</p>}
-    {task.question&&<p className="task-question" role="status">需要补充信息：{task.question}</p>}
-    <div className="task-actions">{(activeTask(task)||task.status==='waiting_event')&&!['cancelling','pausing'].includes(task.status)&&<button disabled={disabled} onClick={()=>void dispatch('background-task-pause')}>暂停任务</button>}</div>
+    {task.question&&<p className="task-question" role="status">{unavailable?'本轮问题：':'需要补充信息：'}{task.question}</p>}
+    {!unavailable&&<><div className="task-actions">{(activeTask(task)||task.status==='waiting_event')&&!['cancelling','pausing'].includes(task.status)&&<button disabled={disabled} onClick={()=>void dispatch('background-task-pause')}>暂停任务</button>}</div>
     <label>补充要求或接续说明<textarea rows={3} maxLength={4000} value={text} onChange={e=>setText(e.target.value)} placeholder="例如：保留原接口，并补充测试"/></label>
     <p className="subtle">补充要求在当前轮次结束后处理。任务已停止时，请点击“接续任务”；需要立即停下请先暂停。</p>
-    <div className="task-actions"><button disabled={disabled||!text.trim()} onClick={()=>void send('background-task-message')}>保存补充要求</button>{task.canContinue&&<button disabled={disabled} onClick={()=>void send('background-task-continue')}>接续任务</button>}</div>
+    <div className="task-actions"><button disabled={disabled||!text.trim()} onClick={()=>void send('background-task-message')}>保存补充要求</button>{task.canContinue&&<button disabled={disabled} onClick={()=>void send('background-task-continue')}>接续任务</button>}</div></>}
     {!!detail.messages?.length&&<details className="task-command"><summary>补充记录（{detail.messages.length}）</summary>{detail.messages.map(m=><p key={m.id}><strong>{deliveryLabels[m.delivery.status]||m.delivery.status}</strong> · {m.text}</p>)}</details>}
     {currentRun?.progress&&<p className="subtle">本轮：{currentRun.progress.steps} 个模型步骤 · {currentRun.progress.toolCalls} 次工具调用 · {currentRun.progress.estimatedTokens?'约 ':''}{currentRun.progress.totalTokens||'暂未报告'} Token{currentRun.progress.estimatedTokens?'（估算）':''}</p>}
-    {(task.policyVersion>=2||task.workspaceMode!=='documents')&&<EventRules detail={detail} currentRun={currentRun} action={action} disabled={disabled} onSelect={onSelect}/>}
+    {(task.policyVersion>=2||task.workspaceMode!=='documents')&&<EventRules detail={detail} currentRun={currentRun} action={action} disabled={disabled} readOnly={unavailable} onSelect={onSelect}/>}
     <h4>执行步骤</h4>
     {currentRun?.jobs?.length?<ol className="agent-steps">{currentRun.jobs.map(j=><AgentStep key={j.id} api={api} taskId={task.id} runId={currentRun.id} job={j}/>)}</ol>:<p className="subtle">尚无工具执行记录。</p>}
     {!hasReport&&currentRun?.result&&<><h4>本轮报告</h4><pre className="task-report">{currentRun.result.text||errorText({message:currentRun.result.error})}</pre></>}
     {!hasReport&&<ResearchSources sources={currentRun?.result?.sources??[]}/>}
-    {!readonly&&codeWorkspace&&<><h4>文件修改</h4><p className="subtle">显示当前工作目录的待应用修改。先查看差异，再应用到原工程；原文件已变化时会停止，不会自动提交 Git。</p><div className="task-actions"><button disabled={disabled||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-diff');if(value){setDiff(value);setApplied(false);}}}>查看文件差异</button>{diff&&!diff.empty&&!applied&&<button disabled={disabled||busy||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-apply',{revision:diff.revision});if(value?.application?.status==='applied')setApplied(true);}}>应用到原工程</button>}</div>
+    {!readonly&&codeWorkspace&&<><h4>文件修改</h4><p className="subtle">显示当前工作目录的待应用修改。{!unavailable&&'先查看差异，再应用到原工程；原文件已变化时会停止，不会自动提交 Git。'}</p>{!unavailable&&<div className="task-actions"><button disabled={disabled||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-diff');if(value){setDiff(value);setApplied(false);}}}>查看文件差异</button>{diff&&!diff.empty&&!applied&&<button disabled={disabled||busy||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-apply',{revision:diff.revision});if(value?.application?.status==='applied')setApplied(true);}}>应用到原工程</button>}</div>}
       {applied&&<p className="task-intro" role="status">已应用到原工程。</p>}{diff&&<><p className="subtle">{diff.empty?'没有待应用的修改。':`${diff.files.length} 个文件：${diff.files.join('、')}`}</p>{!diff.empty&&<pre className="task-log" aria-label="文件差异">{diff.patch}</pre>}</>}
       {!!detail.applications?.length&&<details className="task-command"><summary>应用记录</summary>{detail.applications.map(a=><p key={a.actionId}>{a.status==='applied'?'已应用':'应用结果待核对，请检查原文件'} · {new Date(a.createdAt).toLocaleString()}</p>)}</details>}
     </>}

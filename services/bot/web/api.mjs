@@ -8,6 +8,8 @@ Object.assign(labels,{timeout:'本次检索超时，已保留取得的资料。'
 Object.assign(labels,{network_error:'无法连接 ChatGPT，请检查当前网络或代理后重试。',connection_error:'无法连接 ChatGPT，请检查当前网络或代理后重试。',stream_interrupted:'ChatGPT 连接在回复完成前中断，请稍后重试。',incomplete_agent_turn:'本轮模型回复未完整完成，请重试；已执行的操作可在记录中查看。'});
 Object.assign(labels,{title_only:'页面只有标题，没有可用正文。',encoding_error:'来源编码异常，未作为有效证据。',invalid_json:'接口响应不是有效 JSON。',http_failed:'脚本中的取数未完成，请查看 HTTP 记录。',script_failed:'研究脚本未成功完成。',input_artifact_changed:'输入文件已变化，请重新核对。'});
 export const errorText=error=>error?.diagnostic?diagnosticText(error.diagnostic):(labels[error?.code]||labels[error?.message]||'操作未完成：'+(error?.message||'请检查 Bot 服务后重试。'));
+Object.assign(labels,{invalid_task_closure:'任务关闭信息不完整，请刷新后重试。',task_closed:'任务正在关闭或已关闭；请先恢复到任务列表，再决定是否执行。',task_reopen_unavailable:'任务尚未完成关闭，请等待清理完成后再恢复。',task_assignment_changed:'任务负责人已变化，请刷新后核对。'});
+Object.assign(labels,{task_dependency_closed:'前置任务已关闭，请先恢复该任务，或重新选择前置成果。',event_source_closed:'事件来源任务已关闭，请选择仍开放的来源。'});
 Object.assign(labels,{invalid_team_overview:'团队查询条件无效，请刷新后重试。',invalid_watch_page:'值守提醒查询条件无效。',invalid_watch_policy:'值守设置无效；时间须为 0（停用）或 1 秒至 7 天。',watch_policy_changed:'值守设置已被更新，请刷新后重新修改。',watch_action_conflict:'这次操作编号已被使用，请刷新后重新操作。',watch_alert_stale:'提醒对应的任务或执行轮已变化，请查看最新状态。',unknown_watch_alert:'未找到这条值守提醒，请刷新。',invalid_watch_ack:'提醒信息不完整，请刷新后重试。'});
 // browserHandler rejects these credentials before dispatching any operation. A
 // different tab may already have refreshed the shared cookie after a restart,

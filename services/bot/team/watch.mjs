@@ -1,5 +1,7 @@
 /** Persistent, deterministic follow-up. Observation never restarts or stops work. */
 import {createHash} from 'node:crypto';
+import {taskIsClosed} from '../tasks/closure.mjs';
+import {closedAncestorSql,hasClosedAncestor} from '../tasks/closure-visibility.mjs';
 
 export const WATCH_DEFAULTS={enabled:true,dueSoonMs:3600000,blockedMs:1800000,inactiveMs:1800000,raiseQueuedPriority:false};
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
@@ -18,7 +20,7 @@ export function currentWatchAlertSql(taskAlias='t',alertAlias='a',nowSql="CAST(u
   const task=key=>`json_extract(${taskAlias}.body,'$.${key}')`,alert=key=>`json_extract(${alertAlias}.body,'$.${key}')`;
   return `(${alert('taskId')}=${taskAlias}.id AND ${alert('runId')}=${task('runId')}
     AND coalesce(${alert('assignmentVersion')},1)=coalesce(${task('assignmentVersion')},1)
-    AND ${alert('status')}='active' AND ${task('managementReview')} IS NULL
+    AND ${alert('status')}='active' AND ${task('managementReview')} IS NULL AND ${task('closure')} IS NULL AND NOT ${closedAncestorSql(taskAlias)}
     AND ${task('status')} IN ('queued','running','blocked','waiting_input','waiting_event')
     AND CASE ${alert('type')}
       WHEN 'due_soon' THEN ${alert('dueAt')}=${task('dueAt')} AND ${task('dueAt')}>(${nowSql})
@@ -54,7 +56,7 @@ export class TeamWatch {
     return this.write('record',key,{taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion??1,status:task.status,blockedReason,since:at});
   }
   conditions(task,policy,at,{observe=false}={}){
-    if(!policy.enabled||task.managementReview||!eligible.has(task.status))return [];
+    if(!policy.enabled||taskIsClosed(task)||task.managementReview||!eligible.has(task.status)||hasClosedAncestor(this.tasks,task))return [];
     const results=[],add=(type,anchor,extra={})=>results.push({type,anchor,...extra});
     if(Number.isSafeInteger(task.dueAt)&&task.dueAt>=0){
       if(at>=task.dueAt)add('overdue',task.dueAt,{dueAt:task.dueAt});
@@ -86,7 +88,7 @@ export class TeamWatch {
     try{
       const policy=this.policy(),wanted=new Set();
       this.atomic(()=>{
-        if(policy.enabled)for(const {body} of this.db.prepare("SELECT body FROM background_task WHERE json_extract(body,'$.status') IN ('queued','running','blocked','waiting_input','waiting_event') AND json_extract(body,'$.managementReview') IS NULL").all()){
+        if(policy.enabled)for(const {body} of this.db.prepare(`SELECT t.body FROM background_task t WHERE json_extract(t.body,'$.status') IN ('queued','running','blocked','waiting_input','waiting_event') AND json_extract(t.body,'$.managementReview') IS NULL AND json_extract(t.body,'$.closure') IS NULL AND NOT ${closedAncestorSql()}`).all()){
           const task=JSON.parse(body),owner=this.owner(task);
           for(const condition of this.conditions(task,policy,at,{observe:true})){
             const id=this.alertId(task,condition),old=this.read('alert',id);wanted.add(id);
@@ -96,7 +98,7 @@ export class TeamWatch {
             if(JSON.stringify(old)!==JSON.stringify(value)){value.lastSeenAt=at;this.write('alert',id,value);changed.add(task.id);}
             if(condition.type==='overdue'&&policy.raiseQueuedPriority&&task.status==='queued'&&task.priority!=='high'){
               const actionId='priority:'+id,current=this.tasks.row('task',task.id);
-              if(!this.read('action',actionId)&&same(current,task)&&current.status==='queued'&&current.dueAt===task.dueAt&&current.priority!=='high'){
+              if(!this.read('action',actionId)&&!taskIsClosed(current)&&same(current,task)&&current.status==='queued'&&current.dueAt===task.dueAt&&current.priority!=='high'){
                 this.tasks.put('task',{...current,priority:'high',updatedAt:at});
                 this.write('action',actionId,{id:actionId,type:'priority_raised',taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion??1,alertId:id,policyRevision:policy.revision,previousPriority:current.priority??'normal',priority:'high',createdAt:at,reason:'按已启用的值守规则，提高超期排队任务的优先级。'});
                 priorities.add(task.id);changed.add(task.id);

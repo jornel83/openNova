@@ -29,6 +29,28 @@ async function completed(tasks,id){
   tasks.finish(t,run,job,{status:'completed',cleanupConfirmed:true,exitCode:0});return tasks.reports.current(tasks.row('task',id));
 }
 const accept=(tasks,id,report)=>tasks.review({id,runId:report.runId,reportId:report.id,actionId:'accept-'+report.id,action:'accept',text:'用户已核对成果，验收通过。'});
+test('closing sources cannot admit new dependencies and existing pinned inputs remain available but stale',async t=>{
+  const {tasks}=fixture(t);create(tasks,'source');const report=await completed(tasks,'source');accept(tasks,'source',report);
+  create(tasks,'pinned',{dependsOn:['source']});tasks.assignments.tick();const pinned=tasks.row('task','pinned');
+  create(tasks,'waiting',{dependsOn:['source']});
+  const source=tasks.row('task','source');tasks.put('task',{...source,closure:{status:'closing'}});
+  tasks.assignments.tick();
+  const waiting=tasks.row('task','waiting');assert.equal(waiting.status,'blocked');assert.equal(waiting.blockedReason,'dependency_closed:source');assert.deepEqual(waiting.dependencyInputs??[],[]);
+  assert.throws(()=>create(tasks,'new-consumer',{dependsOn:['source']}),/task_dependency_closed/);
+  assert.deepEqual(tasks.row('task','pinned').dependencyInputs,pinned.dependencyInputs);assert.deepEqual(tasks.row('task','pinned').transferInputs,pinned.transferInputs);
+  assert.deepEqual(tasks.summary(tasks.row('task','pinned')).inputsStale,['source']);
+  assert.equal(readFileSync(pinned.transferInputs[0].path,'utf8'),'固定版本成果');
+});
+
+test('closing and closed targets cannot be replanned, reassigned or revived by assignment ticks',t=>{
+  const {tasks}=fixture(t);
+  for(const status of ['closing','closed']){
+    const detail=create(tasks,'target-'+status),task=tasks.row('task',detail.task.id);tasks.put('task',{...task,closure:{status}});
+    assert.throws(()=>tasks.setDependencies({id:task.id,runId:task.runId,dependsOn:[]}),/task_closed/);
+    assert.throws(()=>tasks.reassign({id:task.id,runId:task.runId,assignmentVersion:1,assignedBotId:'b',actionId:'move-'+status,summary:'交给编辑'}),/task_closed/);
+    tasks.assignments.tick();assert.equal(tasks.row('task',task.id).runId,task.runId);assert.equal(tasks.row('task',task.id).assignedBotId,'a');
+  }
+});
 test('explicit dependencies wait for acceptance, pin immutable inputs once, and mark later changes stale',async t=>{
   const {tasks}=fixture(t);create(tasks,'source');const report=await completed(tasks,'source');
   create(tasks,'consumer',{assignedBotId:'b',dependsOn:['source']});tasks.assignments.tick();

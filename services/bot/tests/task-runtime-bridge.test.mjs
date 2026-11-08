@@ -25,6 +25,8 @@ async function fixture(t,{invoke}={}){
     create(input,options){checked.push({input,options});return {task:{id:input.id,runId:'check-run'},status:'queued'};},
     createCheck:TaskManager.prototype.createCheck,
     runBudget:TaskManager.prototype.runBudget,
+    assertOpen:TaskManager.prototype.assertOpen,
+    closureAncestor:TaskManager.prototype.closureAncestor,
   };
   const team={chiefId:'chief',bot:id=>({id}),enabled:()=>teamEnabled,profile:()=>({enabled})};
   const actors=new TeamActors({tasks,team}),issue=actors.issue.bind(actors);
@@ -78,6 +80,7 @@ test('current full execution uses trusted stored identity; read-only does not re
 test('check requests obey task mode, explicit automation budget and original assignment',async t=>{
   const f=await fixture(t),body={stepId:'step-one',command:'true',assignedBotId:'forged-chief'};
   assert.equal((await f.post('/task-runtime/check',body)).body.error,'task_check_unavailable');
+  f.task.closure={status:'closing'};assert.equal((await f.post('/task-runtime/check',body)).body.error,'task_closed');assert.equal(f.checked.length,0);delete f.task.closure;
   f.setCheck(true);f.task.permission='read-only';assert.equal((await f.post('/task-runtime/check',body)).body.error,'task_tool_denied');assert.equal(f.checked.length,0);
   f.task.mode='analysis';assert.notEqual((await f.post('/task-runtime/check',body)).status,200);assert.equal(f.checked.length,0);
   f.task.permission='full';f.task.mode='edit';const result=await f.post('/task-runtime/check',body);

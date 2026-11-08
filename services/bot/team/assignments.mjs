@@ -1,5 +1,7 @@
 /** Explicit ownership and dependency admission; no inferred or silent reassignment. */
 import {createHash,randomUUID} from 'node:crypto';
+import {assertTaskOpen,taskIsClosed} from '../tasks/closure.mjs';
+const assertOpen=(tasks,task)=>tasks.assertOpen?tasks.assertOpen(task):assertTaskOpen(task);
 const digest=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const idOk=v=>typeof v==='string'&&/^[\w-]{1,100}$/.test(v);
 const active=new Set(['running','pausing','cancelling']);
@@ -11,11 +13,12 @@ export function planningSpec(input){
 export class TeamAssignments {
   constructor(tasks){this.tasks=tasks;}
   validate(id,dependsOn){
-    const visit=(key,path)=>{if(key===id||path.has(key))throw Error('task_dependency_cycle');const t=this.tasks.row('task',key);if(t.managementReview||t.parentTaskId)throw Error('invalid_task_dependencies');for(const dep of t.dependsOn??[])visit(dep,new Set([...path,key]));};
+    const visit=(key,path)=>{if(key===id||path.has(key))throw Error('task_dependency_cycle');const t=this.tasks.row('task',key);if(taskIsClosed(t))throw Error('task_dependency_closed');if(t.managementReview||t.parentTaskId)throw Error('invalid_task_dependencies');for(const dep of t.dependsOn??[])visit(dep,new Set([...path,key]));};
     for(const dep of dependsOn)visit(dep,new Set());
   }
   set({id,runId,...input}){
     const t=this.tasks.row('task',id);if(t.runId!==runId)throw Error('task_run_changed');
+    assertOpen(this.tasks,t);
     const run=this.tasks.row('run',runId);
     if(t.kind!=='agent'||run.startedAt||!['queued','blocked','paused'].includes(t.status))throw Error('task_dependencies_locked');
     const spec=planningSpec({...t,...input});this.validate(id,spec.dependsOn);
@@ -32,6 +35,7 @@ export class TeamAssignments {
     if(!idOk(actionId)||typeof summary!=='string'||summary.length>4000||!summary.trim())throw Error('invalid_task_handoff');
     const fingerprint=digest({runId,assignmentVersion,assignedBotId,summary,reportId});
     if(t.handoff?.actionId===actionId){if(t.handoff.fingerprint!==fingerprint)throw Error('task_id_conflict');return tasks.detail(id);}
+    assertOpen(tasks,t);
     if(t.runId!==runId||t.assignmentVersion!==assignmentVersion)throw Error('task_run_changed');
     if(t.kind!=='agent'||t.managementReview||t.handoff?.status==='stopping'||assignedBotId===t.assignedBotId)throw Error('invalid_task_handoff');
     tasks.team.assignment({...t,assignedBotId});
@@ -43,6 +47,7 @@ export class TeamAssignments {
     tasks.put('task',t);tasks.pause({id,runId,handoffActionId:actionId});this.tick();return tasks.detail(id);
   }
   finishHandoff(t){
+    if(taskIsClosed(t))return;
     const tasks=this.tasks,h=t.handoff,run=tasks.row('run',t.runId),job=tasks.row('job',run.jobId);
     if(active.has(t.status)||!job.cleanupConfirmed||tasks.workers.has(job.id))return;
     try{tasks.team.assignment({...t,assignedBotId:h.toBotId});}catch(error){t.blockedReason=error.message;tasks.put('task',t);return;}
@@ -61,14 +66,14 @@ export class TeamAssignments {
   }
   staleInputs(task){
     return (task.dependencyInputs??[]).filter(input=>{
-      try{const source=this.tasks.row('task',input.taskId),current=this.tasks.reports?.current(source);return !current||current.id!==input.reportId||!this.tasks.supervisor?.isAccepted(current);}
+      try{const source=this.tasks.row('task',input.taskId),current=this.tasks.reports?.current(source);return taskIsClosed(source)||!current||current.id!==input.reportId||!this.tasks.supervisor?.isAccepted(current);}
       catch{return true;}
     }).map(input=>input.taskId);
   }
   tick(){
     const tasks=this.tasks;
     for(let t of tasks.queries?.assignmentCandidates()??tasks.all()){
-      if(t.managementReview)continue;
+      if(t.managementReview||taskIsClosed(t))continue;
       if(t.handoff?.status==='stopping'){this.finishHandoff(t);continue;}
       if(t.dependencyInputs?.length){
         const stale=this.staleInputs(t);
@@ -79,6 +84,7 @@ export class TeamAssignments {
       try{if(tasks.team)tasks.team.assignment(t);}catch(error){reason=error.message;}
       if(!reason&&!t.dependencyInputs?.length)for(const id of t.dependsOn??[]){
         const predecessor=tasks.row('task',id),report=tasks.reports?.current(predecessor);
+        if(taskIsClosed(predecessor)){reason='dependency_closed:'+id;break;}
         if(!report||!tasks.supervisor?.isAccepted(report)){reason='dependency_waiting_acceptance:'+id;break;}
         try{tasks.reports.assertCurrent(predecessor,report.id);reports.push(report);}catch{reason='dependency_artifact_changed:'+id;break;}
       }

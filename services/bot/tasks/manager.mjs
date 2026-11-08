@@ -14,6 +14,7 @@ import {TeamAssignments,planningSpec} from '../team/assignments.mjs';
 import {validBudget,remainingBudget,capBudget} from './budgets.mjs';
 import {taskActivity,readTaskActivity} from './activity.mjs';
 import {TaskQueries} from './queries.mjs';
+import {TaskClosure,taskIsClosed,assertTaskOpen} from './closure.mjs';
 
 const worker=fileURLToPath(new URL('./worker.mjs',import.meta.url));
 const live=new Set(['queued','blocked','running','pausing','cancelling']);
@@ -32,6 +33,7 @@ export class TaskManager {
     this.reports=new TeamReports(this);
     this.queries=new TaskQueries(this);
     this.assignments=new TeamAssignments(this);
+    this.closures=new TaskClosure(this);
     // A restart never replays commands, including a launch whose delivery was
     // uncertain. A surviving supervisor will publish its cleanup receipt.
     for(const task of this.queries.select({statuses:['running','pausing','cancelling'],includeManagement:true})){
@@ -52,15 +54,25 @@ export class TaskManager {
   put(kind,record){this.db.prepare(`INSERT INTO background_${kind} VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body`).run(record.id,JSON.stringify(record));return record;}
   atomic(fn){this.db.exec('BEGIN IMMEDIATE');try{const result=fn();this.db.exec('COMMIT');return result;}catch(error){this.db.exec('ROLLBACK');throw error;}}
   all(){return this.db.prepare('SELECT body FROM background_task ORDER BY rowid DESC').all().map(r=>JSON.parse(r.body));}
+  closureAncestor(task){
+    const seen=new Set([task.id]);let parentId=task.parentTaskId??task.managementReview?.targetTaskId;
+    while(parentId&&!seen.has(parentId)){
+      const parent=this.row('task',parentId);if(taskIsClosed(parent))return {id:parent.id,title:parent.title,status:parent.closure.status};
+      seen.add(parentId);parentId=parent.parentTaskId??parent.managementReview?.targetTaskId;
+    }
+  }
+  assertOpen(task){assertTaskOpen(task);if(this.closureAncestor(task))throw Error('task_closed');}
   changed(task){this.events?.publish('task.updated',this.summary(task),task.requestId);}
   summary(task){
     const run=this.row('run',task.runId),job=this.row('job',run.jobId);
+    const parentClosure=this.closureAncestor(task),closed=taskIsClosed(task)||!!parentClosure;
     // Historical dependencies are checked when viewed, not on every idle tick.
     return {...task,...(task.dependencyInputs?.length?{inputsStale:this.assignments.staleInputs(task)}:{}),...this.team?.owner(task),runNumber:run.number,startedAt:run.startedAt,finishedAt:run.finishedAt,exitCode:job.exitCode,error:job.error,
       cleanupConfirmed:job.cleanupConfirmed,logTruncated:job.truncated??false,
-      canContinue:task.kind==='agent'&&terminal.has(task.status)&&job.cleanupConfirmed===true,
+      ...(parentClosure?{parentClosure}:{}),canClose:!task.managementReview&&!closed,canReopen:!task.managementReview&&!parentClosure&&task.closure?.status==='closed',
+      canContinue:!closed&&task.kind==='agent'&&terminal.has(task.status)&&job.cleanupConfirmed===true,
       question:job.agentResult?.question,...this.supervisor?.summary(task),
-      canRetry:task.kind!=='agent'&&['failed','cancelled','interrupted'].includes(task.status)&&job.cleanupConfirmed===true};
+      canRetry:!closed&&task.kind!=='agent'&&['failed','cancelled','interrupted'].includes(task.status)&&job.cleanupConfirmed===true};
   }
   list(options={}){
     const page=this.queries.page(options);
@@ -104,6 +116,8 @@ export class TaskManager {
   }
   create(input,{requestId,source='web',check,managementReview}={}){
     if(this.closed)throw Error('host_stopping');
+    if(check)this.assertOpen(this.row('task',check.taskId));
+    if(managementReview)this.assertOpen(this.row('task',managementReview.targetTaskId));
     const spec=this.spec(input,check?.workspace??this.workspace,check),id=input.id;
     if(!idOk(id))throw Error('invalid_task_id');
     const fingerprint=hash(JSON.stringify(spec));
@@ -135,6 +149,8 @@ export class TaskManager {
     return {tokenBudget:capBudget(task.tokenBudget,tokenBudget),timeoutMs:capBudget(task.timeoutMs,timeoutMs)};
   }
   newRun(task,number,instruction,extra={}){
+    this.assertOpen(task);
+    const stored=this.db.prepare('SELECT body FROM background_task WHERE id=?').get(task.id);if(stored)this.assertOpen(JSON.parse(stored.body));
     const employee=this.team?.snapshot(task);
     const budget=this.runBudget(task);if(budget)extra={...extra,executionBudget:{tokenBudget:capBudget(budget.tokenBudget,extra.executionBudget?.tokenBudget),timeoutMs:capBudget(budget.timeoutMs,extra.executionBudget?.timeoutMs)}};
     const run={employee,assignmentVersion:task.assignmentVersion,permission:task.permission,policyVersion:task.policyVersion,id:randomUUID(),taskId:task.id,number,status:'queued',createdAt:Date.now(),jobId:randomUUID(),instruction,...extra};
@@ -156,17 +172,20 @@ export class TaskManager {
       }:{})};
     }),teamReview:{...this.reports.view(task),...this.supervisor?.view(task)},...(task.kind==='agent'?{automation:this.automation.view(task),checks:this.queries.related({parentTaskId:id}).map(t=>this.summary(t)),workspace:readJson(join(this.agentHome(task),'workspace.json')),messages:this.messages(task),applications:Object.values(readJson(join(this.agentHome(task),'applications.json'),{}))}:{})};
   }
-  review(body){if(!this.supervisor)throw Error('team_supervisor_unavailable');const decision=this.supervisor.userDecision(body);return {...this.detail(body.id),decision};}
-  configureManagement(body){if(!this.supervisor)throw Error('team_supervisor_unavailable');this.supervisor.configure(body);return this.detail(body.id);}
-  reassign(body){return this.assignments.reassign(body);}
-  setDependencies(body){return this.assignments.set(body);}
+  review(body){this.assertOpen(this.row('task',body.id));if(!this.supervisor)throw Error('team_supervisor_unavailable');const decision=this.supervisor.userDecision(body);return {...this.detail(body.id),decision};}
+  closeTask(body){return this.closures.close(body);}
+  reopenTask(body){return this.closures.reopen(body);}
+  configureManagement(body){this.assertOpen(this.row('task',body.id));if(!this.supervisor)throw Error('team_supervisor_unavailable');this.supervisor.configure(body);return this.detail(body.id);}
+  reassign(body){this.assertOpen(this.row('task',body.id));return this.assignments.reassign(body);}
+  setDependencies(body){this.assertOpen(this.row('task',body.id));return this.assignments.set(body);}
   reportArtifact(body){return this.reports.artifact(body);}
-  ruleCreate(body){this.automation.add(body);this.changed(this.row('task',body.taskId));return this.detail(body.taskId);}
-  ruleToggle(body){const rule=this.automation.setEnabled(body);return this.detail(rule.taskId);}
-  automationPause(body){this.automation.setPaused(body);return this.detail(body.id);}
+  ruleCreate(body){this.assertOpen(this.row('task',body.taskId));this.automation.add(body);this.changed(this.row('task',body.taskId));return this.detail(body.taskId);}
+  ruleToggle(body){const previous=this.automation.find('rule',body.id);if(previous)this.assertOpen(this.row('task',previous.taskId));const rule=this.automation.setEnabled(body);return this.detail(rule.taskId);}
+  automationPause(body){this.assertOpen(this.row('task',body.id));this.automation.setPaused(body);return this.detail(body.id);}
   createCheck({taskId,runId,stepId,title,command,workdir='.',timeoutMs=600000}){
     if(!idOk(stepId))throw Error('invalid_task_id');
     const task=this.row('task',taskId);
+    this.assertOpen(task);
     if(task.runId!==runId)throw Error('task_run_changed');
     if(task.kind!=='agent'||task.mode!=='edit'||task.status!=='running'||!this.automation.canCheck(taskId))throw Error('task_check_unavailable');
     if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000)throw Error('invalid_task_timeout');
@@ -187,6 +206,7 @@ export class TaskManager {
   syncInbox(task){saveJson(join(this.agentHome(task),'inbox.json'),this.messages(task).map(({delivery,...m})=>m));}
   message({id,messageId,text}){
     if(this.closed)throw Error('host_stopping');const task=this.row('task',id);
+    this.assertOpen(task);
     if(task.kind!=='agent'||!idOk(messageId)||typeof text!=='string'||!text.trim()||text.length>4000)throw Error('invalid_task_message');
     const old=this.db.prepare('SELECT body FROM background_message WHERE id=?').get(messageId);
     if(old){const m=JSON.parse(old.body);if(m.taskId!==id||m.text!==text)throw Error('task_id_conflict');return this.detail(id);}
@@ -211,6 +231,7 @@ export class TaskManager {
   continue({id,runId,actionId,text=''}){
     if(this.closed)throw Error('host_stopping');if(this.applying)throw Error('task_workspace_busy');
     const task=this.row('task',id);
+    this.assertOpen(task);
     if(!idOk(actionId)||typeof text!=='string'||text.length>4000)throw Error('invalid_task_message');
     if(task.lastContinueAction===actionId){if(task.lastContinueText!==text)throw Error('task_id_conflict');return this.detail(id);}
     if(task.runId!==runId)throw Error('task_run_changed');
@@ -250,7 +271,10 @@ export class TaskManager {
   }
   finish(task,run,job,result){
     // Stale workers can never overwrite a replacement Run.
-    if(this.row('task',task.id).runId!==run.id)return;
+    const current=this.row('task',task.id);if(current.runId!==run.id)return;
+    // A worker captured before the user's close must preserve the durable intent.
+    if(current.closure)task={...task,...(!task.closure?{stopIntent:current.stopIntent}:{}),closure:current.closure,automationPaused:true,management:{...task.management,paused:true}};
+    else if(task.closure){task={...task};delete task.closure;}
     const finishedAt=result.finishedAt??Date.now();
     let agentResult=job.kind==='agent'?readJson(join(this.directory(job),'agent-result.json')):null;
     if(job.kind==='agent'){
@@ -313,6 +337,7 @@ export class TaskManager {
         const receipt=this.receipt(job);
         if(receipt&&(live.has(task.status)||receipt.cleanupConfirmed!==job.cleanupConfirmed||receipt.error!==job.error))this.finish(task,run,job,receipt);
       }
+      this.closures.tick();
       void this.outbox?.tick().catch(()=>{});
       this.automation.tick();this.supervisor?.tick();this.assignments.tick();this.watch?.tick();this.lastError=null;
       // One active project command. Unconfirmed cleanup also holds the slot.
@@ -322,6 +347,7 @@ export class TaskManager {
     }catch(error){this.lastError=String(error.message);}
   }
   launch(task){
+    const current=this.row('task',task.id);if(current.runId!==task.runId)return;this.assertOpen(current);task=current;
     const run=this.row('run',task.runId),job=this.row('job',run.jobId),startedAt=Date.now();
     try{if(this.team)this.team.assignment(task);}catch(error){this.finish(task,run,job,{status:'failed',cleanupConfirmed:true,error:error.message});return;}
     if(run.trigger){const rule=this.automation.find('rule',run.trigger.ruleId);if(task.automationPaused||!rule?.enabled||rule.expiresAt<=this.automation.now()){task.automationPaused=true;this.finish(task,run,job,{status:'paused',cleanupConfirmed:true});return;}}
@@ -391,6 +417,7 @@ export class TaskManager {
     if(this.closed)throw Error('host_stopping');
     if(!idOk(actionId))throw Error('invalid_task_id');
     const task=this.row('task',id);
+    this.assertOpen(task);
     if(task.lastRetryAction===actionId)return this.detail(id);
     if(task.runId!==runId)throw Error('task_run_changed');
     if(!this.summary(task).canRetry)throw Error('task_retry_unavailable');
@@ -467,7 +494,7 @@ export function taskTools(tasks,getRequest){
       const request=getRequest();if(!request||request.cancelled||request.signal?.aborted)throw Error('bridge_request_required');
       return tasks.create({...args,id:hash(request.id+'\0'+JSON.stringify(tasks.spec(args)))},{requestId:request.id,source:'assistant'});
     }],
-    ['background_task_list','查询后台任务的真实状态与结果；不执行或重跑命令。',{},()=>tasks.list({limit:30})],
+    ['background_task_list','查询后台任务的真实状态与结果；默认显示未关闭任务，filter=closed查看已关闭历史；不执行或重跑命令。',{filter:{type:'string',enum:['all','active','attention','recent','closed']}},(a={})=>tasks.list({limit:30,...(a.filter?{filter:a.filter}:{})})],
     ['background_task_status','查询指定后台任务及每次执行的实际结果。',{id:{type:'string',required:true}},a=>tasks.detail(a.id)],
     ['background_task_log','读取后台任务日志，nextOffset 可用于继续读取。',{id:{type:'string',required:true},runId:{type:'string'},stepId:{type:'string',description:'Agent 命令步骤编号，可读取该步骤的实时日志。'},offset:{type:'number'}},a=>tasks.log(a)],
     ['background_task_cancel','用户要求取消指定后台任务时使用；取消中不代表进程已停止，也不撤销已保存文件。',{id:{type:'string',required:true}},a=>tasks.cancel(a.id)],

@@ -60,10 +60,19 @@ test('watch reconciliation is throttled to five seconds without hiding changed b
   const next=f.watch.view().alerts[0];assert.equal(next.runId,'next-run');assert.notEqual(next.id,old.id);assert.equal(stored(f,old.id).status,'resolved');
 });
 
+test('closed parent invalidates nested check reminders immediately without rewriting child outcomes',t=>{
+  const f=fixture(t),parent=f.add({status:'completed'}),child=f.add({parentTaskId:parent.id,status:'completed'}),check=f.add({parentTaskId:child.id,dueAt:f.at});
+  f.watch.tick();const alert=f.watch.view().alerts[0];assert.equal(sqlCurrent(f).length,1);
+  f.set(parent,{closure:{status:'closing'}});assert.equal(f.watch.view().total,1,'closing cleanup remains visible');
+  f.set(parent,{closure:{status:'closed'}});assert.equal(f.watch.view().total,0);assert.deepEqual(sqlCurrent(f),[]);
+  f.watch.tick({force:true});assert.equal(stored(f,alert.id).status,'resolved');assert.equal(f.tasks.row('task',check.id).status,'queued');
+});
+
 test('acknowledgement rejects an obsolete run, assignment, deadline or stopped task before reconciliation',t=>{
-  for(const patch of [{runId:'new-run'},{assignmentVersion:2},{dueAt:5000000000},{status:'paused'},{status:'cancelled'},{status:'completed'}]){
+  for(const patch of [{runId:'new-run'},{assignmentVersion:2},{dueAt:5000000000},{status:'paused'},{status:'cancelled'},{status:'completed'},{closure:{status:'closing'}},{closure:{status:'closed'}}]){
     const f=fixture(t),task=f.add({dueAt:f.at});f.watch.tick();const alert=f.watch.view().alerts[0];
     f.set(task,patch);assert.throws(()=>f.watch.acknowledge(ack(alert)),/watch_alert_stale/);assert.equal(stored(f,alert.id).acknowledgedAt,null);
+    assert.deepEqual(sqlCurrent(f),[],'SQL counts must invalidate the same changed binding immediately');
     f.watch.tick({force:true});assert.equal(stored(f,alert.id).status,'resolved');
   }
 });

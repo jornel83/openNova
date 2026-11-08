@@ -5,6 +5,8 @@ import {join} from 'node:path';
 import {readJson} from '../tasks/agent-files.mjs';
 import {normalizeReviewDecision,prepareReviewEvidence} from './review.mjs';
 import {validBudget,remainingBudget,capBudget} from '../tasks/budgets.mjs';
+import {assertTaskOpen,taskIsClosed} from '../tasks/closure.mjs';
+const assertOpen=(tasks,task)=>tasks.assertOpen?tasks.assertOpen(task):assertTaskOpen(task);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
 const live=new Set(['queued','running','pausing','cancelling']);
@@ -24,7 +26,7 @@ export class TeamSupervisor {
     const previous=this.get(value.id);
     this.db.prepare('INSERT INTO team_review VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(value.id,JSON.stringify(value));
     if(value.source!=='user'&&previous?.status!==value.status&&['accepted','needs_user','budget_exhausted','failed'].includes(value.status)){
-      const task=this.tasks.row('task',value.taskId);if(task.runId===value.runId&&task.assignmentVersion===value.assignmentVersion)this.tasks.put('task',{...task,unread:true});
+      const task=this.tasks.row('task',value.taskId);if(!taskIsClosed(task)&&task.runId===value.runId&&task.assignmentVersion===value.assignmentVersion)this.tasks.put('task',{...task,unread:true});
     }
     if(!this.notifications.has(value.taskId)){this.notifications.add(value.taskId);queueMicrotask(()=>{this.notifications.delete(value.taskId);try{this.tasks.changed(this.tasks.row('task',value.taskId));}catch{}});}
     return value;
@@ -58,6 +60,7 @@ export class TeamSupervisor {
     return {management:{...this.management(task),...this.usage(task)},currentReview:current?{...current,status:effective.reviewStatus,effectiveReason:effective.inboxReason,...activity?{activity}:{} }:null,reviewHistory:reviews,reviews};
   }
   continuationBudget(task){
+    if(taskIsClosed(task))return {reason:'task_closed'};
     const settings=this.management(task);if(!settings.enabled)return {};
     if(settings.paused)return {reason:'management_paused'};
     const usage=this.usage(task),tokenBudget=remainingBudget(settings.tokenBudget,usage.usedTokens),timeoutMs=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
@@ -67,10 +70,11 @@ export class TeamSupervisor {
   isAccepted(report){
     if(!report)return false;
     const task=this.tasks.row('task',report.taskId),effective=this.summary(task);
-    return effective.reportId===report.id&&effective.reviewStatus==='accepted';
+    return !taskIsClosed(task)&&effective.reportId===report.id&&effective.reviewStatus==='accepted';
   }
   current(review){
     const task=this.tasks.row('task',review.taskId);
+    assertOpen(this.tasks,task);
     if(review.source!=='user'&&this.history(task.id).some(other=>other.id!==review.id&&other.reportId===review.reportId&&other.runId===review.runId&&other.assignmentVersion===review.assignmentVersion&&other.source==='user'&&['accepted','changes_requested','answered','needs_user'].includes(other.status)))throw Error('review_stale');
     if(task.runId!==review.runId||task.assignmentVersion!==review.assignmentVersion||live.has(task.status)||!waiting.has(task.status))throw Error('review_stale');
     const report=this.reports.assertCurrent(task,review.reportId)??this.reports.get(review.reportId);
@@ -79,6 +83,7 @@ export class TeamSupervisor {
   }
   configure(body){
     const task=this.tasks.row('task',body.id);if(task.runId!==body.runId)throw Error('task_run_changed');
+    assertOpen(this.tasks,task);
     if(task.managementReview)throw Error('management_task_not_configurable');
     const settings=this.management(task);
     for(const key of ['enabled','paused'])if(body[key]!==undefined){if(typeof body[key]!=='boolean')throw Error('invalid_management_policy');settings[key]=body[key];}
@@ -96,6 +101,7 @@ export class TeamSupervisor {
     const id='user-review-'+hash(body.actionId),fingerprint=JSON.stringify(body),old=this.get(id);
     if(old){if(old.fingerprint!==fingerprint)throw Error('review_action_conflict');return old;}
     const task=this.tasks.row('task',body.id);if(task.runId!==body.runId)throw Error('task_run_changed');
+    assertOpen(this.tasks,task);
     const report=this.reports.assertCurrent(task,body.reportId)??this.reports.get(body.reportId);
     const review={id,fingerprint,taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion,reportId:report.id,source:'user',createdAt:this.now()};
     const result=this.apply(review,normalizeReviewDecision(body,report,{manual:true}),true);
@@ -130,8 +136,8 @@ export class TeamSupervisor {
     try{
       for(const row of this.db.prepare("SELECT body FROM team_review WHERE json_extract(body,'$.status') IN ('queued','reviewing')").all()){
         const review=JSON.parse(row.body);if(!['queued','reviewing'].includes(review.status))continue;
-        let current;try{current=this.current(review);}catch{
-          this.put({...review,status:'stale',finishedAt:this.now()});
+        let current;try{current=this.current(review);}catch(error){
+          this.put({...review,status:error.message==='task_closed'?'paused':'stale',error:error.message==='task_closed'?'task_closed':undefined,finishedAt:this.now()});
           try{const child=this.tasks.row('task',review.managementTaskId);if(live.has(child.status))this.tasks.pause({id:child.id,runId:child.runId});}catch{}
           continue;
         }
@@ -159,7 +165,7 @@ export class TeamSupervisor {
       }
       for(const task of this.tasks.queries?.pendingReviews()??this.tasks.all()){
         const settings=this.management(task);
-        if(!task.management||!settings.enabled||settings.paused||task.managementReview||!waiting.has(task.status)||task.assignedBotId===this.tasks.team?.chiefId)continue;
+        if(taskIsClosed(task)||!task.management||!settings.enabled||settings.paused||task.managementReview||!waiting.has(task.status)||task.assignedBotId===this.tasks.team?.chiefId)continue;
         // Accepted/history rows need no file hashing on every scheduler tick.
         // Resolve the current immutable report id each time: a new capture in
         // the same Run must still enter independent review.

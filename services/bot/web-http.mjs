@@ -5,6 +5,7 @@ import {resolve,extname,sep} from 'node:path';
 
 const routes=new Set(['team','team-member','desktop-open','voice-control','snapshot','context-clear','document-open','ask','result','cancel','approvals','approve','reject']);
 for(const name of ['team-overview','team-watch','team-watch-policy','team-watch-ack'])routes.add(name);
+for(const name of ['background-task-close','background-task-reopen'])routes.add(name);
 for(const name of ['background-tasks','background-task','background-task-start','background-task-cancel','background-task-retry','background-task-read','background-task-log','background-task-open','background-task-message','background-task-pause','background-task-continue','background-task-diff','background-task-apply','background-task-rule','background-task-rule-toggle','background-task-automation'])routes.add(name);
 for(const name of ['tasks/review','tasks/management','tasks/reassign','tasks/dependencies','tasks/report-artifact'])routes.add(name);
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.svg':'image/svg+xml'};

@@ -2,6 +2,8 @@
 import {join} from 'node:path';
 import {readFileSync} from 'node:fs';
 import {eventHash,fileObservation,watchedPaths,githubSource,githubComments} from './event-sources.mjs';
+import {assertTaskOpen,taskIsClosed} from './closure.mjs';
+const assertOpen=(tasks,task)=>tasks.assertOpen?tasks.assertOpen(task):assertTaskOpen(task);
 const idOk=v=>typeof v==='string'&&/^[\w-]{1,100}$/.test(v);
 const active=new Set(['queued','running','pausing','cancelling']);
 export class TaskEventEngine{
@@ -15,17 +17,19 @@ export class TaskEventEngine{
   put(kind,row){return this.tasks.put(kind,row);}
   rules(taskId){return this.db.prepare("SELECT body FROM background_rule WHERE json_extract(body,'$.taskId')=? ORDER BY rowid").all(taskId).map(r=>JSON.parse(r.body));}
   pending(){return this.db.prepare("SELECT body FROM background_delivery WHERE json_extract(body,'$.status')='pending' ORDER BY rowid").all().map(r=>JSON.parse(r.body));}
-  usable(rule){return rule.enabled&&rule.usedRuns<rule.maxRuns&&rule.expiresAt>this.now()&&!rule.sourceStopped;}
+  usable(rule){return rule.enabled&&rule.usedRuns<rule.maxRuns&&rule.expiresAt>this.now()&&!rule.sourceStopped&&!taskIsClosed(this.tasks.row('task',rule.taskId));}
   view(task){return {paused:!!task.automationPaused,rules:this.rules(task.id).map(r=>({...r,state:!r.enabled?'disabled':r.sourceStopped?'attention':r.expiresAt<=this.now()?'expired':r.usedRuns>=r.maxRuns?'exhausted':'enabled'})),deliveries:this.db.prepare("SELECT body FROM background_delivery WHERE json_extract(body,'$.taskId')=? ORDER BY rowid DESC LIMIT 50").all(task.id).map(r=>JSON.parse(r.body)).map(d=>({...d,event:this.find('event',d.eventId)}))};}
   validate(input){
     const {id,taskId,type,instruction,maxRuns=2,ttlHours=24,enabled=false}=input;
     const task=this.tasks.row('task',taskId);
+    assertOpen(this.tasks,task);
     if(task.kind!=='agent'||!idOk(id)||!['check','task','file','github'].includes(type)||typeof instruction!=='string'||!instruction.trim()||instruction.length>4000||typeof enabled!=='boolean')throw Error('invalid_event_rule');
     if(!Number.isInteger(maxRuns)||maxRuns<1||maxRuns>5||!Number.isInteger(ttlHours)||ttlHours<1||ttlHours>168)throw Error('invalid_event_budget');
     let source={};
     if(type==='check'){if(task.mode!=='edit')throw Error('event_check_requires_edit');}
     if(type==='task'){
       const from=this.tasks.row('task',input.source?.taskId),run=this.tasks.row('run',input.source?.runId);
+      if(taskIsClosed(from))throw Error('event_source_closed');
       if(from.id===taskId||from.kind==='agent'||run.taskId!==from.id||from.parentTaskId)throw Error('invalid_event_source');
       source={taskId:from.id,runId:run.id};
     }
@@ -47,6 +51,7 @@ export class TaskEventEngine{
   }
   setEnabled({id,enabled,revision}){
     if(typeof enabled!=='boolean')throw Error('invalid_event_rule');const rule=this.tasks.row('rule',id);
+    if(enabled)assertOpen(this.tasks,this.tasks.row('task',rule.taskId));
     if(rule.revision!==revision)throw Error('event_rule_changed');
     if(rule.enabled===enabled)return rule;
     if(enabled&&(this.rules(rule.taskId).filter(r=>r.enabled).length>=10||this.rows('rule').filter(r=>r.enabled).length>=100))throw Error('event_rule_limit');
@@ -66,6 +71,7 @@ export class TaskEventEngine{
   }
   setPaused({id,paused}){
     if(typeof paused!=='boolean')throw Error('invalid_event_rule');const task=this.tasks.row('task',id);if(task.kind!=='agent')throw Error('not_agent_task');
+    if(!paused)assertOpen(this.tasks,task);
     task.automationPaused=paused;this.tasks.put('task',task);
     if(paused&&task.status==='queued'&&this.tasks.row('run',task.runId).trigger)this.tasks.pause({id,runId:task.runId});
     this.tasks.changed(this.tasks.row('task',id));return this.tasks.row('task',id);
@@ -78,7 +84,7 @@ export class TaskEventEngine{
     }
   }
   recordCompletion(task,run,job,rules=this.rows('rule')){
-    if(task.kind==='agent'||!job.cleanupConfirmed||!['completed','failed'].includes(run.status))return;
+    if(taskIsClosed(task)||task.kind==='agent'||!job.cleanupConfirmed||!['completed','failed'].includes(run.status))return;
     const id=eventHash('command.finished\0'+run.id),old=this.find('event',id);let event=old;
     if(!event){let output='';try{output=readFileSync(join(this.tasks.directory(job),'output.log'),'utf8').slice(-6000);}catch(e){if(e.code!=='ENOENT')throw e;}
       event={id,type:'command.finished',createdAt:this.now(),data:{taskId:task.id,runId:run.id,title:task.title,cwd:task.cwd,status:run.status,exitCode:job.exitCode,error:job.error,parentTaskId:task.parentTaskId,parentRunId:task.parentRunId,output}};this.put('event',event);
@@ -104,6 +110,8 @@ export class TaskEventEngine{
     if(this.tasks.closed||this.tasks.applying)return;
     for(const delivery of this.pending()){
       const rule=this.tasks.row('rule',delivery.ruleId),task=this.tasks.row('task',delivery.taskId),event=this.tasks.row('event',delivery.eventId);
+      if(taskIsClosed(task)){this.put('delivery',{...delivery,status:'cancelled',reason:'task_closed'});continue;}
+      if(event.type==='command.finished'&&taskIsClosed(this.tasks.row('task',event.data.taskId))){this.put('delivery',{...delivery,status:'ignored',reason:'source_task_closed'});continue;}
       if(!this.usable(rule)){this.put('delivery',{...delivery,status:'ignored',reason:rule.enabled?'rule_exhausted':'rule_disabled'});continue;}
       if(rule.type==='check'&&event.data.parentRunId!==task.runId){this.put('delivery',{...delivery,status:'ignored',reason:'source_run_superseded'});continue;}
       let reason;

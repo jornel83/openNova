@@ -1,5 +1,8 @@
 export const taskLabels={blocked:'等待前置条件',paused:'已暂停',pausing:'暂停中',waiting_input:'等待补充',waiting_event:'等待事件',queued:'排队中',running:'运行中',cancelling:'取消中',completed:'已完成',failed:'执行失败',cancelled:'已取消',interrupted:'异常中断'};
 export const activeTask=task=>['blocked','queued','running','pausing','cancelling'].includes(task.status);
+export const taskClosureStatus=task=>['closing','closed'].includes(task?.closure?.status)?task.closure.status:null;
+export const taskUnavailable=task=>!!taskClosureStatus(task)||['closing','closed'].includes(task?.parentClosure?.status);
+export const taskClosureLabel=task=>({closing:'正在关闭',closed:'已关闭'})[taskClosureStatus(task)]||'';
 export function taskActivityText(run,now=Date.now()){
   const activity=run?.activity;if(!activity)return '';
   const labels={initializing:'正在准备工作会话',waiting_foreground:'等待前台对话结束',model:'正在等待模型响应',tool:'正在执行工具',idle:'正在衔接执行步骤',command:'命令正在运行',queued:'等待执行队列',blocked:'等待前置条件',pausing:'正在暂停',cancelling:'正在取消'};
@@ -10,6 +13,10 @@ export function taskActivityText(run,now=Date.now()){
   return phase+(activity.tool?'（'+activity.tool+'）':'')+recent+heartbeat;
 }
 export function taskReason(task){
+  if(task?.parentClosure?.status==='closing')return '所属任务正在关闭，此记录仅供查看；请等待所属任务完成关闭。';
+  if(task?.parentClosure?.status==='closed')return '所属任务已关闭，此记录仅供查看。需要继续时，请先恢复所属任务；恢复不会自动执行。';
+  if(taskClosureStatus(task)==='closing')return '正在停止执行与自动跟进；确认作业退出后，会从任务列表移除。历史和成果将保留。';
+  if(taskClosureStatus(task)==='closed')return '已从任务列表移除，执行记录和成果仍保留。恢复到列表不会启动执行或自动跟进。';
   if(task.error==='task_timeout')return '执行超过时限，作业已停止。';
   if(task.cleanupConfirmed===false&&!activeTask(task))return '旧作业是否停止尚未确认，后续任务暂缓执行。请核对运行环境。';
   if(task.status==='paused')return '工作会话和文件已保留，可以补充要求后接续。';

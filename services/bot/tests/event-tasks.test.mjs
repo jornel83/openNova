@@ -33,6 +33,31 @@ function complete(tasks,id='agent',status='completed'){
   tasks.atomic(()=>{tasks.put('task',{...task,status});tasks.put('run',{...run,status});tasks.put('job',{...job,status,cleanupConfirmed:true});});
 }
 const rule=(tasks,extra={})=>tasks.ruleCreate({id:'rule',taskId:'agent',type:'file',source:{paths:['sample.txt']},instruction:'RESUME_ONLY',enabled:true,maxRuns:2,...extra});
+test('closure cancels pending event delivery and blocks source polling or automatic reactivation',async t=>{
+  let now=Date.now();const {tasks,workspace}=await fixture(t,{manual:true,eventOptions:{now:()=>now}});
+  agent(tasks);complete(tasks);rule(tasks);
+  writeFileSync(join(workspace,'sample.txt'),'pending event');await tasks.automation.poll();now+=2001;await tasks.automation.poll();
+  assert.equal(tasks.automation.pending().length,1);
+  const task=tasks.row('task','agent');tasks.put('task',{...task,closure:{status:'closing'}});
+  tasks.automation.dispatch();const delivery=tasks.automation.rows('delivery')[0];assert.equal(delivery.status,'cancelled');assert.equal(delivery.reason,'task_closed');
+  assert.equal(tasks.detail('agent').runs.length,1);
+  assert.throws(()=>tasks.automationPause({id:'agent',paused:false}),/task_closed/);
+  assert.throws(()=>tasks.ruleToggle({id:'rule',revision:1,enabled:true}),/task_closed/);
+  assert.throws(()=>rule(tasks,{id:'another'}),/task_closed/);
+  tasks.put('task',{...task,closure:{status:'closed'}});writeFileSync(join(workspace,'sample.txt'),'ignored after close');await tasks.automation.poll();now+=2001;await tasks.automation.poll();
+  assert.equal(tasks.automation.rows('event').length,1);
+  tasks.put('task',task);tasks.automation.dispatch();assert.equal(tasks.detail('agent').runs.length,1,'restoring visibility cannot replay a cancelled delivery');
+});
+
+test('closing a source command invalidates pending completion delivery without waking its subscriber',async t=>{
+  const {tasks}=await fixture(t,{manual:true});agent(tasks);complete(tasks);
+  const source=tasks.create({id:'source-command',title:'source',command:'true'}),run=tasks.row('run',source.task.runId);
+  tasks.finish(tasks.row('task',source.task.id),run,tasks.row('job',run.jobId),{status:'completed',exitCode:0,cleanupConfirmed:true});
+  rule(tasks,{type:'task',source:{taskId:source.task.id,runId:run.id}});assert.equal(tasks.automation.pending().length,1);
+  const sourceTask=tasks.row('task',source.task.id);tasks.put('task',{...sourceTask,closure:{status:'closed'}});
+  tasks.automation.dispatch();assert.equal(tasks.detail('agent').runs.length,1);assert.equal(tasks.automation.rows('delivery')[0].reason,'source_task_closed');
+  assert.throws(()=>rule(tasks,{id:'late-rule',type:'task',source:{taskId:source.task.id,runId:run.id}}),/event_source_closed/);
+});
 test('real Harness releases its slot, resumes the same session after failed check, then verifies the fix',async t=>{
   const {tasks,workspace,reopen}=await fixture(t);const first=agent(tasks,{autoContinue:2});
   const result=await until(()=>{const d=tasks.detail('agent');return d.runs.length===3&&d.task.status==='completed'&&d.task.cleanupConfirmed&&d;});
