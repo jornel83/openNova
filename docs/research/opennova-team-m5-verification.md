@@ -61,8 +61,9 @@ M5 将已有 `video-production`、DeepSeek Bot 的员工能力绑定和 Harness 
 - 460×900 浏览器完成技能库、提炼、保存、员工绑定、明确选用、新输入结果 9.30、更新回退及刷新；无控制台错误和横向溢出。证据：`output/playwright/team-m5/verification.json`。
 - 原数据升级前停机备份已校验：`~/.local/share/opennova/backups/team-m5-20261108-actual/`，包含 17,195 个文件、17 个符号链接、10 份数据库。旧进程已退出但遗留 Bot 锁，经同主机 PID、端口与 Job 清理核对后，使用 bundled Bot 原生锁恢复逻辑回收；审计保存在仓库外。
 - 真实 ChatGPT：总管自主查询并加载 video-production；员工金额汇总 30.75 经总管验收，实际只读提炼生成 csv-decimal-summary-validation，原对话保存后自动绑定；新输入加载该技能得到 9.30，再次通过验收。重启后两项业务均保持单轮、版本与成果不变，作业清理确认。证据：`output/team-m5/real-model-evidence.json`。验证脚本最后的检查曾使用超出 API 上限的 page size，修正检查方式后在同一隔离状态复核，没有重做业务任务。
-- 首轮根回归 775 项 JavaScript 与 197 项 Python 全部通过。上游 Bot 521 项测试、40 步离线集成 smoke、lint 和生成客户端检查通过；lint 保留 14 条原有警告。源独立性审计通过，gitlinks=0。最终冻结版本根回归为 **777 项 JavaScript + 197 项 Python 全部通过**，完整构建、doctor、独立性审计均通过。源码指纹为 `c788040622137e7f017e84593f2273396f4d9b6d6989a6865658231b7a79f6e4`。
+- 首轮根回归 775 项 JavaScript 与 197 项 Python 全部通过。上游 Bot 521 项测试、40 步离线集成 smoke、lint 和生成客户端检查通过；lint 保留 14 条原有警告。源独立性审计通过，gitlinks=0。最终冻结版本根回归为 **777 项 JavaScript + 197 项 Python 全部通过**，完整构建、doctor、独立性审计均通过。源码指纹为 `e60cdd357d1a90ff59bb7d91db30fe77ab481614ba4234687c58c1b697bb0639`。
 - 原实例通过统一入口启动，18560 健康检查 ready，桌面扩展 connected；24 个 Task、33 个 Run、10 份成果、11 条验收记录逐条保持原值。6 个配置/凭据/记忆文件及 6 个原有视频改动文件哈希一致。Bot 状态仅改变总管指令、总管技能绑定、新增 video-production capability 与 revision；历史经验提炼任务为零，SQLite integrity_check=ok。未启动麦克风。保留审计：`~/.local/share/opennova/verification/team-m5-20261108/preservation-after.json`。
-- 冻结构建后的实际 8 小时测试已启动，独立目录为 `~/.local/share/opennova/verification/team-m5-soak-20261108-final/`。以最终 `result.json` 的 `status=passed` 与 `eightHourComplete=true` 为完成依据；当前启动记录不能计作通过。
+- 发布检查发现两项新测试依赖用户未提交的参考视频扩展，已改为提交基线的标准图片输入契约，保留用户文件。当前工作区 23 项视频 adapter 测试通过；仓库外仅提取已提交视频源码后，adapter 23 项、基线 Python/launcher 13 项及真实归档 Python 调用全部通过。`reference_videos` 扩展仅可选兼容，开源提交不依赖这些未提交改动。证据：`output/team-m5/committed-video-baseline.json`。上面的完整工作区回归包含用户原有视频测试；修正后只重跑相关测试并重新完整构建。
+- 首次耐久启动完成 3 轮约 162 秒后，为修正上述测试而主动停止，状态为 interrupted，不计作耐久通过。冻结构建后的第二次实际 8 小时测试已启动，独立目录为 `~/.local/share/opennova/verification/team-m5-soak-20261108-r2/`。以最终 `result.json` 的 `status=passed` 与 `eightHourComplete=true` 为完成依据；当前启动记录不能计作通过。
 
 人工测试步骤见 [M5 测试用例](opennova-team-m5-test-cases.md)。完整长测须在最终源码与构建冻结后进行，见 [团队长时间运行验证](opennova-team-soak.md)；短时回归不能替代连续 8 小时。

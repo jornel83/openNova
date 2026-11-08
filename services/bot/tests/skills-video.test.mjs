@@ -30,7 +30,7 @@ test('video catalog preserves six schemas and exposes nonblocking wait semantics
   const definitions=videoToolDefinitions();assert.deepEqual(definitions.map(d=>d[0]),VIDEO_TOOL_NAMES);
   assert.equal(definitions.find(d=>d[0]==='video_submit')[2].output_dir.required,undefined);
   assert.match(definitions.find(d=>d[0]==='video_wait')[1],/让出执行位置/);
-  assert.equal(definitions.find(d=>d[0]==='video_submit')[2].config.properties.reference_videos.type,'array');
+  assert.equal(definitions.find(d=>d[0]==='video_submit')[2].config.properties.reference_images.type,'array');
 });
 
 test('every nested video schema compiles through the real Harness defineTool API',async()=>{
@@ -92,9 +92,9 @@ test('invalid fields, nested credentials, config pairing and changed action IDs 
 });
 
 test('configuration-file inputs resolve relative to their file and preserve full-access paths',async t=>{
-  const f=fixture(t),folder=join(f.home,'materials');mkdirSync(folder);writeFileSync(join(folder,'config.json'),JSON.stringify({prompt:'x',reference_images:['image.png'],reference_videos:['motion.mp4']}));
+  const f=fixture(t),folder=join(f.home,'materials');mkdirSync(folder);writeFileSync(join(folder,'config.json'),JSON.stringify({prompt:'x',reference_images:['image.png']}));
   const result=await f.execute('video_validate',{config_path:'../materials/config.json'});
-  assert.equal(result.status,'validated');assert.deepEqual(f.calls[0].args.config.reference_images,[join(folder,'image.png')]);assert.deepEqual(f.calls[0].args.config.reference_videos,[join(folder,'motion.mp4')]);assert.equal(f.calls[0].args.config_path,undefined);
+  assert.equal(result.status,'validated');assert.deepEqual(f.calls[0].args.config.reference_images,[join(folder,'image.png')]);assert.equal(f.calls[0].args.config_path,undefined);
 });
 
 test('duplicate in-flight submission and a second action for the same default directory do not submit twice',async t=>{
