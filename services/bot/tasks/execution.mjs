@@ -4,6 +4,9 @@ export const LOCAL_TASK_TOOLS=['glob','grep','read','write','edit','task_command
 export const HOST_TASK_TOOLS=['browser_open','browser_read','browser_click','browser_fill','browser_scroll','browser_close','nova_show','document_open'];
 export const NETWORK_TASK_TOOLS=['web_search','web_fetch','research_sources'];
 export const plainWorkspace=task=>['general','documents'].includes(task.workspaceMode);
+// V2 Full Access already permits local commands. Its filesystem tools must
+// have the same host-user reach, while legacy and review contracts stay scoped.
+export const hasFullFilesystemAccess=task=>task.policyVersion>=EXECUTION_POLICY_VERSION&&task.permission==='full'&&!task.managementReview;
 export function executionSpec(input){
   if(input.mode!==undefined&&!['analysis','edit'].includes(input.mode))throw Error('invalid_task_permission');
   const permission=input.permission??(input.mode==='analysis'?'read-only':'full');

@@ -8,6 +8,7 @@ import {readJson,saveJson,readSteps} from './agent-files.mjs';
 import {TaskEventEngine} from './event-engine.mjs';
 import {validateInputFiles,validateGeneralInputs} from './documents.mjs';
 import {executionSpec,plainWorkspace} from './execution.mjs';
+import {resolveTaskPath} from './filesystem.mjs';
 import {workspaceDiff,applyWorkspace} from './workspace.mjs';
 import {TeamReports} from '../team/reports.mjs';
 import {TeamAssignments,planningSpec} from '../team/assignments.mjs';
@@ -104,9 +105,16 @@ export class TaskManager {
     if(typeof title!=='string'||!title.trim()||title.length>160||typeof command!=='string'||!command.trim()||command.length>16000||command.includes('\0'))throw Error('invalid_task_command');
     const workdir=input.workdir??'.';
     if(typeof workdir!=='string'||!workdir||workdir.includes('\0'))throw Error('invalid_task_workdir');
-    let cwd;try{cwd=realpathSync(resolve(root,workdir));}catch{throw Error('invalid_task_workdir');}
-    const rel=relative(root,cwd);
-    if(rel==='..'||rel.startsWith('../')||isAbsolute(rel)||!statSync(cwd).isDirectory())throw Error('invalid_task_workdir');
+    let cwd;
+    if(check){
+      // The parent held by the host grants access; model arguments cannot do so.
+      const parent=this.row('task',check.taskId);if(parent.runId!==check.runId)throw Error('task_run_changed');
+      try{cwd=realpathSync(resolveTaskPath({...parent,workspace:root},workdir,{directory:true}));}catch{throw Error('invalid_task_workdir');}
+    }else{
+      try{cwd=realpathSync(resolve(root,workdir));}catch{throw Error('invalid_task_workdir');}
+      const rel=relative(root,cwd);
+      if(rel==='..'||rel.startsWith('../')||isAbsolute(rel)||!statSync(cwd).isDirectory())throw Error('invalid_task_workdir');
+    }
     const timeoutMs=input.timeoutMs??1800000;
     if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>7200000)throw Error('invalid_task_timeout');
     const artifacts=input.artifacts??[];

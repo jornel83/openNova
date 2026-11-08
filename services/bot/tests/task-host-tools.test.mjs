@@ -82,12 +82,15 @@ test('pause cancels an in-flight browser action and retains uncertain delivery w
   assert.equal((await pending).status,'unknown');assert.equal(f.calls.length,1);
   f.task.status='running';assert.equal((await f.invoke()).status,'unknown');assert.equal(f.calls.length,1);
 });
-test('document dispatch uses the task workspace and rejects traversal and symlink escape',async t=>{
+test('full access document dispatch resolves default workspace and authorized external files',async t=>{
   const opened=[],f=fixture(t,{documentFactory:options=>({open:async command=>{opened.push({options,command});return {status:'dispatched'};}})});
   assert.equal((await f.invoke('document_open',{path:'report.md'})).status,'dispatched');
   assert.equal(opened.length,1);assert.equal(opened[0].command.path,realpathSync(join(f.workspace,'report.md')));
   writeFileSync(join(f.home,'outside.md'),'outside');symlinkSync(join(f.home,'outside.md'),join(f.workspace,'link.md'));
-  assert.equal((await f.invoke('document_open',{path:'../outside.md'},{actionId:'outside'})).error,'outside_task_workspace');
-  assert.equal((await f.invoke('document_open',{path:'link.md'},{actionId:'link'})).error,'outside_task_workspace');
-  assert.equal(opened.length,1);
+  assert.equal((await f.invoke('document_open',{path:'../outside.md'},{actionId:'outside'})).status,'dispatched');
+  assert.equal((await f.invoke('document_open',{path:'link.md'},{actionId:'link'})).status,'dispatched');
+  assert.equal(opened.length,3);assert.equal(opened[1].command.path,realpathSync(join(f.home,'outside.md')));assert.equal(opened[2].command.path,opened[1].command.path);
+  f.task.permission='read-only';await assert.rejects(f.invoke('document_open',{path:'../outside.md'},{actionId:'read-only'}),/task_host_tool_denied/);
+  f.task.permission='full';f.task.managementReview={targetTaskId:'employee-work'};
+  assert.equal((await f.invoke('document_open',{path:'link.md'},{actionId:'review'})).error,'outside_task_workspace');assert.equal(opened.length,3);
 });

@@ -1,11 +1,12 @@
 /** Task-owned references and durable receipts for the shared desktop resource. */
 import {createHash} from 'node:crypto';
 import {realpathSync} from 'node:fs';
-import {join,resolve,relative,isAbsolute} from 'node:path';
+import {join} from 'node:path';
 import {createWorkContext} from '../desktop/context.mjs';
 import {createBrowserTools} from '../desktop/tools.mjs';
 import {createDocumentOpener,createDocumentTool,inspectFileReference} from '../desktop/documents.mjs';
 import {readJson} from './agent-files.mjs';
+import {resolveTaskPath} from './filesystem.mjs';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
@@ -102,9 +103,7 @@ export function createTaskHostTools({tasks,ops,bridge,foregroundBusy=()=>false,d
         if(name==='document_open'){
           const workspace=readJson(join(tasks.agentHome(current),'workspace.json'));
           if(!workspace?.path)throw Error('task_workspace_not_ready');
-          if(typeof args.path!=='string'||!args.path||args.path.includes('\0'))throw Error('invalid_file_path');
-          const root=realpathSync(workspace.path),path=realpathSync(resolve(root,args.path)),rel=relative(root,path);
-          if(rel==='..'||rel.startsWith('../')||isAbsolute(rel))throw Error('outside_task_workspace');
+          const root=realpathSync(workspace.path),path=realpathSync(resolveTaskPath({...current,workspace:root},args.path));
           const opener=documentFactory({workspace:root,ops:localOps,context});
           result=await opener.open({id:'task-doc-'+id,requestId:run.id,path,applicationId:args.applicationId},{signal:combined});
         }else{

@@ -30,8 +30,8 @@ export function AgentTaskForm({action,onSelect,disabled,team,tasks=[]}){
     <label>验收标准（选填）<textarea rows={3} maxLength={4000} value={form.acceptanceCriteria} onChange={e=>field('acceptanceCriteria',e.target.value)} placeholder="例如：交付报告，列出来源，验证脚本退出码为 0"/></label>
     {form.assignedBotId?<><label className="task-check"><input type="checkbox" checked={form.managementEnabled??true} onChange={e=>field('managementEnabled',e.target.checked)}/>由总管检查成果并跟进</label>{(form.managementEnabled??true)&&<label>最多自动返工次数<input type="number" required min={0} max={5} value={form.maxReworks} onChange={e=>field('maxReworks',Number(e.target.value))}/></label>}<p className="subtle">总管依据验收标准和实际执行记录检查成果。需要你决策时会出现在待处理事项中。</p></>:<p className="subtle">总管亲自执行，完成后由你查看并验收成果。</p>}
     <TaskPlanningFields value={form} tasks={tasks} onChange={patch=>setForm({...form,...patch})}/>
-    <label>执行权限<select value={form.permission} onChange={e=>field('permission',e.target.value)}><option value="full">完整执行（默认）</option><option value="read-only">只读</option></select></label>
-    <p className="subtle">{form.permission==='read-only'?'读取资料和查询信息，结果显示在任务报告中；不写文件、不运行命令。':'可使用已接入并获授权的文件、命令、联网及浏览器工具。成果保存在独立工作目录。'}</p>
+    <label>执行权限<select value={form.permission} onChange={e=>field('permission',e.target.value)}><option value="full">完整执行（Full Access，默认）</option><option value="read-only">只读</option></select></label>
+    <p className="subtle">{form.permission==='read-only'?'读取任务目录内的资料并查询信息；不写文件、不运行命令。':'可读写当前系统用户有权访问的任意目录，并使用已接入的命令、联网及浏览器工具。成果默认保存在独立目录，仍遵守任务约束。'}</p>
     {form.permission==='full'&&<><label className="task-check"><input type="checkbox" checked={!!form.autoContinue} onChange={e=>field('autoContinue',e.target.checked?2:0)}/>测试完成后自动接续</label>{!!form.autoContinue&&<label>最多自动接续次数<input required type="number" min={1} max={5} value={form.autoContinue} onChange={e=>field('autoContinue',Number(e.target.value))}/></label>}<p className="subtle">默认关闭。启用后允许 Agent 提交后台验证，结果到达时按规则接续；规则有效期 24 小时。</p></>}
     <details><summary>执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><p className="subtle">默认不限制；需要上限时填写，留空可取消该项限制。</p><label>最多模型步骤<input type="number" min={1} max={128} placeholder="不限制" value={form.maxSteps} onChange={e=>field('maxSteps',e.target.value)}/></label><label>Token 预算<input type="number" min={1000} max={1000000} placeholder="不限制" value={form.tokenBudget} onChange={e=>field('tokenBudget',e.target.value)}/></label><label>最长运行时间（分钟）<input type="number" min={1/60} max={120} step="any" placeholder="不限制" value={form.minutes} onChange={e=>field('minutes',e.target.value)}/></label></details>
     <button className="task-primary" disabled={disabled||!budget} type="submit">{submission.current?'重试原任务提交':'提交 Agent 任务'}</button>
@@ -43,7 +43,7 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
   const unavailable=taskUnavailable(task);
   const readonly=(task.permission??(task.mode==='analysis'?'read-only':'full'))==='read-only';
   const codeWorkspace=!task.workspaceMode||task.workspaceMode==='code';
-  const permissionLabel=readonly?'只读':task.policyVersion>=2?'完整执行':'可写（历史权限）';
+  const permissionLabel=readonly?'只读':task.policyVersion>=2?'完整执行（Full Access）':'可写（历史权限）';
   const hasReport=[detail.teamReview?.current,...(detail.teamReview?.history??[])].some(r=>r?.runId===currentRun?.id);
   const actions=useRef(new Map());
   useEffect(()=>{setDiff(null);setApplied(false);},[task.runId]);
@@ -54,6 +54,7 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
   async function send(name){const result=await dispatch(name,{text});if(result)setText('');}
   return <div className="agent-task">
     <p className="task-intro">{permissionLabel} · {({general:'通用工作',code:'代码工程',documents:'文本资料整理'})[task.workspaceMode??'code']} · {executionBudgetLabel(task)}</p>
+    {!readonly&&task.policyVersion>=2&&<p className="subtle">可访问当前系统用户有权访问的任意目录；仍须遵守下方目标与约束，系统权限不会自动提升。</p>}
     {!readonly&&!(task.policyVersion>=2)&&<p className="subtle">此任务保留创建时的工具权限。新建任务可使用通用执行能力。</p>}
     <details className="task-command" open><summary>目标与约束</summary><p>{task.goal}</p>{task.constraints&&<p>{task.constraints}</p>}</details>
     {currentRun?.instruction&&<p className="task-intro">本轮接续要求：{currentRun.instruction}</p>}
@@ -69,7 +70,7 @@ export function AgentTaskDetail({api,detail,currentRun,action,disabled,busy,onSe
     {currentRun?.jobs?.length?<ol className="agent-steps">{currentRun.jobs.map(j=><AgentStep key={j.id} api={api} taskId={task.id} runId={currentRun.id} job={j}/>)}</ol>:<p className="subtle">尚无工具执行记录。</p>}
     {!hasReport&&currentRun?.result&&<><h4>本轮报告</h4><pre className="task-report">{currentRun.result.text||errorText({message:currentRun.result.error})}</pre></>}
     {!hasReport&&<ResearchSources sources={currentRun?.result?.sources??[]}/>}
-    {!readonly&&codeWorkspace&&<><h4>文件修改</h4><p className="subtle">显示当前工作目录的待应用修改。{!unavailable&&'先查看差异，再应用到原工程；原文件已变化时会停止，不会自动提交 Git。'}</p>{!unavailable&&<div className="task-actions"><button disabled={disabled||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-diff');if(value){setDiff(value);setApplied(false);}}}>查看文件差异</button>{diff&&!diff.empty&&!applied&&<button disabled={disabled||busy||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-apply',{revision:diff.revision});if(value?.application?.status==='applied')setApplied(true);}}>应用到原工程</button>}</div>}
+    {!readonly&&codeWorkspace&&<><h4>文件修改</h4><p className="subtle">这里只显示独立工作目录的待应用修改，外部目录修改不包含在内。{!unavailable&&'先查看差异，再应用到原工程；原文件已变化时会停止，不会自动提交 Git。'}</p>{!unavailable&&<div className="task-actions"><button disabled={disabled||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-diff');if(value){setDiff(value);setApplied(false);}}}>查看文件差异</button>{diff&&!diff.empty&&!applied&&<button disabled={disabled||busy||!task.canContinue} onClick={async()=>{const value=await dispatch('background-task-apply',{revision:diff.revision});if(value?.application?.status==='applied')setApplied(true);}}>应用到原工程</button>}</div>}
       {applied&&<p className="task-intro" role="status">已应用到原工程。</p>}{diff&&<><p className="subtle">{diff.empty?'没有待应用的修改。':`${diff.files.length} 个文件：${diff.files.join('、')}`}</p>{!diff.empty&&<pre className="task-log" aria-label="文件差异">{diff.patch}</pre>}</>}
       {!!detail.applications?.length&&<details className="task-command"><summary>应用记录</summary>{detail.applications.map(a=><p key={a.actionId}>{a.status==='applied'?'已应用':'应用结果待核对，请检查原文件'} · {new Date(a.createdAt).toLocaleString()}</p>)}</details>}
     </>}
