@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {TeamPanel,AssigneeSelect} from './team.jsx';
-import {AgentTaskForm,AgentTaskDetail} from './agent-tasks.jsx';
+import {AgentTaskForm,AgentTaskDetail,useTaskProjectBinding,TaskProjectNotice} from './agent-tasks.jsx';
 import {TeamOverview,TeamWatch} from './team-overview.jsx';
 import {taskPages} from './team-overview-view.mjs';
 import {TeamResults,TaskCoordination} from './team-results.jsx';
@@ -20,7 +20,7 @@ export function TaskCard({task,onOpen}){
   </button>;
 }
 
-export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
+export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy,projects}){
   const [detail,setDetail]=useState(null),[error,setError]=useState(''),[pending,setPending]=useState(false);
   const [connectionError,setConnectionError]=useState(''),[notice,setNotice]=useState('');
   const [owner,setOwner]=useState('all');
@@ -28,7 +28,8 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
   const [overview,setOverview]=useState(null),[overviewError,setOverviewError]=useState(''),[overviewVersion,setOverviewVersion]=useState(0);
   const [historyOpen,setHistoryOpen]=useState(false),[listLoading,setListLoading]=useState(false);
   const [runId,setRunId]=useState(null),[log,setLog]=useState(null),[clock,setClock]=useState(Date.now());
-  const [form,setForm]=useState({title:'',command:'',workdir:'.',artifacts:'',minutes:'30'});
+  const [form,setForm]=useState({title:'',command:'',workdir:'.',artifacts:'',minutes:'30',managementEnabled:true});
+  const projectBinding=useTaskProjectBinding(projects),submitting=useRef(false);
   const submission=useRef(null),retryAction=useRef(null),closureAction=useRef(null),closureBusy=useRef(false),detailVersion=useRef(0),logRef=useRef(null),selectedRef=useRef(selectedId);
   selectedRef.current=selectedId;
   useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[]);
@@ -91,17 +92,19 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
       if(value.task&&value.task.id===selectedRef.current){detailVersion.current++;setDetail(value);}return value;
     }
     catch(e){
-      if(name==='background-task-start'&&e.code!=='network')submission.current=null;
+      if(name==='background-task-start'&&body===submission.current&&e.code!=='network')submission.current=null;
       setError(errorText(e));
       if(reviewConflict(e)&&selectedRef.current){try{const latest=await api.call('background-task',{id:selectedRef.current});if(latest.task.id===selectedRef.current){detailVersion.current++;setDetail(latest);setRunId(null);setNotice('任务或成果已有更新，已切换到最新记录，请核对后再操作。');}}catch{}}
       if(rethrow)throw e;
     }finally{setPending(false);}
   }
   async function submit(event){
-    event.preventDefault();
-    if(!submission.current)submission.current={id:crypto.randomUUID(),assignedBotId:form.assignedBotId||undefined,title:form.title,command:form.command,workdir:form.workdir,timeoutMs:Number(form.minutes)*60000,artifacts:form.artifacts.split('\n').map(s=>s.trim()).filter(Boolean)};
-    const value=await action('background-task-start',submission.current);
-    if(value){submission.current=null;setForm({title:'',command:'',workdir:'.',artifacts:'',minutes:'30'});onSelect(value.task.id);}
+    event.preventDefault();if(!online||pending||submitting.current||!submission.current&&projectBinding.blocked)return;
+    if(!submission.current){const expectedProject=projectBinding.capture();submission.current={id:crypto.randomUUID(),assignedBotId:form.assignedBotId||undefined,title:form.title,command:form.command,workdir:form.workdir,timeoutMs:Number(form.minutes)*60000,artifacts:form.artifacts.split('\n').map(s=>s.trim()).filter(Boolean),managementEnabled:form.managementEnabled??true,...(expectedProject?{expectedProject:{...expectedProject}}:{})};}
+    submitting.current=true;
+    try{const value=await action('background-task-start',submission.current);
+      if(value){submission.current=null;projectBinding.reset();setForm({title:'',command:'',workdir:'.',artifacts:'',minutes:'30',managementEnabled:true});onSelect(value.task.id);}
+    }finally{submitting.current=false;}
   }
   async function retry(){
     const task=detail.task;
@@ -147,21 +150,27 @@ export function TaskPanel({api,summary,team,selectedId,onSelect,online,busy}){
         {currentPage?.hasMore&&<button className="task-more" type="button" disabled={listLoading} onClick={()=>setPageLimit(n=>n+50)}>{listLoading?'正在读取…':'加载更多任务'}</button>}
       </details>
       <p className="task-intro">可以直接对 Nova 说任务要求，或补充员工需要的信息。任务执行期间，你可以继续聊天。</p>
-      <AgentTaskForm api={api} team={team} tasks={choices} action={action} onSelect={onSelect} disabled={!online||pending}/>
+      <AgentTaskForm api={api} projects={projects} team={team} tasks={choices} action={action} onSelect={onSelect} disabled={!online||pending}/>
       <details className="task-create"><summary>直接运行命令</summary>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} onChangeCapture={projectBinding.capture}>
+          <TaskProjectNotice binding={projectBinding} retrying={!!submission.current} disabled={!online||pending}/>
           <AssigneeSelect team={team} value={form.assignedBotId} onChange={v=>setForm({...form,assignedBotId:v})}/>
           <label>任务名称<input required maxLength={160} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label>
           <label>命令<textarea required maxLength={16000} rows={3} value={form.command} onChange={e=>setForm({...form,command:e.target.value})}/></label>
           <label>项目内工作目录<input required value={form.workdir} onChange={e=>setForm({...form,workdir:e.target.value})}/></label>
           <label>最长运行时间（分钟）<input required type="number" min={1} max={120} value={form.minutes} onChange={e=>setForm({...form,minutes:e.target.value})}/></label>
           <label>结果文件（可选，每行一个相对路径）<textarea rows={2} value={form.artifacts} onChange={e=>setForm({...form,artifacts:e.target.value})}/></label>
+          <label className="task-check"><input type="checkbox" checked={form.managementEnabled??true} onChange={e=>setForm({...form,managementEnabled:e.target.checked})}/>自动检查成果并跟进</label>
+          <p className="subtle">{(form.managementEnabled??true)?'独立检查命令结果与执行证据；失败或需要你判断时会提示，不会自动重放命令。':'自动检查已关闭，完成后由你查看结果。'}</p>
           {submission.current&&<p className="subtle">重试会核对上次提交的同一任务，当前编辑内容不会重新提交。</p>}
-          <button className="task-primary" type="submit" disabled={!online||pending}>{pending?'正在提交…':submission.current?'重试提交':'提交后台任务'}</button>
+          <button className="task-primary" type="submit" disabled={!online||pending||!submission.current&&projectBinding.blocked}>{pending?'正在提交…':submission.current?'重试提交':'提交后台任务'}</button>
         </form>
       </details>
     </>:detail?<>
       <h3 className="task-title">{detail.task.title}</h3>
+      {detail.task.documentResearch&&detail.task.inputSnapshot?.version===2&&<details className="task-command"><summary>启动时的资料版本 · {detail.task.inputSnapshot.files.length} 份</summary>
+        {detail.task.inputSnapshot.files.map(f=><p key={f.path}>{f.path} · <code title={f.sha256}>{f.sha256.slice(0,12)}</code></p>)}
+        {detail.task.documentOutputPath&&<p>指定交付位置：{detail.task.documentOutputPath}</p>}</details>}
       {detail.task.ownerName&&<p>负责人：{detail.task.ownerName} · {employeeTask(detail.task)?'员工任务':'总管亲自执行'}</p>}
       {currentRun?.employee&&<details className="task-command"><summary>本轮职责快照</summary><p>{currentRun.employee.name} · {currentRun.employee.role}</p><p>{currentRun.employee.instructions}</p></details>}
       <p className={'task-status '+detail.task.status} role="status">{taskClosureLabel(detail.task)&&taskClosureLabel(detail.task)+' · '}{taskLabels[detail.task.status]} · {taskDuration(detail.task,clock)}</p>

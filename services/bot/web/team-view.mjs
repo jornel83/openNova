@@ -8,10 +8,17 @@ export function reviewView(detail,runId=detail?.task?.runId){
   const reviews=(team.reviews??[]).filter(r=>r.reportId===report?.id).sort((a,b)=>(b.createdAt??0)-(a.createdAt??0));
   const latest=!!report&&report.id===team.current?.id&&report.runId===task.runId&&report.assignmentVersion===task.assignmentVersion;
   const review=latest&&team.currentReview?.reportId===report.id?team.currentReview:reviews[0]??null;
-  const evidenceChanged=!!report&&(report.evidence?.captureIncomplete||(report.artifacts??[]).some(file=>file.status!=='available'||file.sourceStatus&&file.sourceStatus!=='available'));
-  const verificationFailed=!!report&&(report.evidence?.execution?.exitCode!=null&&report.evidence.execution.exitCode!==0||[...(report.evidence?.commands??[]),...(report.evidence?.checks??[])].some(item=>item.status!=='completed'||item.exitCode!=null&&item.exitCode!==0));
+  const evidence=report?.evidence??{},candidate=evidence.candidateReview;
+  const covered=new Set(candidate?.status==='passed'?candidate.coveredStepIds:[]);
+  const failed=item=>item.status!=='completed'||(candidate||item.exitCode!=null)&&item.exitCode!==0;
+  const candidateChanged=candidate&&(candidate.patchCurrent===false||latest&&review?.status==='stale');
+  const evidenceChanged=!!report&&(!!candidateChanged||evidence.captureIncomplete||(report.artifacts??[]).some(file=>file.status!=='available'||file.sourceStatus&&file.sourceStatus!=='available'));
+  const unresolvedStep=candidate&&evidence.steps?.some(step=>step.status!=='completed'&&!(step.tool==='task_command'&&covered.has(step.id)));
+  const verificationFailed=!!(candidate&&candidate.status!=='passed'||unresolvedStep||
+    evidence.execution?.exitCode!=null&&evidence.execution.exitCode!==0||
+    evidence.commands?.some(item=>failed(item)&&!covered.has(item.stepId))||evidence.checks?.some(failed));
   const actionable=latest&&!taskUnavailable(task)&&!evidenceChanged&&['completed','failed','waiting_input'].includes(task.status)&&report.evidence?.execution?.cleanupConfirmed===true;
-  return {report,review,reviews,management:team.management??task.management??null,latest,actionable,evidenceChanged,verificationFailed,
+  return {report,review,reviews,covered,management:team.management??task.management??null,latest,actionable,evidenceChanged,verificationFailed,
     canAccept:actionable&&!verificationFailed&&report.status==='completed'&&review?.status!=='accepted',
     binding:report?{id:task.id,runId:report.runId,reportId:report.id,assignmentVersion:report.assignmentVersion}:null};
 }

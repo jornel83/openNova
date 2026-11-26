@@ -5,12 +5,34 @@ import {join,dirname,relative,isAbsolute} from 'node:path';
 import {parse,stringify} from 'yaml';
 
 export const skillNameValid=value=>typeof value==='string'&&value.length<=32&&/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value);
+export const SKILL_FIELD_RULES={
+  name:'技能标识须为 1–32 个字符，以小写英文字母 a-z 开头，仅使用小写英文字母、数字和单个短横线分隔的词段；不能以短横线结尾，不能包含中文、空格或连续短横线。例如 csv-amount-summary。',
+  description:'适用场景须为非空字符串，最多 2000 个字符；可以使用中文。',
+  content:'工作方法须为非空 Markdown 字符串，最多 64000 个 UTF-8 字节，不得含 NUL 字符；可以使用中文，说明适用条件、输入参数、步骤、验证方法和边界。',
+};
 export const digest=value=>createHash('sha256').update(value).digest('hex');
 const inside=(root,path)=>{const part=relative(root,path);return part!=='..'&&!part.startsWith('../')&&!isAbsolute(part);};
 const MAX_BYTES=4*1024*1024,MAX_FILES=128;
+export const LEGACY_IMAGE_EXECUTOR_RESOURCES=Object.freeze([
+  'tools/__init__.py','tools/image/__init__.py','tools/image/tool.py','tools/image/tool-definitions.json',
+  'tools/image/schema.py','tools/image/operations.py','tools/image/generation.py','tools/image/gif_generation.py',
+  'tools/image/bundle.py','tools/image/export.py','tools/image/video_gif.py','tools/image/review.py',
+  'tools/image/providers/__init__.py','tools/image/providers/ark_provider.py','tools/image/providers/openai_provider.py',
+  'tools/image/requirements.lock.txt',
+]);
+export const IMAGE_EXECUTOR_RESOURCES=Object.freeze([
+  ...LEGACY_IMAGE_EXECUTOR_RESOURCES,
+  'tools/image/providers/spark_provider.py','tools/image/providers/spark_worker.py',
+  ...['generate.py','portrait_stage.py','edit_probe.py','portrait_pipeline.json'].map(name=>'tools/image/providers/spark_profile/'+name),
+]);
 
 export function skillDocument(name,description,content,invocation={model:true,user:true}){
-  if(!skillNameValid(name)||typeof description!=='string'||!description.trim()||description.length>2000||typeof content!=='string'||!content.trim()||Buffer.byteLength(content)>64000||content.includes('\0'))throw Error('invalid_skill');
+  const issues=[];
+  if(!skillNameValid(name))issues.push({field:'name',message:SKILL_FIELD_RULES.name});
+  if(typeof description!=='string'||!description.trim()||description.length>2000)issues.push({field:'description',message:SKILL_FIELD_RULES.description});
+  if(typeof content!=='string'||!content.trim()||Buffer.byteLength(content)>64000||content.includes('\0'))issues.push({field:'content',message:SKILL_FIELD_RULES.content});
+  // Keep the public error code stable; model tools can surface actionable field details.
+  if(issues.length)throw Object.assign(Error('invalid_skill'),{issues});
   return '---\n'+stringify({name,description:description.trim(),
     ...(invocation.model===false?{'disable-model-invocation':true}:{}),
     ...(invocation.user===false?{'user-invocable':false}:{})})+'---\n\n'+content.trim()+'\n';
@@ -57,10 +79,16 @@ export function captureBundle(directory,{root,source='personal'}={}){
   visit(directory);
   // This shipped launcher locates tools/video relative to its repository root.
   // Preserve that layout in the archive so old runs never execute changed files.
-  if(source==='bundled'&&info.name==='video-production'&&root){
-    for(const name of ['tools/video/tool.py','tools/video/tool-definitions.json']){
+  const mapped=source==='bundled'&&({
+    'video-production':['tools/video/tool.py','tools/video/spark_h3.py','tools/video/spark_veda.py',
+      'tools/video/veda_worker.py','tools/video/veda_workflow.json','tools/video/aesthetic_edit.py','tools/video/aesthetic_timeline.ass','tools/video/tool-definitions.json'],
+    'image-production':IMAGE_EXECUTOR_RESOURCES,
+  })[info.name];
+  if(mapped&&root){
+    const realRoot=realpathSync(root);
+    for(const name of mapped){
       const path=join(root,name),stat=lstatSync(path);
-      if(!inside(root,path)||!stat.isFile()||stat.isSymbolicLink())throw Error('invalid_skill_resource');
+      if(!inside(root,path)||!stat.isFile()||stat.isSymbolicLink()||realpathSync(path)!==join(realRoot,name))throw Error('invalid_skill_resource');
       addFile(files,name,readFileSync(path));
     }
   }

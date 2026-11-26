@@ -1,6 +1,11 @@
 /** Per-Run credentials authorize only that Run's runtime routes, never Bot controls. */
 import {createHash,timingSafeEqual} from 'node:crypto';
-const paths=new Set(['/task-runtime/admission','/task-runtime/check','/task-runtime/tool','/task-runtime/video']);
+import {allowedTaskMediaTools} from './execution.mjs';
+import {taskDocumentEligibility} from './document-tools.mjs';
+const paths=new Set(['/task-runtime/admission','/task-runtime/check','/task-runtime/tool','/task-runtime/video','/task-runtime/media','/task-runtime/document']);
+// Match the worker tool's timeout, allowing the executor to write its receipt
+// or recover the known remote task before the scoped connection closes.
+export const taskBridgeTimeout=route=>route==='media'||route==='document'?290000:route==='video'?180000:30000;
 export function createTaskRuntimeBridge({tasks,actors,hostTools,foregroundBusy}){
   function authorize(body,token){
     const task=tasks.row('task',body.taskId),run=tasks.row('run',body.runId);
@@ -21,22 +26,33 @@ export function createTaskRuntimeBridge({tasks,actors,hostTools,foregroundBusy})
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');
       const token=(req.headers.authorization??'').startsWith('Bearer ')?req.headers.authorization.slice(7):'';
       const {task,run}=authorize(body,token);
-      const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(req.url==='/task-runtime/video'?180000:30000)]);
+      const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(taskBridgeTimeout(req.url.slice('/task-runtime/'.length)))]);
       actor=actors?.issue({kind:task.managementReview?'supervisor':'worker',botId:task.assignedBotId,taskId:task.id,runId:run.id,assignmentVersion:run.assignmentVersion,request:{id:run.id,signal}});
       if(actor)actors.check(actor,task.id);
       interval=setInterval(()=>{try{authorize(body,token);if(actor)actors.check(actor,task.id);}catch(error){controller.abort(error);}},100);interval.unref();
       let result;
       if(req.url==='/task-runtime/admission')result={foregroundBusy:!!foregroundBusy()};
+      else if(req.url==='/task-runtime/document'){
+        if(!tasks.documentTools||!taskDocumentEligibility(task,run,body.name))throw Error('task_tool_denied');
+        result=await tasks.documentTools.execute({task,run,actionId:body.actionId,name:body.name,args:body.args,signal});
+      }
+      else if(task.documentResearch)throw Error('task_tool_denied');
       else if(req.url==='/task-runtime/check'){
-        if(task.permission!=='full')throw Error('task_tool_denied');
+        if(task.permission!=='full'||task.media)throw Error('task_tool_denied');
         result=tasks.createCheck({...body,taskId:task.id,runId:run.id});
       }
       else if(req.url==='/task-runtime/video'){
-        if(task.permission!=='full'||!tasks.video)throw Error('task_tool_denied');
+        if(task.permission!=='full'||task.media||!tasks.video)throw Error('task_tool_denied');
         result=await tasks.video.execute({taskId:task.id,runId:run.id,stepId:body.actionId,name:body.name,args:body.args,signal});
       }
+      else if(req.url==='/task-runtime/media'){
+        if(!tasks.media||task.closure?.status||task.media?.operation!==run.media?.operation||
+          !allowedTaskMediaTools({...task,skills:run.skills,media:run.media,summaryRecovery:run.summaryRecovery}).includes(body.name))
+          throw Error('task_tool_denied');
+        result=await tasks.media.execute({task,run,actionId:body.actionId,name:body.name,args:body.args,signal});
+      }
       else{
-        if(task.permission!=='full'||!hostTools)throw Error('task_tool_denied');
+        if(task.permission!=='full'||task.media||!hostTools)throw Error('task_tool_denied');
         result=await hostTools.invoke({task,run,name:body.name,args:body.args,actionId:body.actionId,signal});
       }
       reply(200,result);

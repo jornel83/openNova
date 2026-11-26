@@ -1,0 +1,4 @@
+# Isolated image-tool environment, Python >= 3.11.
+# Ark transport uses Python's standard library. FFmpeg/ffprobe are external tools.
+# Optional historical OpenAI probe: requirements-openai-legacy.lock.txt.
+Pillow==13.0.0

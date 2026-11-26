@@ -88,3 +88,33 @@ test('pausing a waiting video stops follow-up across restart and later remote co
   assert.equal(current.task.status,'paused');assert.equal(current.task.runId,waiting.task.runId);assert.equal(current.runs.length,1);assert.equal(current.video.records[0].following,false);
   assert.equal(after.posts,1);assert.equal(after.queries,before.queries,'a paused job must not keep querying the remote provider');assert.equal(after.downloads??0,0);
 });
+
+test('video_generate resumes the same Spark job after restart, downloads once, and exposes its MP4 in the report and preview',{timeout:120000},async t=>{
+  if(spawnSync('ffmpeg',['-version'],{stdio:'ignore'}).status!==0){t.skip('FFmpeg unavailable');return;}
+  const h=await lifecycleHost(t,{provider:'skills-provider.mjs',videoTransportModule:'skills-video-transport.mjs',canonicalHome:true});
+  await h.start();
+  const employee=await h.employee('本地视频员');await assign(h,employee);
+  const id='video-generate-flow';
+  await startTask(h,id,employee,'SKILLS_VIDEO_GENERATE 使用本地 Minimax H3 生成 4 秒视频。');
+  const waiting=await settle(h,id,'waiting_event');
+  assert.deepEqual(waiting.runs[0].jobs.map(step=>step.tool),['video_generate']);
+  const [initial]=waiting.video.records;
+  assert.equal(waiting.runs[0].progress.awaiting.videoRecordId,initial.id);
+  assert.equal(initial.remoteTaskId,'offline-remote-1');assert.equal(initial.following,true);
+  const counts=()=>JSON.parse(readFileSync(join(h.home,'video-fixture.json'),'utf8'));
+  assert.equal(counts().posts,1);assert.equal(counts().downloads,0);
+  await h.stop();await h.start();
+  assert.equal((await h.api('/background-task',{id})).task.status,'waiting_event');
+  writeFileSync(join(h.home,'video-ready'),'ready after restart\n');
+  const done=await settle(h,id);
+  assert.equal(done.runs.length,2);assert.equal(done.runs[1].instructionSource.kind,'video');
+  assert.deepEqual(done.runs[1].jobs,[]);
+  const [record]=done.video.records,artifact=record.artifact,report=done.teamReview.current;
+  assert.equal(record.id,initial.id);assert.equal(record.following,false);assert.equal(record.remoteStatus,'succeeded');
+  assert.equal(artifact.name,'result.mp4');assert.equal(done.runs[1].eventContext.artifact.sha256,artifact.sha256);
+  assert.ok(report.artifacts.some(file=>file.status==='available'&&file.media&&file.sha256===artifact.sha256));
+  assert.ok(report.evidence.video.some(entry=>entry.tool==='video_generate'&&entry.result.sha256===artifact.sha256));
+  const preview=await h.api('/background-video-preview',{id,recordId:record.id});
+  assert.deepEqual(preview,readFileSync(artifact.path));assert.ok(preview.length>1000);
+  const counters=counts();assert.equal(counters.posts,1);assert.ok(counters.queries>=1);assert.equal(counters.downloads,1);
+});

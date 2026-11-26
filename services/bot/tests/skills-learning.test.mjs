@@ -18,6 +18,28 @@ async function accepted(h,id){return h.until(async()=>{const detail=await h.api(
 async function candidate(h,id,status){return h.until(async()=>{const catalog=await h.api('/skills');const value=catalog.candidates.find(item=>item.source.taskId===id);return value?.status===status&&value;},45000);}
 const sourceBody=detail=>({taskId:detail.task.id,runId:detail.task.runId,reportId:detail.teamReview.current.id,reviewId:detail.task.reviewVersion});
 
+test('chief business work is independently accepted and produces one readonly skill candidate without recursive reviews',{timeout:120000},async t=>{
+  const h=await lifecycleHost(t,{provider:'skills-learning-provider.mjs'});await h.start();
+  const chief=(await h.api('/team')).chiefBotId;
+  writeFileSync(join(h.workspace,'ledger.csv'),'item,amount\nA,10.50\nB,20.25\n');
+  await startSource(h,{id:chief},'chief-learning');
+  const source=await accepted(h,'chief-learning'),ready=await candidate(h,'chief-learning','ready');
+  assert.equal(source.task.assignedBotId,chief);assert.equal(source.task.management.enabled,true);assert.equal(source.runs.length,1);
+  assert.equal(readFileSync(join(source.workspace.path,'summary.md'),'utf8'),'行数：2\n合计：30.75\n');
+  assert.equal(ready.source.reportId,source.teamReview.current.id);assert.match(ready.content,/Decimal/);
+  const children=rows(h,'background_task').filter(task=>task.managementReview);
+  assert.equal(children.length,2);assert.equal(children.filter(task=>task.managementReview.kind==='skill-extraction').length,1);
+  for(const child of children){
+    assert.equal(child.assignedBotId,chief);assert.equal(child.permission,'read-only');assert.equal(child.management.enabled,false);assert.notEqual(child.sessionId,source.task.sessionId);
+    assert.equal(rows(h,'team_review').filter(review=>review.taskId===child.id).length,0);
+  }
+  assert.equal(rows(h,'team_review').filter(review=>review.taskId===source.task.id).length,1);
+  assert.equal(rows(h,'opennova_skill_learning').filter(item=>item.source.taskId===source.task.id).length,1);
+  await h.stop();await h.start();await delay(1100);
+  assert.equal(rows(h,'background_task').filter(task=>task.managementReview).length,2);assert.equal((await h.api('/background-task',{id:source.task.id})).runs.length,1);
+  assert.equal(rows(h,'opennova_skill_learning').filter(item=>item.source.taskId===source.task.id).length,1);
+});
+
 test('accepted work is extracted by a real readonly Harness and reused with new inputs and a pinned skill version',{timeout:120000},async t=>{
   const h=await lifecycleHost(t,{provider:'skills-learning-provider.mjs'});await h.start();const employee=await h.employee();
   const original='item,amount\nA,10.50\nB,20.25\n';writeFileSync(join(h.workspace,'ledger.csv'),original);
@@ -49,6 +71,8 @@ test('historical accepted work remains idle until explicitly requested when auto
   const h=await lifecycleHost(t,{provider:'skills-learning-provider.mjs',foregroundProvider:'skills-provider.mjs'});await h.start();const employee=await h.employee();await policy(h,{autoCandidate:false,autoEnable:true});
   writeFileSync(join(h.workspace,'ledger.csv'),'item,amount\nA,1.00\nB,2.00\n');await startSource(h,employee,'historical-source');const source=await accepted(h,'historical-source');
   assert.equal(rows(h,'opennova_skill_learning').length,0);await h.stop();await h.start();await delay(1100);assert.equal(rows(h,'opennova_skill_learning').length,0);
+  const reportNotice=(await h.api('/snapshot')).messages.find(message=>message.kind==='task_notification'&&message.taskId==='historical-source');
+  assert.equal(reportNotice?.notificationStatus,'accepted','the following foreground turn also receives the persisted readonly notification context');
   await h.foreground('manual-history-voice','skill_extract',sourceBody(source));const ready=await candidate(h,'historical-source','promoted');assert.equal(ready.source.reportId,source.teamReview.current.id);
   await h.until(async()=>{const view=await h.api('/skills',{botId:employee.id});return !view.sync.pending&&view.assignment.names.includes(DRAFT.name);});
   const chief=(await h.api('/team')).chiefBotId;assert.ok((await h.api('/skills',{botId:chief})).assignment.names.includes(DRAFT.name),'automatic promotion uses the same durable default binding path');

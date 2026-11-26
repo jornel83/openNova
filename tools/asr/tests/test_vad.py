@@ -2,12 +2,41 @@
 import importlib.util
 import asyncio
 import io
+import hashlib
+import os
 from contextlib import redirect_stdout
 from pathlib import Path
 import struct
 import unittest
+import tempfile
+from unittest.mock import patch
 
 VAD = Path(__file__).resolve().parents[1] / 'vad.py'
+
+
+class PackagedModelTests(unittest.TestCase):
+    def test_supplied_model_is_verified_without_download_or_cache_write(self):
+        spec = importlib.util.spec_from_file_location('packaged_vad', VAD)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / 'silero.onnx'; model.write_bytes(b'fixed model')
+            with patch.dict(os.environ, {'OPENNOVA_PACKAGED': '1', 'OPENNOVA_VAD_MODEL': str(model)}), \
+                 patch.object(module, 'MODEL_SHA256', hashlib.sha256(b'fixed model').hexdigest()), \
+                 patch.object(module.urllib.request, 'urlopen') as download:
+                self.assertEqual(module.ensure_model(), model)
+                model.write_bytes(b'corrupt')
+                with self.assertRaisesRegex(ValueError, '校验失败'): module.ensure_model()
+                model.unlink()
+                with self.assertRaisesRegex(ValueError, '缺少 VAD'): module.ensure_model()
+                download.assert_not_called()
+
+    def test_packaged_mode_requires_explicit_model_instead_of_developer_cache(self):
+        spec = importlib.util.spec_from_file_location('packaged_vad_missing', VAD)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        with patch.dict(os.environ, {'OPENNOVA_PACKAGED': '1', 'OPENNOVA_VAD_MODEL': ''}), \
+             patch.object(module.urllib.request, 'urlopen') as download:
+            with self.assertRaisesRegex(ValueError, '缺少 VAD'): module.ensure_model()
+            download.assert_not_called()
 
 
 class GateTests(unittest.TestCase):

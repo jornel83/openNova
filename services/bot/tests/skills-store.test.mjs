@@ -18,6 +18,8 @@ function fixture(t,{video=false}={}){
     writeFileSync(join(root,'skills','video-production','SKILL.md'),'---\nname: video-production\ndescription: Make video\n---\nUse the tools.\n');
     writeFileSync(join(root,'skills','video-production','scripts','video_tool.py'),readFileSync(new URL('../../../skills/video-production/scripts/video_tool.py',import.meta.url)));
     writeFileSync(join(root,'tools','video','tool.py'),"def main():\n print('original bundled video')\n return 0\n");
+    for(const file of ['spark_h3.py','spark_veda.py','veda_worker.py','veda_workflow.json','aesthetic_edit.py','aesthetic_timeline.ass'])
+      writeFileSync(join(root,'tools','video',file),readFileSync(new URL('../../../tools/video/'+file,import.meta.url)));
     writeFileSync(join(root,'tools','video','tool-definitions.json'),'[]');
   }
   let db=new DatabaseSync(join(home,'state.sqlite')),store;
@@ -56,6 +58,8 @@ test('bundles archive instructions and references outside the source and old sna
 
 test('video launcher remains functional in a frozen repository-shaped bundle without reading later tool changes',t=>{
   const f=fixture(t,{video:true});f.assign(['video-production']);const saved=f.store.snapshot({assignedBotId:'employee'})[0];
+  for(const file of ['spark_veda.py','veda_worker.py','veda_workflow.json','aesthetic_edit.py','aesthetic_timeline.ass'])
+    assert.deepEqual(readFileSync(join(saved.archiveRoot,'tools','video',file)),readFileSync(join(f.root,'tools','video',file)));
   writeFileSync(join(f.root,'tools','video','tool.py'),"raise RuntimeError('CHANGED_TOOL_MUST_NOT_RUN')\n");
   const result=spawnSync('python3.11',[join(saved.resourceBase.path,'scripts','video_tool.py')],{encoding:'utf8',env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
   assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/original bundled video/);verifySkillSnapshot(saved);

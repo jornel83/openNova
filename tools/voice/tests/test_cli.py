@@ -8,6 +8,14 @@ from types import SimpleNamespace
 import os
 
 class CliTests(unittest.TestCase):
+    def test_disable_exit_code_reaches_launcher_after_continuous_cleanup(self):
+        run=AsyncMock(return_value=20)
+        with patch.object(sys,'argv',['conversation.py','--continuous','--bot']), \
+             patch('conversation.load_key',return_value=''),patch('continuous_run.run',run), \
+             self.assertRaises(SystemExit) as result:
+            conversation.main()
+        self.assertEqual(result.exception.code,20)
+
     def test_explicit_provider_overrides_invalid_lower_priority_environment(self):
         run=AsyncMock()
         with patch.dict(os.environ,{'OPENNOVA_TTS_PROVIDER':'invalid'}), \

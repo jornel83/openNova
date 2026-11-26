@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "platform": "darwin",
+  "architecture": "arm64",
+  "bottleTag": "arm64_sequoia",
+  "minimumMacOS": "15.0",
+  "bottles": [
+    {
+      "formula": "brotli",
+      "version": "1.2.1",
+      "revision": 0,
+      "metadataURL": "https://formulae.brew.sh/api/formula/brotli.json",
+      "url": "https://ghcr.io/v2/homebrew/core/brotli/blobs/sha256:7b92f3978056e44ac3f4bb6f5fc1ec31278a6b5972706236e8988e7c255cb3d4",
+      "sha256": "7b92f3978056e44ac3f4bb6f5fc1ec31278a6b5972706236e8988e7c255cb3d4",
+      "sourceVersion": "1.2.0",
+      "libraries": [
+        {
+          "sourceFile": "libbrotlicommon.1.2.0.dylib",
+          "soname": "libbrotlicommon.1.dylib",
+          "bottlePath": "brotli/1.2.1/lib/libbrotlicommon.1.2.1.dylib",
+          "sha256": "f3945ad1bdf51270fb9c82469172e834fe07f7418a878266b0d39f3efc3a7550"
+        },
+        {
+          "sourceFile": "libbrotlidec.1.2.0.dylib",
+          "soname": "libbrotlidec.1.dylib",
+          "bottlePath": "brotli/1.2.1/lib/libbrotlidec.1.2.1.dylib",
+          "sha256": "d5f3a73570e05fe5ec0d7668319a844c7b42316d4e7ccd5491b717b889541bc6"
+        },
+        {
+          "sourceFile": "libbrotlienc.1.2.0.dylib",
+          "soname": "libbrotlienc.1.dylib",
+          "bottlePath": "brotli/1.2.1/lib/libbrotlienc.1.2.1.dylib",
+          "sha256": "4fdbf976f207d94f001060c9bbe61defb8390a4df5beea98122319319f2e3de6"
+        }
+      ],
+      "licenses": [
+        "brotli/1.2.1/LICENSE"
+      ]
+    },
+    {
+      "formula": "openssl@3",
+      "version": "3.5.9",
+      "revision": 0,
+      "metadataURL": "https://formulae.brew.sh/api/formula/openssl@3.json",
+      "url": "https://ghcr.io/v2/homebrew/core/openssl/3/blobs/sha256:82b33ce156b289eaf95657b9ec16e8f49cb49c882cdeaeaf57e3e7d67fa85e25",
+      "sha256": "82b33ce156b289eaf95657b9ec16e8f49cb49c882cdeaeaf57e3e7d67fa85e25",
+      "sourceVersion": "3.6.2",
+      "libraries": [
+        {
+          "sourceFile": "libcrypto.3.dylib",
+          "soname": "libcrypto.3.dylib",
+          "bottlePath": "openssl@3/3.5.9/lib/libcrypto.3.dylib",
+          "sha256": "26bd64327291bcd737bbdc02a12851e415a5cd0d089470fdd5d7aaf797f09a02"
+        },
+        {
+          "sourceFile": "libssl.3.dylib",
+          "soname": "libssl.3.dylib",
+          "bottlePath": "openssl@3/3.5.9/lib/libssl.3.dylib",
+          "sha256": "2fcd0dd8964ff60a2a195743949b3adc58b53265eaee176f3f992e499a5e4894"
+        }
+      ],
+      "licenses": [
+        "openssl@3/3.5.9/LICENSE.txt"
+      ]
+    },
+    {
+      "formula": "jpeg-turbo",
+      "version": "3.2.1",
+      "revision": 0,
+      "metadataURL": "https://formulae.brew.sh/api/formula/jpeg-turbo.json",
+      "url": "https://ghcr.io/v2/homebrew/core/jpeg-turbo/blobs/sha256:802413c7772789ae8c9d0444042e9a766bcff1beae3919ea5716022aa9dafce7",
+      "sha256": "802413c7772789ae8c9d0444042e9a766bcff1beae3919ea5716022aa9dafce7",
+      "sourceVersion": "3.1.4.1",
+      "libraries": [
+        {
+          "sourceFile": "libjpeg.8.3.2.dylib",
+          "soname": "libjpeg.8.dylib",
+          "bottlePath": "jpeg-turbo/3.2.1/lib/libjpeg.8.3.2.dylib",
+          "sha256": "4535b1ead5a4553b085d007f5cd495be7095b33ff69283fdfaa3a9fadfadb7b8"
+        }
+      ],
+      "licenses": [
+        "jpeg-turbo/3.2.1/LICENSE.md"
+      ]
+    },
+    {
+      "formula": "xz",
+      "version": "5.8.4",
+      "revision": 0,
+      "metadataURL": "https://formulae.brew.sh/api/formula/xz.json",
+      "url": "https://ghcr.io/v2/homebrew/core/xz/blobs/sha256:c2724c0db0398134694b8366d30d14f4de376115fb54c559c331d5fd0474af76",
+      "sha256": "c2724c0db0398134694b8366d30d14f4de376115fb54c559c331d5fd0474af76",
+      "sourceVersion": "5.8.3",
+      "libraries": [
+        {
+          "sourceFile": "liblzma.5.dylib",
+          "soname": "liblzma.5.dylib",
+          "bottlePath": "xz/5.8.4/lib/liblzma.5.dylib",
+          "sha256": "63df563dd348764ae1fed90d31b0f4933e08d257a7a61fb72f99c1aa14ba2c4d"
+        }
+      ],
+      "licenses": [
+        "xz/5.8.4/COPYING",
+        "xz/5.8.4/COPYING.0BSD",
+        "xz/5.8.4/COPYING.GPLv2",
+        "xz/5.8.4/COPYING.GPLv3",
+        "xz/5.8.4/COPYING.LGPLv2.1"
+      ]
+    },
+    {
+      "formula": "libtiff",
+      "version": "4.7.2",
+      "revision": 0,
+      "metadataURL": "https://formulae.brew.sh/api/formula/libtiff.json",
+      "url": "https://ghcr.io/v2/homebrew/core/libtiff/blobs/sha256:e971adc15ce3387a9c68a10ff1cf431755faf0e86b9d3a6daf668efc2f6f31d8",
+      "sha256": "e971adc15ce3387a9c68a10ff1cf431755faf0e86b9d3a6daf668efc2f6f31d8",
+      "sourceVersion": "4.7.1_1",
+      "libraries": [
+        {
+          "sourceFile": "libtiff.6.dylib",
+          "soname": "libtiff.6.dylib",
+          "bottlePath": "libtiff/4.7.2/lib/libtiff.6.dylib",
+          "sha256": "8948dc08f004f53ec46c1da252e99655495f7b1a25a38b3f07a102eb2cb8518f"
+        }
+      ],
+      "licenses": [
+        "libtiff/4.7.2/LICENSE.md"
+      ]
+    },
+    {
+      "formula": "zstd",
+      "version": "1.5.7",
+      "revision": 1,
+      "metadataURL": "https://formulae.brew.sh/api/formula/zstd.json",
+      "url": "https://ghcr.io/v2/homebrew/core/zstd/blobs/sha256:d72adf48460a8384b256f88061cd7b9df4977df7fa2e0794051d427db754a565",
+      "sha256": "d72adf48460a8384b256f88061cd7b9df4977df7fa2e0794051d427db754a565",
+      "sourceVersion": "1.5.7_1",
+      "libraries": [
+        {
+          "sourceFile": "libzstd.1.5.7.dylib",
+          "soname": "libzstd.1.dylib",
+          "bottlePath": "zstd/1.5.7_1/lib/libzstd.1.5.7.dylib",
+          "sha256": "383aa61e264b47a23da021e7285248af0ddfda16512257e2bc263e1f11d2e43d"
+        }
+      ],
+      "licenses": [
+        "zstd/1.5.7_1/COPYING",
+        "zstd/1.5.7_1/LICENSE"
+      ]
+    },
+    {
+      "formula": "little-cms2",
+      "version": "2.20",
+      "revision": 0,
+      "metadataURL": "https://formulae.brew.sh/api/formula/little-cms2.json",
+      "url": "https://ghcr.io/v2/homebrew/core/little-cms2/blobs/sha256:e04ebf2fc43c8ea39680a2255da8b6a7060ee38e5e1f159c8182c6344dd4c679",
+      "sha256": "e04ebf2fc43c8ea39680a2255da8b6a7060ee38e5e1f159c8182c6344dd4c679",
+      "sourceVersion": "2.19",
+      "libraries": [
+        {
+          "sourceFile": "liblcms2.2.dylib",
+          "soname": "liblcms2.2.dylib",
+          "bottlePath": "little-cms2/2.20/lib/liblcms2.2.dylib",
+          "sha256": "e82e569b1c241eedfd3c0887a6ea62bffa9bd4f482d9463ae6df0edd84d0ef68"
+        }
+      ],
+      "licenses": [
+        "little-cms2/2.20/LICENSE"
+      ]
+    }
+  ]
+}

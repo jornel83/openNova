@@ -151,3 +151,19 @@ test('GitHub polling commits cursor and delivery together, deduplicates overlap 
   let resolve;response=()=>new Promise(r=>resolve=r);now+=60001;const polling=tasks.automation.poll();tasks.ruleToggle({id:'rule',revision:1,enabled:false});resolve(Response.json([{id:12,created_at:new Date(now).toISOString(),user:{login:'alice'},body:'/opennova second'}]));await polling;
   assert.equal(tasks.automation.rows('delivery').length,1);assert.equal(tasks.automation.rows('delivery')[0].status,'cancelled');
 });
+
+test('summary-only recovery holds pending events until explicit ordinary continuation without consuming them',async t=>{
+ const {tasks}=await fixture(t,{manual:true});agent(tasks);complete(tasks,'agent','failed');
+ const source=tasks.create({id:'external-check',title:'source',command:'true'}),sourceRun=tasks.row('run',source.task.runId);
+ tasks.finish(tasks.row('task',source.task.id),sourceRun,tasks.row('job',sourceRun.jobId),{status:'completed',exitCode:0,cleanupConfirmed:true});
+ rule(tasks,{type:'task',source:{taskId:source.task.id,runId:sourceRun.id}});tasks.automation.dispatch();
+ assert.equal(tasks.automation.pending()[0].reason,'manual_continuation_required');
+ const task=tasks.row('task','agent'),failedRun=task.runId;
+ tasks.atomic(()=>tasks.newRun(task,2,'仅补汇总',{summaryRecovery:{reportId:'saved-report',sourceRunId:failedRun}}));complete(tasks);
+ tasks.automation.dispatch();tasks.automation.dispatch();
+ assert.equal(tasks.detail('agent').runs.length,2);assert.equal(tasks.automation.pending().length,1);assert.equal(tasks.automation.pending()[0].reason,'manual_continuation_required');assert.equal(tasks.automation.rules('agent')[0].usedRuns,0);
+ tasks.continue({id:'agent',runId:task.runId,actionId:'explicit-business-continuation',text:'继续处理原任务及已约定事件'});tasks.automation.dispatch();
+ assert.equal(tasks.detail('agent').runs.length,3);assert.equal(tasks.automation.pending().length,1);
+ complete(tasks);tasks.automation.dispatch();tasks.automation.dispatch();
+ assert.equal(tasks.detail('agent').runs.length,4);assert.equal(tasks.automation.pending().length,0);assert.equal(tasks.automation.rows('delivery')[0].status,'dispatched');assert.equal(tasks.automation.rules('agent')[0].usedRuns,1);
+});

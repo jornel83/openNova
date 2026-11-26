@@ -43,7 +43,7 @@ test('browser session requires same origin, cookie and CSRF while CLI authentica
   assert.equal((await post('/web/api/approve',{id:'one'},{...headers,Origin:'https://example.org'})).status,403);
   assert.equal(calls.length,0);
   const accepted=await post('/web/api/ask',{id:'one',text:'你好',source:'spoofed'},headers);
-  assert.equal(accepted.status,200);assert.deepEqual(calls[0],{path:'/ask',body:{id:'one',text:'你好',source:'web'}});
+  assert.equal(accepted.status,200);assert.deepEqual(calls[0],{path:'/ask',body:{id:'one',text:'你好',source:'web',webClient:true}});
   assert.equal((await post('/web/api/shutdown',{},headers)).status,404);
   assert.equal((await post('/api/bot',{endpoint:'send'},headers)).status,403);
   assert.equal((await fetch(origin+'/health',{method:'POST',headers:{Authorization:'Bearer cli-only-secret'},body:'{}'})).status,200);
@@ -141,6 +141,16 @@ test('desktop-open uses same-origin web session without exposing pairing or desk
  assert.deepEqual(calls[0],{path:'/desktop-open',body:{}});
  assert.equal((await post('/web/api/desktop-open')).status,401);
  assert.equal((await post('/web/api/desktop/pair',{},headers)).status,404);
+});
+test('audio inventory and device selection require same-origin cookie and CSRF',async t=>{
+ const {post,calls}=await fixture(t);const login=await post('/web/session'),{csrf}=await login.json();
+ const headers={Cookie:login.headers.get('set-cookie').split(';')[0],'X-OpenNova-CSRF':csrf};
+ for(const route of ['voice-devices','voice-device-settings','voice-devices-select']){
+  assert.equal((await post('/web/api/'+route,{})).status,401);
+  assert.equal((await post('/web/api/'+route,{},{Cookie:headers.Cookie})).status,403);
+  assert.equal((await post('/web/api/'+route,{},headers)).status,200);
+  assert.equal(calls.at(-1).path,'/'+route);
+ }
 });
 test('team result and management routes preserve exact report bindings and require browser authentication',async t=>{
  const {post,calls}=await fixture(t),login=await post('/web/session'),{csrf}=await login.json();

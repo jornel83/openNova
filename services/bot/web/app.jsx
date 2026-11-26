@@ -1,21 +1,21 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Button} from '@deepseek-ai/dsh-client-ui-primitives';
-import {Bubbles} from '@opennova/ds-bot/cells.js';
-import {UserMessageCell,USER_MESSAGE_CSS} from '@opennova/ds-bot/user-message.js';
+import {USER_MESSAGE_CSS} from '@opennova/ds-bot/user-message.js';
 import {SHELL_CSS,CONVERSATION_CSS} from '@opennova/ds-bot/styles.js';
 import {installLocale} from '@opennova/ds-bot/i18n.js';
 import {WebApi,errorText} from './api.mjs';
-import {voicePresentation} from './voice-state.mjs';
+import {voicePresentation,needsVoiceStop} from './voice-state.mjs';
+import {VoiceDevices} from './voice-devices.jsx';
 import {NovaRing} from './nova-ring.jsx';
 import {ContextChip} from './context-chip.jsx';
 import {OperationCard} from './operation-card.jsx';
-import {ResearchSources} from './research-sources.jsx';
-import {researchPhaseLabel} from './research-view.mjs';
-import {modelRetryLabel} from '../../agent/model-retry.mjs';
-import {emptyReplyStream,receiveReplyEvent,receiveReplySnapshot,replyPresentation} from './reply-stream.mjs';
+import {documentProposal} from './file-state.mjs';
+import {emptyReplyStream,receiveReplyEvent,receiveReplySnapshot} from './reply-stream.mjs';
+import {ConversationMessage,TaskNotices} from './conversation-message.jsx';
 import {Icon} from './icons.jsx';
-import {TaskCard,TaskPanel} from './tasks.jsx';
+import {TaskPanel} from './tasks.jsx';
+import {ProjectContext,expectedProject,activeProjectContext} from './projects.jsx';
 import './app.css';
 
 // The upstream components use a small locale service; retain their own Chinese copy.
@@ -61,9 +61,18 @@ function App(){
     void connect();pollTimer=setTimeout(poll,5000);
     return()=>{stopped=true;controller.abort();clearTimeout(pollTimer);clearTimeout(retryTimer);clearTimeout(eventTimer);};
   },[limit]);
-  const messages=snapshot?.messages||[],approvals=snapshot?.approvals||[];
+  const messages=snapshot?.messages||[];
+  const project=snapshot?.projects?.state?.focus==='work'?expectedProject(snapshot.projects):null;
+  const approvals=(snapshot?.approvals||[]).filter(record=>{
+    if(record.operation==='document_proposal_decide'&&record.status==='completed')return false;
+    const proposal=documentProposal(record);
+    return !proposal||proposal.projectId===project?.projectId;
+  });
   const operationsFor=id=>approvals.filter(p=>p.requestId===id).sort((a,b)=>a.createdAt-b.createdAt);
-  const unlinked=approvals.filter(p=>!p.requestId);
+  const messageIds=new Set(messages.map(message=>message.id));
+  const earlierReviews=approvals.filter(p=>documentProposal(p)&&!messageIds.has(p.requestId));
+  const unlinked=approvals.filter(p=>!p.requestId&&!documentProposal(p));
+  const visibleReviewIds=new Set(approvals.map(r=>documentProposal(r)?.id).filter(Boolean));
   const active=messages.find(m=>m.id===snapshot?.activeId);
   const voice=snapshot?.desktop?.voice??{};
   const presentation=voicePresentation(snapshot,online);
@@ -84,7 +93,8 @@ function App(){
   async function send(event){
     event?.preventDefault();if(inflight.current||busy||!online||(!outgoing.current&&!draft.trim()))return;
     inflight.current=true;setSending(true);setError('');
-    const record=outgoing.current||{id:crypto.randomUUID(),text:draft};setOutgoing(record);
+    const project=expectedProject(snapshot?.projects);
+    const record=outgoing.current||{id:crypto.randomUUID(),text:draft,...(project?{expectedProject:project}:{})};setOutgoing(record);
     try{await api.call('ask',record);setOutgoing(null);setDraft(value=>value===record.text?'':value);stick.current=true;await refresh();}
     catch(e){setError(errorText(e));if(e.code&&e.code!=='network')setOutgoing(null);}
     finally{inflight.current=false;setSending(false);input.current?.focus();}
@@ -95,9 +105,22 @@ function App(){
     catch(e){setError(errorText(e));}finally{setOpeningWork(false);}
   }
   async function reopen(fileId){
-    setError('');try{await api.call('document-open',{id:crypto.randomUUID(),fileId});await refresh();}catch(e){setError(errorText(e));}
+    setError('');
+    try{
+      const file=(snapshot?.desktop?.context||snapshot?.workContext)?.file;
+      if(file?.id===fileId&&file.imageOperationId)await imageAction('image-open',file.imageOperationId);
+      else {
+        const result=await api.call('document-open',{id:crypto.randomUUID(),fileId});await refresh();
+        if(result.status!=='dispatched')throw Error(result.error||'open_failed');
+      }
+    }catch(e){setError(errorText(e));}
   }
   async function action(name,id){const result=await api.call(name,{id});await refresh();return result;}
+  async function imageAction(name,operationId){
+    await api.call(name,{operationId,expectedProject:expectedProject(snapshot.projects)});
+    await refresh();
+    if(name==='image-select')input.current?.focus();
+  }
   async function voiceControl(action){
     setVoicePending(true);setError('');
     try{
@@ -111,7 +134,7 @@ function App(){
     try{
       const commands=[];
       if(snapshot.activeId)commands.push(api.call('cancel',{id:snapshot.activeId}));
-      if(voice.connected&&['buffering','playing','paused'].includes(voice.playback)&&voice.requestId!==snapshot.activeId)
+      if(needsVoiceStop(voice,snapshot.activeId))
         commands.push(api.call('voice-control',{id:crypto.randomUUID(),action:'stop',voiceInstanceId:voice.voiceInstanceId,generation:voice.generation,requestId:voice.requestId}));
       await Promise.all(commands);await refresh();
     }catch(e){setError(errorText(e));}finally{setVoicePending(false);}
@@ -123,41 +146,31 @@ function App(){
     </header>
     {!online&&<div className="connection-banner" role="status">连接中断时可以继续编辑，草稿会保留。正在自动重连…</div>}
     <nav className="workspace-tabs" aria-label="交流与任务"><button type="button" aria-pressed={view==='chat'} onClick={()=>setView('chat')}>对话</button><button type="button" aria-pressed={view==='tasks'} onClick={()=>setView('tasks')}>任务{snapshot?.tasks?.activeCount>0&&<span>{snapshot.tasks.activeCount} 项进行中</span>}{snapshot?.tasks?.unreadCount>0&&<i aria-label="有未读任务结果"/>}</button></nav>
-    {view==='tasks'&&<TaskPanel api={api} team={snapshot?.team} summary={snapshot?.tasks} selectedId={selectedTask} onSelect={setSelectedTask} online={online} busy={busy}/>}
+    {view==='tasks'&&<TaskPanel api={api} projects={snapshot?.projects} team={snapshot?.team} summary={snapshot?.tasks} selectedId={selectedTask} onSelect={setSelectedTask} online={online} busy={busy}/>}
     <div hidden={view!=='chat'} className="chat-scroll" ref={scroll} onClickCapture={e=>{if(e.target.closest('summary'))stick.current=false;}} onScroll={()=>{const s=scroll.current;stick.current=s.scrollHeight-s.scrollTop-s.clientHeight<100;}}><div className="chat-content">
-      {!!snapshot?.tasks?.unreadCount&&<div className="task-notice" role="status"><p>后台任务有新结果</p>{snapshot.tasks.tasks.filter(t=>t.unread).slice(0,3).map(task=><TaskCard key={task.id} task={task} onOpen={openTask}/>)}</div>}
+      {!!snapshot?.tasks?.unreadCount&&<TaskNotices tasks={snapshot.tasks.tasks} messages={messages} onOpenTask={openTask}/>}
       {snapshot?.hasMore&&limit<500&&<Button className="history-more nova-secondary" onClick={()=>{stick.current=false;setLimit(Math.min(500,limit+50));}}>加载更早的对话</Button>}
       {snapshot&&!messages.length&&<div className="welcome"><span className="eyebrow">LET’S BUILD TOGETHER</span><h2>一起把想法变成现实</h2><p>聊聊你的想法，或从工作窗口里的一段内容开始。</p></div>}
-      {messages.map(message=>{const preview=replyPresentation(message,replyStream);return <section className="exchange" key={message.id} data-request-id={message.id}>
-        <div className="message-meta">{message.source==='voice'?'语音':message.source==='web'?'文字':'终端'} · {new Date(message.createdAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
-        <UserMessageCell node={{data:{content:[{type:'text',text:message.input}],time:message.createdAt}}} sessionId={sessionId} useRoster={select=>select(roster)} actions={actions}/>
-        <div className="assistant-message">{snapshot?.tasks?.tasks.filter(t=>t.requestId===message.id).map(task=><TaskCard key={task.id} task={task} onOpen={openTask}/>)}<div className="speaker-label"><span/> NOVA</div>
-          {!!operationsFor(message.id).length&&<div className="inline-operations" aria-label="本轮操作">{operationsFor(message.id).map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</div>}
-          {message.status==='completed'?<><Bubbles texts={[message.text||'本轮已完成。']} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/><ResearchSources sources={message.sources} derivations={message.derivations}/></>:<>
-            {preview&&<div className={'reply-draft'+(preview.interrupted?' interrupted':'')} aria-label={preview.interrupted?'未完成的回答':'生成中的回答'} aria-busy={!preview.interrupted}>
-              <Bubbles texts={[preview.text]} roster={roster} selfId={bot.id} sessionId={sessionId} actions={actions}/>
-              <p className={'turn-status '+(preview.interrupted?'':'working')} role="status">{preview.label}</p>
-            </div>}
-            {(!preview||preview.interrupted)&&<p className={'turn-status '+(['queued','running'].includes(message.status)?'working':'')} role="status">{message.status==='queued'?'正在等待…':message.status==='running'?(modelRetryLabel(message)||researchPhaseLabel(message)||(message.phase==='tool'?'正在处理工作内容…':'正在思考…')):errorText({message:message.error||message.status,code:message.status,diagnostic:message.diagnostic})}</p>}
-          </>}
-        </div>
-      </section>;})}
+      {messages.map(message=><ConversationMessage key={message.id} message={message} replyStream={replyStream} roster={roster} botId={bot.id} sessionId={sessionId} actions={actions} tasks={snapshot?.tasks?.tasks} operations={operationsFor(message.id)} busy={busy} online={online} onAction={action} onOpenTask={openTask} api={api} project={project} onImageAction={imageAction} onRefresh={refresh} visibleReviewIds={visibleReviewIds}/>)}
       {speechDraft&&<div className="speech-draft" role="status" aria-label="实时语音转写"><span>语音 · {voice.recognition==='recognizing'?'识别中':'正在提交'}</span><p>{speechDraft.text||'正在听你说…'}</p></div>}
+      {!!earlierReviews.length&&<details className="other-operations"><summary>其他文档修改 · {earlierReviews.length}</summary>{earlierReviews.map(record=><OperationCard key={record.id} record={record} api={api} project={project} offline={!online} disabled={busy||!online} onRefresh={refresh} visibleReviewIds={visibleReviewIds}/>)}</details>}
       {!!unlinked.length&&<details className="other-operations"><summary>其他操作记录 · {unlinked.length}</summary>{unlinked.map(record=><OperationCard key={record.id} record={record} disabled={busy||!online} onAction={action}/>)}</details>}
     </div></div>
     <div className="chat-bottom">
-      <ContextChip context={snapshot?.desktop?.context||snapshot?.workContext} disabled={busy||!online} onOpenFile={reopen} onClear={()=>void action('context-clear').catch(e=>setError(errorText(e)))}/>
+      <ProjectContext api={api} view={snapshot?.projects} currentContext={snapshot?.desktop?.context||snapshot?.workContext} onRefresh={refresh} onOpenTask={openTask} disabled={busy||!online}/>
+      <ContextChip context={activeProjectContext(snapshot?.projects,snapshot?.desktop?.context||snapshot?.workContext)} disabled={busy||!online} onOpenFile={reopen} onClear={()=>void action('context-clear').catch(e=>setError(errorText(e)))}/>
       <form className="composer-area" onSubmit={send}>
         {error&&<div className="error" role="alert">{error}</div>}
         {outbox&&!sending&&<p className="subtle">上一条消息的发送状态待确认。重试会发送原消息，新草稿会保留。</p>}
         <div className="composer"><textarea ref={input} aria-label="发送给 OpenNova" placeholder="说说你的想法…" value={draft} maxLength={8000} rows={2} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&e.keyCode!==229){e.preventDefault();void send();}}}/>
-          <div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{presentation.canStop?<button type="button" className="stop-button" disabled={voicePending} onClick={()=>void stopReply()}><Icon name="stop"/> 停止回复</button>:<button type="submit" className="send-button" title={outbox?'重试发送':'发送'} aria-label={sending?'发送中':outbox?'重试发送':'发送'} disabled={!online||busy||sending||(!outbox&&!draft.trim())}><Icon name="send"/></button>}</div>
+          <div className="composer-bottom"><span>Enter 发送 · Shift + Enter 换行</span>{presentation.canStop?<button type="button" className="stop-button" disabled={voicePending} onClick={()=>void stopReply()}><Icon name="stop"/> {presentation.stopLabel}</button>:<button type="submit" className="send-button" title={outbox?'重试发送':'发送'} aria-label={sending?'发送中':outbox?'重试发送':'发送'} disabled={!online||busy||sending||(!outbox&&!draft.trim())}><Icon name="send"/></button>}</div>
         </div>
       </form>
+      <VoiceDevices api={api} voice={voice} online={online} onRefresh={refresh}/>
       <div className="voice-footer">
-        <button type="button" className="voice-symbol" aria-label={voice.capture==='listening'?'静音麦克风':voice.capture==='off'?'开始交流':'恢复麦克风'} title={presentation.micLabel} disabled={!presentation.canControl||voicePending||voice.capture==='error'} onClick={()=>void voiceControl(voice.capture==='off'?'start':voice.capture==='listening'?'mute':'unmute')}><Icon name={voice.capture==='listening'&&presentation.canControl?'mic':'micOff'}/></button>
-        <div><span>{presentation.micLabel}</span><small>{presentation.canControl?'文字与语音共用这段对话':'在终端启动语音后自动连接'}</small></div>
-        {presentation.canControl&&<div className="voice-actions"><button type="button" disabled={voicePending} onClick={()=>void voiceControl(voice.capture==='off'?'start':'end')}>{voice.capture==='off'?'开始':'结束'}</button><button type="button" disabled={voicePending} onClick={()=>void voiceControl('retry')} title="重连音频设备">重连</button></div>}
+        <button type="button" className="voice-symbol" aria-label={presentation.micActionLabel} title={presentation.micLabel+"；"+presentation.micHint} disabled={!presentation.canUseMic||voicePending} onClick={()=>void voiceControl(presentation.micAction)}><Icon name={voice.capture==='listening'&&presentation.canControl?'mic':'micOff'}/></button>
+        <div className="voice-info"><span>{presentation.micLabel}</span><small>{presentation.micHint}</small>{presentation.problem&&<small className="voice-problem" role="status">{presentation.problem}</small>}</div>
+        {(presentation.canControl||presentation.starting)&&<div className="voice-actions">{presentation.standby||presentation.starting?<button type="button" disabled={voicePending||presentation.starting} onClick={()=>void voiceControl('start')}>{presentation.starting?'正在开启…':'开启语音'}</button>:<><button type="button" disabled={voicePending} onClick={()=>void voiceControl(voice.capture==='off'?'start':'end')}>{voice.capture==='off'?'开始':'结束'}</button><button type="button" disabled={voicePending} onClick={()=>void voiceControl('retry')} title="重连音频设备">重连</button><button type="button" disabled={voicePending} onClick={()=>void voiceControl('disable')} title="释放麦克风和播放设备，继续文字对话">关闭语音</button></>}</div>}
       </div>
     </div>
   </main>;

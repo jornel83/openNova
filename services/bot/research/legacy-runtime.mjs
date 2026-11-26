@@ -36,7 +36,7 @@ export function resultFailure(name,result){
 export function installResearch(ctx,{ops,requests,config={},transport}) {
  const active=new Map();
  const limits={...DEFAULT_LIMITS,...config.limits},budget=createResearchBudget({limits});
- const sources=createSources({ops,botId:config.botId,workspace:config.workspace});
+ const sources=createSources({ops,botId:config.botId,workspace:config.workspace,getProjectId:config.getProjectId});
  const http=transport?createResearchHttp({transport,sources,ops,artifactRoot:join(config.workspace,'output/research/requests')}):undefined;
  const executions=ctx.get?.('shell')?createResearchExec({shell:ctx.get('shell'),ops,...config}):undefined;
  const derivations=createDerivations({ops,sources});

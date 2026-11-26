@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "video_validate",
-      "description": "Validate Seedance text/image-reference generation locally. No API call or charge.",
+      "description": "Validate a Seedance, Minimax H3 or Spark P2 generation config offline. Ark checks asset permissions at submission.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -16,7 +16,7 @@
             "properties": {
               "model": {
                 "type": "string",
-                "default": "doubao-seedance-2-5-260628"
+                "description": "Seedance is the default. Use an enabled Ark model or endpoint ID, minimax-h3-veda for local Minimax H3, or minimax-h3-spark for the P2 first-frame profile."
               },
               "prompt": {
                 "type": "string",
@@ -27,7 +27,8 @@
                 "type": "integer",
                 "minimum": 4,
                 "maximum": 30,
-                "default": 10
+                "default": 10,
+                "description": "Spark defaults to 4 seconds. Minimax H3 text and first-frame generation accept integer durations from 4 to 15 seconds. P2 first-frame generation accepts 4, 5 or 6 seconds."
               },
               "ratio": {
                 "type": "string",
@@ -40,7 +41,7 @@
                   "9:16",
                   "adaptive"
                 ],
-                "default": "9:16"
+                "description": "Defaults to 9:16 for text/reference generation, adaptive for first_frame. Seedance 2.5 first-frame requests require adaptive."
               },
               "resolution": {
                 "type": "string",
@@ -61,8 +62,321 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "reference_videos": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Local MP4/MOV paths; uploaded to official Ark Files at submit."
+              },
+              "omni_reference_task_type": {
+                "type": "string",
+                "enum": [
+                  "reference"
+                ],
+                "description": "Only new reference-based generation is supported."
+              },
+              "first_frame": {
+                "type": "string",
+                "pattern": "^asset://asset-[A-Za-z0-9_-]+$",
+                "description": "Approved Ark portrait asset URI used as role=first_frame. Requires an explicit enabled model. Mutually exclusive with nonempty reference_images/reference_videos and omni_reference_task_type. Offline validation does not verify account ownership or asset approval. In first-frame mode ratio defaults to adaptive; Seedance 2.5 requires adaptive. Seedance 2.0 duration is 4–15 seconds; 2.0 Fast supports 480p/720p.",
+                "maxLength": 256
+              },
+              "watermark": {
+                "type": "boolean",
+                "description": "Forward the explicit watermark setting to Ark; omitted keeps the provider default."
+              },
+              "return_last_frame": {
+                "type": "boolean",
+                "description": "Ask Ark to return the generated last-frame URL in the saved task record; does not download that image."
+              },
+              "first_frame_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "A local PNG/JPEG first frame for Seedance, Minimax H3 or P2. Resolve relative paths from the config file or workspace."
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "description": "Spark H3 random seed; defaults to 1101."
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "first_frame"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    },
+                    "reference_images": {
+                      "maxItems": 0
+                    },
+                    "reference_videos": {
+                      "maxItems": 0
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "omni_reference_task_type"
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "duration": {
+                            "maximum": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-fast-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "resolution": {
+                            "enum": [
+                              "480p",
+                              "720p"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-5-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "ratio": {
+                            "const": "adaptive"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "enum": [
+                        "minimax-h3-spark",
+                        "minimax-h3-veda"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "propertyNames": {
+                    "enum": [
+                      "model",
+                      "first_frame_path",
+                      "prompt",
+                      "duration",
+                      "ratio",
+                      "seed"
+                    ]
+                  },
+                  "properties": {
+                    "ratio": {
+                      "const": "9:16"
+                    }
+                  }
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "seed"
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "const": "minimax-h3-veda"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "duration": {
+                      "minimum": 4,
+                      "maximum": 15
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "const": "minimax-h3-spark"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "first_frame_path"
+                  ],
+                  "properties": {
+                    "duration": {
+                      "enum": [
+                        4,
+                        5,
+                        6
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "first_frame_path"
+                  ],
+                  "not": {
+                    "required": [
+                      "model"
+                    ],
+                    "properties": {
+                      "model": {
+                        "enum": [
+                          "minimax-h3-spark",
+                          "minimax-h3-veda"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reference_images": {
+                      "maxItems": 0
+                    },
+                    "reference_videos": {
+                      "maxItems": 0
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "first_frame"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "omni_reference_task_type"
+                        ]
+                      }
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-"
+                          }
+                        },
+                        "required": [
+                          "model"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "duration": {
+                            "maximum": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-fast-"
+                          }
+                        },
+                        "required": [
+                          "model"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "resolution": {
+                            "enum": [
+                              "480p",
+                              "720p"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-5-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "ratio": {
+                            "const": "adaptive"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
           },
           "config_path": {
             "type": "string",
@@ -99,7 +413,7 @@
     "type": "function",
     "function": {
       "name": "video_submit",
-      "description": "Submit exactly one billable Seedance task; returns immediately. Requires prior user authorization and ARK_API_KEY in executor environment. Do not retry ambiguous submission.",
+      "description": "Submit one authorized generation and return its task ID. Seedance uses ARK_API_KEY. The local Spark profiles minimax-h3-veda and minimax-h3-spark use a first_frame_path over SSH. Resume a recorded job after an interrupted submission.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -112,7 +426,7 @@
             "properties": {
               "model": {
                 "type": "string",
-                "default": "doubao-seedance-2-5-260628"
+                "description": "Seedance is the default. Use an enabled Ark model or endpoint ID, minimax-h3-veda for local Minimax H3, or minimax-h3-spark for the P2 first-frame profile."
               },
               "prompt": {
                 "type": "string",
@@ -123,7 +437,8 @@
                 "type": "integer",
                 "minimum": 4,
                 "maximum": 30,
-                "default": 10
+                "default": 10,
+                "description": "Spark defaults to 4 seconds. Minimax H3 text and first-frame generation accept integer durations from 4 to 15 seconds. P2 first-frame generation accepts 4, 5 or 6 seconds."
               },
               "ratio": {
                 "type": "string",
@@ -136,7 +451,7 @@
                   "9:16",
                   "adaptive"
                 ],
-                "default": "9:16"
+                "description": "Defaults to 9:16 for text/reference generation, adaptive for first_frame. Seedance 2.5 first-frame requests require adaptive."
               },
               "resolution": {
                 "type": "string",
@@ -157,8 +472,321 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "reference_videos": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Local MP4/MOV paths; uploaded to official Ark Files at submit."
+              },
+              "omni_reference_task_type": {
+                "type": "string",
+                "enum": [
+                  "reference"
+                ],
+                "description": "Only new reference-based generation is supported."
+              },
+              "first_frame": {
+                "type": "string",
+                "pattern": "^asset://asset-[A-Za-z0-9_-]+$",
+                "description": "Approved Ark portrait asset URI used as role=first_frame. Requires an explicit enabled model. Mutually exclusive with nonempty reference_images/reference_videos and omni_reference_task_type. Offline validation does not verify account ownership or asset approval. In first-frame mode ratio defaults to adaptive; Seedance 2.5 requires adaptive. Seedance 2.0 duration is 4–15 seconds; 2.0 Fast supports 480p/720p.",
+                "maxLength": 256
+              },
+              "watermark": {
+                "type": "boolean",
+                "description": "Forward the explicit watermark setting to Ark; omitted keeps the provider default."
+              },
+              "return_last_frame": {
+                "type": "boolean",
+                "description": "Ask Ark to return the generated last-frame URL in the saved task record; does not download that image."
+              },
+              "first_frame_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "A local PNG/JPEG first frame for Seedance, Minimax H3 or P2. Resolve relative paths from the config file or workspace."
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "description": "Spark H3 random seed; defaults to 1101."
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "first_frame"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    },
+                    "reference_images": {
+                      "maxItems": 0
+                    },
+                    "reference_videos": {
+                      "maxItems": 0
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "omni_reference_task_type"
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "duration": {
+                            "maximum": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-fast-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "resolution": {
+                            "enum": [
+                              "480p",
+                              "720p"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-5-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "ratio": {
+                            "const": "adaptive"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "enum": [
+                        "minimax-h3-spark",
+                        "minimax-h3-veda"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "propertyNames": {
+                    "enum": [
+                      "model",
+                      "first_frame_path",
+                      "prompt",
+                      "duration",
+                      "ratio",
+                      "seed"
+                    ]
+                  },
+                  "properties": {
+                    "ratio": {
+                      "const": "9:16"
+                    }
+                  }
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "seed"
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "const": "minimax-h3-veda"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "duration": {
+                      "minimum": 4,
+                      "maximum": 15
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "const": "minimax-h3-spark"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "first_frame_path"
+                  ],
+                  "properties": {
+                    "duration": {
+                      "enum": [
+                        4,
+                        5,
+                        6
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "first_frame_path"
+                  ],
+                  "not": {
+                    "required": [
+                      "model"
+                    ],
+                    "properties": {
+                      "model": {
+                        "enum": [
+                          "minimax-h3-spark",
+                          "minimax-h3-veda"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reference_images": {
+                      "maxItems": 0
+                    },
+                    "reference_videos": {
+                      "maxItems": 0
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "first_frame"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "omni_reference_task_type"
+                        ]
+                      }
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-"
+                          }
+                        },
+                        "required": [
+                          "model"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "duration": {
+                            "maximum": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-fast-"
+                          }
+                        },
+                        "required": [
+                          "model"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "resolution": {
+                            "enum": [
+                              "480p",
+                              "720p"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-5-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "ratio": {
+                            "const": "adaptive"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
           },
           "config_path": {
             "type": "string",
@@ -202,7 +830,7 @@
     "type": "function",
     "function": {
       "name": "video_status",
-      "description": "Query one existing Ark task, persist status. No generation submission.",
+      "description": "Read and persist the status of an existing Seedance or Spark H3 job from its output directory.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -291,7 +919,7 @@
     "type": "function",
     "function": {
       "name": "video_edit",
-      "description": "Trim and concatenate ordered local clips with FFmpeg, normalize size/FPS/audio. dry_run only probes and returns timeline.",
+      "description": "Edit local clips or assemble a seven-shot, 13.5-second portrait film. Supply clips or aesthetic_timeline. dry_run probes inputs and returns the plan.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -299,7 +927,6 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "clips",
               "output"
             ],
             "properties": {
@@ -348,15 +975,100 @@
                 "type": "number",
                 "minimum": 1,
                 "maximum": 60,
-                "default": 24
+                "description": "Default 24 fps for clips, fixed at 30 fps for aesthetic_timeline."
               },
               "crf": {
                 "type": "number",
                 "minimum": 0,
                 "maximum": 51,
-                "default": 18
+                "description": "Default 18 for clips, 17 for aesthetic_timeline."
+              },
+              "show_ai_badge": {
+                "type": "boolean",
+                "default": false,
+                "description": "Overlay the editorial AI 角色演示 corner badge, including its backing."
+              },
+              "aesthetic_timeline": {
+                "type": "object",
+                "description": "Seven-shot portrait template, exported at 720x1280, 30 fps, 13.5 seconds. Use local source media.",
+                "required": [
+                  "template",
+                  "before",
+                  "after",
+                  "wrap",
+                  "tape",
+                  "card"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Original procedure and soundtrack video (at least 13.5 seconds)."
+                  },
+                  "before": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Before portrait video."
+                  },
+                  "after": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "After portrait video."
+                  },
+                  "wrap": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Wrapped recovery portrait video."
+                  },
+                  "tape": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Taped recovery portrait video, also used in opening."
+                  },
+                  "card": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Final comparison still (PNG or JPEG)."
+                  },
+                  "source_in_frames": {
+                    "type": "object",
+                    "description": "Start frames in each source normalized to 30 fps. Defaults to 0. Opening tape starts at frame 0.",
+                    "additionalProperties": false,
+                    "properties": {
+                      "before": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "after": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "wrap": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "tape": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                }
               }
-            }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "clips"
+                ]
+              },
+              {
+                "required": [
+                  "aesthetic_timeline"
+                ]
+              }
+            ]
           },
           "config_path": {
             "type": "string",
@@ -389,6 +1101,441 @@
               ]
             }
           }
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "video_generate",
+      "description": "Generate one video from text or a first frame, wait within the requested timeout, and deliver the downloaded MP4. Resume the same task_id and output_dir after a pending result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "config": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "prompt"
+            ],
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "Seedance is the default. Use an enabled Ark model or endpoint ID, minimax-h3-veda for local Minimax H3, or minimax-h3-spark for the P2 first-frame profile."
+              },
+              "prompt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 30000
+              },
+              "duration": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 30,
+                "default": 10,
+                "description": "Spark defaults to 4 seconds. Minimax H3 text and first-frame generation accept integer durations from 4 to 15 seconds. P2 first-frame generation accepts 4, 5 or 6 seconds."
+              },
+              "ratio": {
+                "type": "string",
+                "enum": [
+                  "21:9",
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "adaptive"
+                ],
+                "description": "Defaults to 9:16 for text/reference generation, adaptive for first_frame. Seedance 2.5 first-frame requests require adaptive."
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p"
+                ],
+                "default": "720p"
+              },
+              "generate_audio": {
+                "type": "boolean",
+                "default": true
+              },
+              "reference_images": {
+                "type": "array",
+                "maxItems": 30,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reference_videos": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Local MP4/MOV paths; uploaded to official Ark Files at submit."
+              },
+              "omni_reference_task_type": {
+                "type": "string",
+                "enum": [
+                  "reference"
+                ],
+                "description": "Only new reference-based generation is supported."
+              },
+              "first_frame": {
+                "type": "string",
+                "pattern": "^asset://asset-[A-Za-z0-9_-]+$",
+                "description": "Approved Ark portrait asset URI used as role=first_frame. Requires an explicit enabled model. Mutually exclusive with nonempty reference_images/reference_videos and omni_reference_task_type. Offline validation does not verify account ownership or asset approval. In first-frame mode ratio defaults to adaptive; Seedance 2.5 requires adaptive. Seedance 2.0 duration is 4–15 seconds; 2.0 Fast supports 480p/720p.",
+                "maxLength": 256
+              },
+              "watermark": {
+                "type": "boolean",
+                "description": "Forward the explicit watermark setting to Ark; omitted keeps the provider default."
+              },
+              "return_last_frame": {
+                "type": "boolean",
+                "description": "Ask Ark to return the generated last-frame URL in the saved task record; does not download that image."
+              },
+              "first_frame_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "A local PNG/JPEG first frame for Seedance, Minimax H3 or P2. Resolve relative paths from the config file or workspace."
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "description": "Spark H3 random seed; defaults to 1101."
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "first_frame"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    },
+                    "reference_images": {
+                      "maxItems": 0
+                    },
+                    "reference_videos": {
+                      "maxItems": 0
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "omni_reference_task_type"
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "duration": {
+                            "maximum": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-fast-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "resolution": {
+                            "enum": [
+                              "480p",
+                              "720p"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-5-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "ratio": {
+                            "const": "adaptive"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "enum": [
+                        "minimax-h3-spark",
+                        "minimax-h3-veda"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "propertyNames": {
+                    "enum": [
+                      "model",
+                      "first_frame_path",
+                      "prompt",
+                      "duration",
+                      "ratio",
+                      "seed"
+                    ]
+                  },
+                  "properties": {
+                    "ratio": {
+                      "const": "9:16"
+                    }
+                  }
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "seed"
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "const": "minimax-h3-veda"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "duration": {
+                      "minimum": 4,
+                      "maximum": 15
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "const": "minimax-h3-spark"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "first_frame_path"
+                  ],
+                  "properties": {
+                    "duration": {
+                      "enum": [
+                        4,
+                        5,
+                        6
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "first_frame_path"
+                  ],
+                  "not": {
+                    "required": [
+                      "model"
+                    ],
+                    "properties": {
+                      "model": {
+                        "enum": [
+                          "minimax-h3-spark",
+                          "minimax-h3-veda"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reference_images": {
+                      "maxItems": 0
+                    },
+                    "reference_videos": {
+                      "maxItems": 0
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "first_frame"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "omni_reference_task_type"
+                        ]
+                      }
+                    ]
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-"
+                          }
+                        },
+                        "required": [
+                          "model"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "duration": {
+                            "maximum": 15
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-0-fast-"
+                          }
+                        },
+                        "required": [
+                          "model"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "resolution": {
+                            "enum": [
+                              "480p",
+                              "720p"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "model": {
+                            "pattern": "^doubao-seedance-2-5-"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "ratio": {
+                            "const": "adaptive"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "config_path": {
+            "type": "string",
+            "description": "JSON file. Reference images/clip paths resolve relative to this file."
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "Per-task directory; task.json guards duplicate submissions."
+          },
+          "task_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "Previously returned ID. Resume in its original output directory."
+          },
+          "filename": {
+            "type": "string",
+            "pattern": "^[^/\\\\]+[.]mp4$",
+            "default": "video.mp4"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 3600,
+            "default": 900,
+            "description": "Maximum polling time. Zero checks once."
+          },
+          "poll_seconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 15
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "config"
+            ]
+          },
+          {
+            "required": [
+              "config_path"
+            ]
+          },
+          {
+            "required": [
+              "task_id"
+            ]
+          }
+        ],
+        "required": [
+          "output_dir"
         ]
       }
     }

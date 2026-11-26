@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Replaces only the model; web_fetch, HTTP transport and source recording stay real. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -12,6 +13,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Task web fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const index=options.messages.findLastIndex(m=>m.role==='user');
       const history=options.messages.slice(index+1),calls=history.filter(m=>m.role==='tool').length;
       const prompt=JSON.stringify(options.messages.filter(m=>m.role==='user'));

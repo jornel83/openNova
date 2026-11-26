@@ -1,0 +1,14 @@
+{
+  "action": "validate",
+  "config": {
+    "model": "doubao-seedance-2-0-fast-260128",
+    "prompt": "人物保持首帧服装、发型、背景和光向，自然眨眼、轻微呼吸后小幅转头。正常手机画面，人物和环境一起轻微漂移，无对白和音乐。",
+    "first_frame": "asset://asset-REPLACE_WITH_APPROVED_ID",
+    "duration": 4,
+    "ratio": "9:16",
+    "resolution": "480p",
+    "generate_audio": false,
+    "watermark": true,
+    "return_last_frame": true
+  }
+}

@@ -27,6 +27,9 @@ test('setup builds no sources and installs each locked project without modifying
   assert.ok(steps.every(s=>!s.args.includes('clone')));
   assert.ok(!steps.some(s=>s.args.some(a=>a.includes('bootstrap.py'))));
   assert.ok(commandPlan('setup',['--chatgpt'],ROOT).some(s=>s.args.some(a=>a.includes('bootstrap.py'))));
+  assert.ok(steps.some(s=>s.args[0]?.endsWith('/tools/setup/image-runtime.py')));
+  const media=commandPlan('setup',['--image-only'],ROOT);
+  assert.equal(media.length,1);assert.equal(media[0].args[0],join(ROOT,'tools/setup/image-runtime.py'));
   assert.throws(()=>commandPlan('unknown',[],ROOT),/unknown_command/);
   assert.throws(()=>commandPlan('build',['--typo'],ROOT),/unknown_option/);
 });

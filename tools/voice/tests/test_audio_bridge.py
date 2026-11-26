@@ -1,13 +1,27 @@
 import asyncio
+import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from audio_bridge import NativeAudio
+from audio_bridge import NativeAudio, build_helper
 from unittest.mock import AsyncMock, patch
 
 
 class NativeProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_packaged_audio_uses_supplied_binary_and_never_compiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'opennova-audio'
+            binary.write_text('fixture'); binary.chmod(0o700)
+            with patch.dict(os.environ, {'OPENNOVA_PACKAGED': '1', 'OPENNOVA_BIN_DIR': directory}), \
+                 patch('audio_bridge.asyncio.create_subprocess_exec', AsyncMock()) as spawn:
+                self.assertEqual(await build_helper(), binary)
+                binary.unlink()
+                with self.assertRaisesRegex(ValueError, '安装包缺少'):
+                    await build_helper()
+                spawn.assert_not_called()
+
     async def test_selected_devices_are_passed_to_helper_as_separate_arguments(self):
         audio = NativeAudio(device='MacBook Air 麦克风', output_device='SRS-XB100')
         async def ready():

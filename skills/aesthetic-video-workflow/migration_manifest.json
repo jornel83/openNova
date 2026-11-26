@@ -1,0 +1,1141 @@
+{
+  "version": 1,
+  "skill": "aesthetic-video-workflow",
+  "snapshot": "2026-11-13",
+  "known_missing": [
+    {
+      "original_filename": "80e21edd05eea7cd05be56d112019c40.jpg",
+      "expected_path": "current_task/before.jpg",
+      "description": "蓝帽 条纹衣 蓝底 面部紫色标记线",
+      "reason": "WeChat temporary file expired; original filename search found no copy"
+    },
+    {
+      "original_filename": "7e5df892187f34e10955a4ed09da2773.jpg",
+      "expected_path": "current_task/after.jpg",
+      "description": "黑色圆领衣 深色束发 浅灰墙与沙发",
+      "reason": "WeChat temporary file expired; original filename search found no copy"
+    }
+  ],
+  "files": [
+    {
+      "path": "archive/asian40_7shots_15s/asian40_7shots_15s_seedance20fast_silent.mp4",
+      "bytes": 7308643,
+      "sha256": "079205d889ba257804e6d41a28a7d7882218ffca36fe4babe7b7cca266731add"
+    },
+    {
+      "path": "archive/asian40_7shots_15s/final_storyboard.jpg",
+      "bytes": 151246,
+      "sha256": "67b0200f10576aebfd6970cb2dbca549407547164bb7a8ed41c63e280b3b50fd"
+    },
+    {
+      "path": "archive/asian40_7shots_15s/plan.json",
+      "bytes": 15117,
+      "sha256": "93e00b374bc91852c8f4d22f86fd4a0e534bdf5aaee4b6a49419ff8509503bb1"
+    },
+    {
+      "path": "archive/asian40_7shots_15s/validation.json",
+      "bytes": 2711,
+      "sha256": "c7741cac12f70a74ea7d3a0216eccaddebddf04b29de7944e5ea9183c6b88a76"
+    },
+    {
+      "path": "archive/asian40_7shots_15s/visual_review.json",
+      "bytes": 767,
+      "sha256": "6a650716514d80bddc876aa592550227dad7eaad3b24855a7d5270376265aa93"
+    },
+    {
+      "path": "archive/asian40_7shots_15s/分镜与提示词.txt",
+      "bytes": 13386,
+      "sha256": "2e65edb410405d3320ae3bd6c91be1acd610d613820e1e3df128c09cf89d8058"
+    },
+    {
+      "path": "archive/asian40_phone_v4/10秒文生视频Prompt.txt",
+      "bytes": 1415,
+      "sha256": "38355a18cc00ce0954f625209ae62f7edb9c9b4f906029905ebb06f2e0e67cae"
+    },
+    {
+      "path": "archive/asian40_phone_v4/15秒后Prompt_真实连贯优化版.txt",
+      "bytes": 9019,
+      "sha256": "e8d7ccd1ddcb4c22441ec856a70a7b1bc77140c2989eb6cf6251fc068117824a"
+    },
+    {
+      "path": "archive/asian40_phone_v4/15秒至结尾_逐镜视频提示词.txt",
+      "bytes": 5786,
+      "sha256": "0b4f456c5330f2456c25108d78e40d60c7c616280c25ee33e35cc6c80e368ec1"
+    },
+    {
+      "path": "archive/asian40_phone_v4/18镜光线优化总览.jpg",
+      "bytes": 597753,
+      "sha256": "ba53625dd5df7ba90f10c1661ffe5c139a0eaba789d21f39477cd6532e8bc645"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S01.png",
+      "bytes": 2368793,
+      "sha256": "b48442cd5be981e19df5ea50f70a778eb8e8d30b4d0c652a1110e3a7975e4bf0"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S02.png",
+      "bytes": 2450294,
+      "sha256": "ef8d272f4ef2358304b0f9ccd996b0f2ba667f0ce554352893e5c12b08b0a511"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S03.png",
+      "bytes": 2578820,
+      "sha256": "07f76fab7dac50d1ed6fa13e399853bfa26fcdac318fdafd38e4f11cbbb9b404"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S04.png",
+      "bytes": 2257985,
+      "sha256": "e87ccfe98aa1527cca5b8574f797e0d709678cf8833f8c86006d207884c9c067"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S05.png",
+      "bytes": 1854643,
+      "sha256": "b6d5c4d3bf7b19f5f8bf5d6142cb8f57ce6d2e9b7f5080d98282ed4cea2d3c69"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S06.png",
+      "bytes": 2088552,
+      "sha256": "ac5883319e4695706f1f98dc89319b5d86b326d98c708b5b5a54456cf11b827f"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S07.png",
+      "bytes": 2128601,
+      "sha256": "104d5270b36eceb748f1c1ba3af17a5a30add757478feb649387319c644f56ad"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S08.png",
+      "bytes": 2331186,
+      "sha256": "12501febd0f6dbd57ccfcf8088c9287fe2d12b402d447b7a2cea54c2cc7b35d4"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S09.png",
+      "bytes": 2126140,
+      "sha256": "489998c7e1539165978e34dfd4889557035755ea2f2862ee9b73987e71834bb5"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S10.png",
+      "bytes": 2560122,
+      "sha256": "c7b93119d463e702c5ebd3937c1bd552dd61d260ea3d36897332bfd76fe6f887"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S11.png",
+      "bytes": 1966360,
+      "sha256": "0713a9172f5ea2ce8ed042618b05f0c508d023280d56dda42831fb8bc369b144"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S12.png",
+      "bytes": 2047578,
+      "sha256": "3bf75ef77c2598f92d81635fce9a18737067107e8013a9ab25758f87e21a5290"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S13.png",
+      "bytes": 2118155,
+      "sha256": "94ce00af7a495ac000997d34b42ff4de3fc6531be45f079078994e45131897af"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S14.png",
+      "bytes": 2301366,
+      "sha256": "40a5754416adf3ace742e7a2fe012c524dcf1ab296d4000197a7f78d22508ef5"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S15.png",
+      "bytes": 2362918,
+      "sha256": "c16c25fac9df12fbcedf9808abbcfbcba03f71871ca5c6e14d582215a9384dd2"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S16.png",
+      "bytes": 2245307,
+      "sha256": "89ba2817ee961efde75f6f2c9c86fe136250489c0de5264ebd6b32e6b42cacd0"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S17.png",
+      "bytes": 2090389,
+      "sha256": "6e77f3a179da4ff87b10ea16c4d03245fd467a82c7a05c9c2d313a25f208c013"
+    },
+    {
+      "path": "archive/asian40_phone_v4/generated/S18.png",
+      "bytes": 2092131,
+      "sha256": "fbbd935cd64628b18c432be647a482994eb648edf332cc4090edfec19005f8cb"
+    },
+    {
+      "path": "archive/asian40_phone_v4/lighting_plan.json",
+      "bytes": 98542,
+      "sha256": "c2444f3a51f938904bf1130ff8e23fe29ab10c1da91b03a8fceeca64392d4886"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S02_before_expression_fix.png",
+      "bytes": 2619856,
+      "sha256": "966a7bb67447bcc74e1b5e8fbc2ceacc862f3a82afb2da0919e2cf3cd5bdcc1a"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S03_before_final_fix.png",
+      "bytes": 2405948,
+      "sha256": "f3da6cff157f9d2952b319e49f4bbdaaff0c81d8012b89b9510f5f5181b89b36"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S05_before_expression_fix.png",
+      "bytes": 1826002,
+      "sha256": "7d3c27d473b597881bd2337ceb3b4f4f5cab9249c4ed8fd4fa0b5568cb4e1441"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S08_before_final_fix.png",
+      "bytes": 2021167,
+      "sha256": "3603c6d004564887a912266e019f89c4e78afcd1fca3bcfe8981fc63902b55d1"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S10_before_final_fix.png",
+      "bytes": 2506546,
+      "sha256": "0260c5646b1bf53c38cebace7c47738d2ab5d751dc12a80f48a1ebc68e157ccc"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S11_before_final_fix.png",
+      "bytes": 2031076,
+      "sha256": "776b3fb7abba03950312f2161d91f03cf971578f16b33ad6566ba3129c82e234"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S16_before_expression_fix.png",
+      "bytes": 2286779,
+      "sha256": "cb4084900af1db93bf78339cfc9a3cd13c2d1a7c0654cb279d2755fab43fb3d9"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S18_before_expression_fix.png",
+      "bytes": 2109620,
+      "sha256": "02b3f43a4bf6afedeb287ac6a15986fd36888ae5585d35970a49058421697d9d"
+    },
+    {
+      "path": "archive/asian40_phone_v4/revisions/S18_before_final_fix.png",
+      "bytes": 2020968,
+      "sha256": "addecc15a81a35c04013d5eaf0cec28b3c4e2849700649f8171166dcac107c9b"
+    },
+    {
+      "path": "archive/asian40_phone_v4/最新光线提示词合集.txt",
+      "bytes": 81683,
+      "sha256": "74a491030a2b33abd6c7cf26d1aa69da9b0f0147677e60ddefd3dc35587fe4a5"
+    },
+    {
+      "path": "archive/blonde28_preop_13s/9张术前首帧_待入库.zip",
+      "bytes": 16189590,
+      "sha256": "755392ee96499b7e55fec7a0b20e3209f6574cc563dbb5c609caf15e848b6461"
+    },
+    {
+      "path": "archive/blonde28_preop_13s/blonde28_preop_13s_seedance20fast_silent.mp4",
+      "bytes": 6729770,
+      "sha256": "2953d960bfc178f4a535709b3531598a50dcda968cb065f6c64f9819a8e3504b"
+    },
+    {
+      "path": "archive/blonde28_preop_13s/plan.json",
+      "bytes": 17683,
+      "sha256": "758316ba9954929c95b63c7705127096661cd85fd6e25b7a9d5e7f775ddc8813"
+    },
+    {
+      "path": "archive/blonde28_preop_13s/status.json",
+      "bytes": 1410,
+      "sha256": "b0282461f2c26212a386037fc18518f8e95e3791dc08f39678b6051d2815f733"
+    },
+    {
+      "path": "archive/blonde28_preop_13s/verification.json",
+      "bytes": 976,
+      "sha256": "5e7aa2ae0a7a26d8796685d9a22dd6c0baebdf31f5584f427a2def84a6798af8"
+    },
+    {
+      "path": "archive/blonde28_preop_13s/分镜与视频提示词.txt",
+      "bytes": 14969,
+      "sha256": "95496ae797fd6b9aadf5fcc0ca43713db759ee752afacf21a7d0a488ad2fd85c"
+    },
+    {
+      "path": "archive/body175/after_strong.png",
+      "bytes": 1874207,
+      "sha256": "b5c7aa11a72cc39139b92db5d28e9bbb9cc845dfd4b5c9da18da85cdcd6b20b7"
+    },
+    {
+      "path": "archive/body175/before.png",
+      "bytes": 1919474,
+      "sha256": "88b7adef046fb85672d14a5c996565d7ed9da1b38ab0e27f3f57eac81971e360"
+    },
+    {
+      "path": "archive/body175/reference_after_f211.jpg",
+      "bytes": 50238,
+      "sha256": "d680f32884a9028fc462855f3f7d9b8178d233897042a116de58d59a2877ef1e"
+    },
+    {
+      "path": "archive/body175/reference_before_f181.jpg",
+      "bytes": 57799,
+      "sha256": "7e0d76e1a5a6cb437e37dd30fb8d0c76ac7cd7af2541cbddb161468b64449298"
+    },
+    {
+      "path": "archive/body175/比例分析与最终提示词.txt",
+      "bytes": 3736,
+      "sha256": "def88a65cd6d7fe36e5f3003b3c0b1d27c5f597988660e7733eb1541c5badc5b"
+    },
+    {
+      "path": "archive/body_sculpting/01_front.png",
+      "bytes": 1972640,
+      "sha256": "3b6babba0a362e3fea26af6e1d30c1bb5c5e4da12e40c6b221b70d6a99ddd55a"
+    },
+    {
+      "path": "archive/body_sculpting/02_side.png",
+      "bytes": 1946962,
+      "sha256": "0b16141494deb76f95f15e3c15d92e3b49accc4909d8cc2dd3ac18791686a3c6"
+    },
+    {
+      "path": "archive/body_sculpting/03_back.png",
+      "bytes": 1953320,
+      "sha256": "2caadd70d92fb7e3b973480f44826fb674e7165ccadd744f5c0811764d4db9f6"
+    },
+    {
+      "path": "archive/body_sculpting/04_mirror.png",
+      "bytes": 1833354,
+      "sha256": "511e5a0982e3306aafbe82bdacb893d07bf7908aa566f989927818043f4df0ff"
+    },
+    {
+      "path": "archive/body_sculpting/prompts.json",
+      "bytes": 16955,
+      "sha256": "118716b110a43e401f651f84def7c878757ac23d02b16ee851782f0ace8daf70"
+    },
+    {
+      "path": "archive/body_sculpting/原片分析与修改说明.txt",
+      "bytes": 621,
+      "sha256": "bc11cf699ab067c6313a1f12cdd33e0843ac0fa31e55ec0a5171b83bb8f949fa"
+    },
+    {
+      "path": "archive/body_sculpting/视频提示词.txt",
+      "bytes": 14447,
+      "sha256": "c596a92e59088e18521d31a9352898fa4ed6572a28b32ff53d84851549c32195"
+    },
+    {
+      "path": "archive/first12_seedance25/delivery_manifest.json",
+      "bytes": 3423,
+      "sha256": "1cb6483b053ca0d489c2f3ebfbab2c92c3e2910a38c9c61c867c16d7a3427da0"
+    },
+    {
+      "path": "archive/first12_seedance25/first12_seedance25_optimized.mp4",
+      "bytes": 4332845,
+      "sha256": "4d487a0fb7ed7c5e6605c977e7ecfa9f39299c3562f27c4ddb9e382b1ebd7858"
+    },
+    {
+      "path": "archive/first12_seedance25/prompt.txt",
+      "bytes": 1977,
+      "sha256": "b34fd6bb9be9c996d9a179c1bf3605262eba8ae0f97366ca1b7f432888cf3463"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V01.png",
+      "bytes": 2254444,
+      "sha256": "e517665537ad10c573444c4879fe78e7c568d3a48e34f3d4369f575d8083f7ce"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V02.png",
+      "bytes": 2116834,
+      "sha256": "72a3e70f40fd7fa2f14a9aa8563a5d571d84b4cd79666f56a310e525d70cea2d"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V03.png",
+      "bytes": 2350601,
+      "sha256": "da4402ddebb8859786eb7ac07d69295f78a2746820d09dc1f83b2f93f1065226"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V04.png",
+      "bytes": 2238179,
+      "sha256": "15e5b91797773f0e2efea6fed731b5e76ac70463746bd36020f42da5f0f0d7f5"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V05.png",
+      "bytes": 2275117,
+      "sha256": "ba6d4b072ee03e315d9c76b35b666f5ef9eba91ced30643de11c231982ffdf49"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V06.png",
+      "bytes": 2217100,
+      "sha256": "a8c7affff57bcb2356e62e513497d1863d46979767862ed4e3694df26a27bd10"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V07.png",
+      "bytes": 1974009,
+      "sha256": "874b4d6d5115d7823af59a7165c79cbf02e800aa84dfe5be40080b1b12f3694e"
+    },
+    {
+      "path": "archive/protagonist28/first_frames/V08.png",
+      "bytes": 2088075,
+      "sha256": "76cf4eb7af7c8505a4a402eaedb506d9f88d26c9ee0db259e97629e561b42e22"
+    },
+    {
+      "path": "archive/protagonist28/generation_plan.json",
+      "bytes": 545583,
+      "sha256": "23d74bbcdc1a6f4de4b9a870ca7390fd6316b1f793dc8ae0e924f6a57b27a26d"
+    },
+    {
+      "path": "archive/protagonist28/identity/after.png",
+      "bytes": 2649230,
+      "sha256": "fbf25f728f044bffa47b9db98c395c4ebb8c2916423cda96ab7fdc7a644d11a6"
+    },
+    {
+      "path": "archive/protagonist28/identity/before.png",
+      "bytes": 2599623,
+      "sha256": "95259819119291a8c285b5a0236051735e769192738ef48f10cb27d338b093b8"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V01.txt",
+      "bytes": 5158,
+      "sha256": "004886fd2141914d6778342836e54ab008c5a0254536a24931784129ce9c9a26"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V02.txt",
+      "bytes": 4636,
+      "sha256": "bb1c762a16390fa941f9d0aaa7e3f06819ad976197d8c9780a24f3023c3c41c8"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V03.txt",
+      "bytes": 5114,
+      "sha256": "b85a495f92e267748ed64885440ab29bb010a5fba99b6c90aaeebedad1269342"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V04.txt",
+      "bytes": 4976,
+      "sha256": "ffd2d674aa0225a07294d9293799de09d596a46af31810178e73dd60c0d18e33"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V05.txt",
+      "bytes": 5258,
+      "sha256": "45f801976cf63b56d7318ce8d6edffe23ad44951dca602ca5507db5b73b72c9d"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V06.txt",
+      "bytes": 5251,
+      "sha256": "b0f42787a917ab9a190a8922d90d559f89a9ec18eb8f07b92f53f6118b7ad4ac"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V07.txt",
+      "bytes": 5228,
+      "sha256": "2887d652f30c742971eee82e440f359df6e0d5c23164fd71f2cdf7e7c8a89318"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V08.txt",
+      "bytes": 5216,
+      "sha256": "a5986d42dd493201ad3678362555eda3956f8b0aa141eb40400d1b5992431d24"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V09.txt",
+      "bytes": 5174,
+      "sha256": "9cd2275b2f538f651d9c878b056c333f0aabb51dc8ddbd51b9e743b32abb9b38"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V10.txt",
+      "bytes": 5174,
+      "sha256": "5a19fe88365a623a223416a0c7bce68365b532af65065cdd8c3c21c1b7453017"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V11.txt",
+      "bytes": 5239,
+      "sha256": "0468e3f2ca77490cc975743277d2e6e24e5e603aa3687bf7b76d171ecaf42a73"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V12.txt",
+      "bytes": 5186,
+      "sha256": "1adb31cb00c79c9df2671fc9f07f5d3e489fd2ab7a54669d58b54d01495d1591"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V13.txt",
+      "bytes": 4958,
+      "sha256": "8683607e4404e865b4771a2ccdb9f9d4ffe06b90cd3de04a86473b063c5d5733"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V14.txt",
+      "bytes": 5033,
+      "sha256": "15a6370291ca670991739e9afafd1687da05c2f4bbc4008784b65cda54e5380d"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V15.txt",
+      "bytes": 5081,
+      "sha256": "054a208b9db5a87ee66bb356a1dc77828508cf8fedcc224dcc35c00794051928"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V16.txt",
+      "bytes": 5048,
+      "sha256": "76943586ec8ffd85322dd932100cd7ed073edca416f42cf158e139325d128891"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V17.txt",
+      "bytes": 5115,
+      "sha256": "483f6504617f9c385fada5b1cf0a6867962465925cbc6f9018ab15e5ecda135a"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V18.txt",
+      "bytes": 5102,
+      "sha256": "2ca9f2222e91184650c98a5cffe1cb0bdde55fd2c58c6d271f3b9aea3589e012"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V19.txt",
+      "bytes": 5070,
+      "sha256": "8738d4c19995da59ab0fa1366c8566adb83cdbd753c84e20f80a8d486d0853ca"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V20.txt",
+      "bytes": 5024,
+      "sha256": "64cd20618e33aff31fcc4b581ed71016773eda363a4a3254d505aaeff13df9c5"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V21.txt",
+      "bytes": 5100,
+      "sha256": "86eb8f3fa4e448af71b14530dd0751bb127f3765a8fbcb46c970fb8cef3f13b0"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V22.txt",
+      "bytes": 5066,
+      "sha256": "efd8b9bcba74e6bc3c35ab17ab0319680f743489eaac33fcbd347baf7b4c05e1"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V23.txt",
+      "bytes": 5282,
+      "sha256": "1666f93a8bf67afa786b73c064a9b89e8ad94e83ec9a619ed96ceaae67d3bf1b"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V24.txt",
+      "bytes": 5231,
+      "sha256": "23821fd34d7e653ec9d0336c4954ac99eeeec97040e76b199f7332ecf33b20c1"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V25.txt",
+      "bytes": 4388,
+      "sha256": "621f6723deb4adafd99e49ce6709b1f9ae5b3f04e7303308746ed4a5e7b3fe96"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V26.txt",
+      "bytes": 4515,
+      "sha256": "31c48f0926b7bf73001aea28f68ba00f05bfb73c56864663dd812babff96c538"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V27.txt",
+      "bytes": 4527,
+      "sha256": "0e67b6fedbc4f9b552105781788cd96b02e661e5983d9a8b4c7737591b0305d3"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V28.txt",
+      "bytes": 5056,
+      "sha256": "4e6f8f291ab506c86020f713976c5f1bae1fc4403c4b7b5c40c25204babfdebb"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V29.txt",
+      "bytes": 4974,
+      "sha256": "81438402a35ccc3b1dccf9e91d49df2b01e8372415e46fd19e7d7a423fd978f3"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V30.txt",
+      "bytes": 4438,
+      "sha256": "e23b23a31c413c6c99057a15dff12ddedd52c9ef0c891bf321524b4b18294a5d"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V31.txt",
+      "bytes": 4930,
+      "sha256": "fe5f91a28a2e35616dceae44f288bc590e9caca55c0095be5eaf37d02fad6a64"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V32.txt",
+      "bytes": 4798,
+      "sha256": "2647082c7a59ecef0541cb7d1a6337fe8e699740ef42a96221173599fb5e5708"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V33.txt",
+      "bytes": 4882,
+      "sha256": "ad5962defbe13c9057f5d55d544231105d5680d4787fa95fced95b9e75d21140"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V34.txt",
+      "bytes": 4451,
+      "sha256": "ce960c5f850338726f0486967b38d428defd78f479c255440807645c4bfe18fd"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V35.txt",
+      "bytes": 4831,
+      "sha256": "2dbae85e0a3c1fc893aeca653b06cc9b39fc6609cfe0703597f8d6fef6b250eb"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V36.txt",
+      "bytes": 4327,
+      "sha256": "2e4edf0b59e4fc5d56925bf36c8f1e0e9fd3d53c952eedef685affe536ec3055"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V37.txt",
+      "bytes": 4804,
+      "sha256": "fc183145477e918c1b3dd4f2d4650ba1c0d7e8b27ec6a2bb5ec455f0ab438fb6"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V38.txt",
+      "bytes": 4914,
+      "sha256": "05b00c9ad3ca80e5da442a4a2f29686c413f915d92a72896a2874915717bc22f"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V39.txt",
+      "bytes": 4473,
+      "sha256": "0826b05aaaed9fe044ac1b4d3ed36fbad78e648a136b409686b05f4312ded5cd"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V40.txt",
+      "bytes": 4449,
+      "sha256": "7fa1166c6af5d8c77d6967be3aa9317e0911b0fb83f2fde7b42eb6fea3a9d6c3"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V41.txt",
+      "bytes": 4872,
+      "sha256": "fc048afd41ee6643736d80a34cb6d058d3f6672bcb7585ce203ec3df38b803a5"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V42.txt",
+      "bytes": 4740,
+      "sha256": "08e995e8227b6c059ce95d86264103bc3558f47580ef3e12b54592a422bc25aa"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V43.txt",
+      "bytes": 4335,
+      "sha256": "b523922504683cbb10539b58673ff899edc72bbfbe39a26f4d7b1f79525e098c"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V44.txt",
+      "bytes": 4948,
+      "sha256": "adeeb871103ea69d5b4c74f800678d596fd3d0ef99a7e0a1604fe032fefa2406"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V45.txt",
+      "bytes": 4869,
+      "sha256": "90584d903c10aa0a49847eb796016ee1e850f8a835c6f7035c02f682e9236088"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V46.txt",
+      "bytes": 4946,
+      "sha256": "07cada61ad501e01702729a57f9b5f0af9067519be59acc6d839f7ab941a6637"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V47.txt",
+      "bytes": 4879,
+      "sha256": "3ed7917968f2c3c38a134a93f2b2d291d4782308fc2a9da677e697558e6a5115"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V48.txt",
+      "bytes": 4918,
+      "sha256": "c7ec1088ad1d446ff4def5d96e385886670f47103d86aad31f7d9b77707d3582"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V49.txt",
+      "bytes": 4330,
+      "sha256": "286cb4cd4b0abecfaa03506b1eed535a2d2e4edfdcb0780e2cef724d2987b39c"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V50.txt",
+      "bytes": 4801,
+      "sha256": "9f96c37c668d3b4b74e5e91a7559479560bfc2e72cbf4d32b9c3e1b408b75c92"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V51.txt",
+      "bytes": 4783,
+      "sha256": "65d70cfd2863e87f1d48c3ef6b394c752ab1fae3b04b87e800d20d3c68b89a57"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V52.txt",
+      "bytes": 4768,
+      "sha256": "159713619b1b06325e848d7df527f1cdd83799f5dbdc069ab83f35a78eb44d5b"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V53.txt",
+      "bytes": 4552,
+      "sha256": "83c4583cd109dd956366befae9a3cae5106ea2e5aa13fee532ed5acfbb62cf50"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V54.txt",
+      "bytes": 4808,
+      "sha256": "e5400959007da63be19a49681a2f3dea5cac66aa8cdb214c46e2cd72fc4e29f9"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V55.txt",
+      "bytes": 4360,
+      "sha256": "529f672d0219286b551d740448d1c63149db8131f24c44cf6c33a000d9fc420d"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V56.txt",
+      "bytes": 4747,
+      "sha256": "4a21834f4c9cb6f188e54c26d7ef467838ac98ffbb5c3f28fb73fc5bc25e0173"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V57.txt",
+      "bytes": 4309,
+      "sha256": "18b0a654e4d32071883d2258af462598fd0b5b91a3b84169b022229cc9f04219"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V58.txt",
+      "bytes": 4765,
+      "sha256": "0b7d1c1591b2f678278e25651d80bf92d7fb5e43c72e8ee464ceb2c550575cc4"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V59.txt",
+      "bytes": 4285,
+      "sha256": "346e1c581052d9c65fccd32284eeb9be777a7a31666a95e420e85ddea383ee78"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V60.txt",
+      "bytes": 4801,
+      "sha256": "2658f92658cbfb329d832442f61c5ede09adf8f8b549fc057f3cecceac438219"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V61.txt",
+      "bytes": 4729,
+      "sha256": "ff63383d30b26a55d19814a714c6115d637052e57f87100b655e069f1411fe78"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V62.txt",
+      "bytes": 4888,
+      "sha256": "bf62aefad78a7209e0769f7f807401fdb34e3ed179537de6663744698ae54746"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V63.txt",
+      "bytes": 4852,
+      "sha256": "d483ac6982a6cf62973eecc7edae85916c212e59654e09ddc3a6534711428e04"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V64.txt",
+      "bytes": 4859,
+      "sha256": "c150ddebaae3405926f9b0dec853e114f07934915da945c3af3beb9966b7ae56"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V65.txt",
+      "bytes": 4888,
+      "sha256": "8fa684473fb147cfa86955935a92bf2a986d06f025ba9dd0e9e73270eaa8af9f"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V66.txt",
+      "bytes": 4644,
+      "sha256": "b8c918db55f780e933c66e4ae06993ebebfe9ba4ff039d49b8c8354a74202ddc"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V67.txt",
+      "bytes": 5105,
+      "sha256": "ec6692f8fdada3f3b914187157cbd9295340b3c0931fed76388dcdc83e104840"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V68.txt",
+      "bytes": 5069,
+      "sha256": "258d7618edaa6c604ed4d619f2b52727893377303629e96f40de4d4f9141e4b8"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V69.txt",
+      "bytes": 5117,
+      "sha256": "cac8caa32d5d6cd51f58d40c741fb8886cb2cf66c2dd039bcfe8dd52cf9b0ad0"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V70.txt",
+      "bytes": 5060,
+      "sha256": "4a24bde053e5953c9713fdb5d3b3b32006e6d30c677033e23e055f9125ba1069"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V71.txt",
+      "bytes": 4664,
+      "sha256": "fefc63197ff801c5b96b5b6574a75984ed47d6982782b79caa9dd64ea3d279b5"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V72.txt",
+      "bytes": 4628,
+      "sha256": "b7d4b930085131c8466f2325dcfa864d576b4ea98b9d3cbce9f57083b4d8b414"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V73.txt",
+      "bytes": 5018,
+      "sha256": "76712de1e99c5ba5c9d631f90fb8e1d439fafccd83c922705f98e7d14b47c1d3"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V74.txt",
+      "bytes": 5057,
+      "sha256": "9820c3313150e69c18826e9015537f5985b69eb3997ca123500cfa79075950f6"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V75.txt",
+      "bytes": 4576,
+      "sha256": "f546b3bb035de7dd8eaf98b619dd4d68a08b358c88f4c77445b4325d936d827b"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V76.txt",
+      "bytes": 4546,
+      "sha256": "7d6856401d248b6c009a51bcca4694d89fed9630b7a847a8ea028c23c1cff0f7"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V77.txt",
+      "bytes": 5035,
+      "sha256": "e86561090794b482e603f1ce457c0b9a7ab230ec7cd94f938becdca28c137e8e"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V78.txt",
+      "bytes": 5045,
+      "sha256": "e3d140166707bc9a7c43c0f950c3080dc1bd84cb1491d4769595aba59b729292"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V79.txt",
+      "bytes": 4961,
+      "sha256": "a6cb36eeb65e35b5c8e8807acdc5f4078346edf5de8d2fda36be41e92daa8641"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V80.txt",
+      "bytes": 4958,
+      "sha256": "b7f15257e0d0573214287c004d7e666ac0e52973735fd7071f1326dce004f7ca"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V81.txt",
+      "bytes": 4967,
+      "sha256": "b0d9026a375c9f455fd7cd70285a2f18bf57a0ee597c0d8a085f586ed30bf32d"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V82.txt",
+      "bytes": 4973,
+      "sha256": "e9a535218a379b0a2e1f0a9add1f4c1eddbfc6381751021f0fb3726674afbcb7"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V83.txt",
+      "bytes": 4937,
+      "sha256": "a5d5dac389799892a6aa464585639ec7686471e55ce848a0719299ab9c6dbdc1"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V84.txt",
+      "bytes": 4946,
+      "sha256": "69c129c89c204a954e91ba6e66b5ec0b25e675046730e8a717b875c2bacd3d1a"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V85.txt",
+      "bytes": 4970,
+      "sha256": "18985e6657e21e317338512b1d09932416156e7e1260ff562ae79eae5919f684"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V86.txt",
+      "bytes": 4461,
+      "sha256": "5347b5228ed124bb0750738aaee863462a63ebb3803d58ad1c1b39efa0ae70e6"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V87.txt",
+      "bytes": 4479,
+      "sha256": "41d75e5d6ff1bd33df475ea07f2f459671a2e46fac068612575b8fba66730cb7"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V88.txt",
+      "bytes": 4476,
+      "sha256": "ec9ef8986cf633ab9de246a4ce7c2b7b8948cf183e09612b90fec752159f12c1"
+    },
+    {
+      "path": "archive/protagonist28/prompts/V89.txt",
+      "bytes": 4366,
+      "sha256": "d74d270996f4f10bb1b6d1affe7e2431c43db2afd855703d1406b2282584a986"
+    },
+    {
+      "path": "archive/protagonist28/灯光与色彩设定.txt",
+      "bytes": 5805,
+      "sha256": "dec2b7b302d8ada69033f5adca80adbd1d2070a7d973ffec8a6a68f62b0483f0"
+    },
+    {
+      "path": "archive/reference_7624_analysis/review.json",
+      "bytes": 1211,
+      "sha256": "4f6b488f872a354bcae2b4c9def80090dcff7df6035f73d264dade05c662cb1a"
+    },
+    {
+      "path": "archive/reference_7624_analysis/Seedance_7s_prompt.txt",
+      "bytes": 2304,
+      "sha256": "e5820ae57db93471cf97b67323037d703d14f468f99dfcac4e4463f95c59d06b"
+    },
+    {
+      "path": "archive/reference_7624_analysis/source_description.txt",
+      "bytes": 2759,
+      "sha256": "fa5f4a39c90915b9f0327d3eee5ca55fc3f1725a5160c87a3d364108208c855b"
+    },
+    {
+      "path": "archive/script327_script/dialogue_script.txt",
+      "bytes": 30328,
+      "sha256": "d5cc285fd010bc14f1e50710be5eeba6eb2954454c591df846bf0465584010f4"
+    },
+    {
+      "path": "archive/script327_script/original_script.txt",
+      "bytes": 9316,
+      "sha256": "2899c4597f05f466cf894101499fe6f474822ac73dc444942129c5a94c9a87f6"
+    },
+    {
+      "path": "archive/script327_script/overview.png",
+      "bytes": 2924773,
+      "sha256": "46989696548d7476a02748e374b99709bcf04d83d04abee59dbdc7ce67712409"
+    },
+    {
+      "path": "archive/script327_script/prompts_all_26.txt",
+      "bytes": 93052,
+      "sha256": "eaee5fbbe17c66123e2f5174b50ae751fbd3791dff6e0cf51dbf5dce9b8774cc"
+    },
+    {
+      "path": "archive/script327_script/shot_catalog_final.json",
+      "bytes": 114170,
+      "sha256": "3a15c31de9096c9f7d8dad52359165f76c0da7d7df56621dc7d29876c38f62d2"
+    },
+    {
+      "path": "archive/script327_video_19_v2/delivery_manifest.json",
+      "bytes": 46187,
+      "sha256": "435c6636d9994e95acf6c82a5a3bec0851e3b51da89e1aa9eebf27ac5690de30"
+    },
+    {
+      "path": "archive/script327_video_19_v2/dialogue_short.srt",
+      "bytes": 1219,
+      "sha256": "ee2bd2ec71b1129b60d0dcb084cd6e3007b3679b68a320e1c572328c33e63855"
+    },
+    {
+      "path": "archive/script327_video_19_v2/dialogue_short.txt",
+      "bytes": 1967,
+      "sha256": "a2adef3716250c58f8e1aed0799476e1a709fbb5542f90e8d9fbd0ab5a1449b3"
+    },
+    {
+      "path": "archive/script327_video_19_v2/first19_52s_demo.mp4",
+      "bytes": 17076167,
+      "sha256": "5d01a45bce2a99eea9d2dcf0612c5173c22a442a48ab7cf60a64352f2ec70bec"
+    },
+    {
+      "path": "archive/script327_video_19_v2/production_plan_short.json",
+      "bytes": 38127,
+      "sha256": "a48a31112a6e8e92b196df89a2b25ef19a0d3d09948d208d3859eaeeed1c97c3"
+    },
+    {
+      "path": "archive/script327_video_19_v2/verification.json",
+      "bytes": 267,
+      "sha256": "a874d8f6de150a7184762816c5cdd99976e2a4d665aba5ce8f532d2dda97c025"
+    },
+    {
+      "path": "benchmarks/realism_10s/demo_10s_seedance20fast_text_silent.mp4",
+      "bytes": 9783304,
+      "sha256": "6173a2e75694d8b32b73f966ba0109a5d02e5023344cd5579926b08d08fefdb5"
+    },
+    {
+      "path": "benchmarks/realism_10s/poster.jpg",
+      "bytes": 65300,
+      "sha256": "6d3b6d998827c25619fafaf6420984e4638c9b1c31bb379fbfc67a2586b5a79e"
+    },
+    {
+      "path": "benchmarks/realism_10s/prompt.txt",
+      "bytes": 1415,
+      "sha256": "38355a18cc00ce0954f625209ae62f7edb9c9b4f906029905ebb06f2e0e67cae"
+    },
+    {
+      "path": "benchmarks/realism_10s/request.json",
+      "bytes": 1686,
+      "sha256": "36fba1140fec0323e36099b0dd6f0a6e3e81b86018f9ee043e7fc898168095bc"
+    },
+    {
+      "path": "benchmarks/realism_10s/review_contact.jpg",
+      "bytes": 412175,
+      "sha256": "db6ba016ba1f36cb578bc38e8ce1c224f49ab8b25ec556a1f3de9433142cd4b3"
+    },
+    {
+      "path": "benchmarks/realism_10s/validation.json",
+      "bytes": 486,
+      "sha256": "8bb1a91322e3ce8956cbadf347bf6ca927247f8a0904a3cff5e361cf08fbceb9"
+    },
+    {
+      "path": "catalog/missing_inputs.json",
+      "bytes": 568,
+      "sha256": "dcf44f39f09982483b56171acf6d1d66ae5659f4acd9fb79e4b3a1c4ca0399cb"
+    },
+    {
+      "path": "catalog/original_library_inventory.json",
+      "bytes": 11965,
+      "sha256": "3c5fdcbdc68df3708465c00485ae06eb94e04627c6c80f7ae7afe2409e4a5054"
+    },
+    {
+      "path": "catalog/project_index.json",
+      "bytes": 712,
+      "sha256": "0ae5cf8427f9bcf2a8e558e16a4f531ec3d3c5b50921cccc56a0a247736dde34"
+    },
+    {
+      "path": "current_task/analysis/cuts_detail.jpg",
+      "bytes": 494060,
+      "sha256": "a657481352723989b975cd1bd3c32e00a7f42ca795f18e9d2416efd6b630f2f3"
+    },
+    {
+      "path": "current_task/analysis/frame_changes.json",
+      "bytes": 2236,
+      "sha256": "defcb594b2bb9ced6e87de64c474105c513e66b52a65fc96a083d2b431294ae0"
+    },
+    {
+      "path": "current_task/analysis/overview_1.jpg",
+      "bytes": 219807,
+      "sha256": "c7eccb82b44fe6cfc1fb8ff00d92ed58143c9afdc912b134c717c8af2faa290c"
+    },
+    {
+      "path": "current_task/analysis/overview_2.jpg",
+      "bytes": 219626,
+      "sha256": "b67c64333b94e9836cec43f720203fe7458147cc519c077a6db3ec68e5824de1"
+    },
+    {
+      "path": "current_task/analysis/overview_3.jpg",
+      "bytes": 230576,
+      "sha256": "dd66930fef32313be8c1e14bc7d0b3d69f382d86111a24e792a0ea39a6e7babe"
+    },
+    {
+      "path": "current_task/analysis/structure_keyframes.jpg",
+      "bytes": 187908,
+      "sha256": "7289f4ce0c7f46104704a02741508c2ed8a7011ada74adb2f163f4c9e150c154"
+    },
+    {
+      "path": "current_task/analysis/结构与图片位置建议.md",
+      "bytes": 3934,
+      "sha256": "95955b2097d7a7e0f062c6677d08e55450c439b2fba6f3b3a50b78e9b47cf9bb"
+    },
+    {
+      "path": "current_task/reference_b11.mp4",
+      "bytes": 2641996,
+      "sha256": "7adfbea807aa444a61249feea5df7d9ff31d528a064df93e78a9366751a1aa92"
+    },
+    {
+      "path": "current_task/STATE.md",
+      "bytes": 569,
+      "sha256": "5227a3cc8792d28011f0f14452dd62448b88ec58fcbce483d99637c917a34d8e"
+    },
+    {
+      "path": "docs/制作流程_含火山引擎注册充值.docx",
+      "bytes": 4543684,
+      "sha256": "44316d830d3b2bf4f28ce1d7dee4897fc33a8c8e42fcbbc490141e227dd6c099"
+    },
+    {
+      "path": "library/89条视频_首帧与视频提示词.txt",
+      "bytes": 245954,
+      "sha256": "b2779fc681bcfb74e8f5879d9fb5f3f283a85d75d1c64aae6208684073404908"
+    },
+    {
+      "path": "library/analysis.json",
+      "bytes": 1286371,
+      "sha256": "ef07e0564741540887068a72d4a9903e42e2dfb6cbbb240b7e83d52fe4a6af18"
+    },
+    {
+      "path": "library/inventory.json",
+      "bytes": 67552,
+      "sha256": "144ae8366476493c354c7b19ff95e5591f281cbb25eee21649c165e4c42b7390"
+    },
+    {
+      "path": "library/prompt_design.json",
+      "bytes": 23611,
+      "sha256": "9124c79cf1264c9cac2ecebefb2dbc043637a3f06d21229e6ba69aeec52537cd"
+    },
+    {
+      "path": "library/优先参考8帧.jpg",
+      "bytes": 293079,
+      "sha256": "e70b80aa9e0d691534c0e0b7f8ae5016ccdfb7e652a9d5265f744ee27f5fb439"
+    },
+    {
+      "path": "library/素材库89条_分类与首帧分析.xlsx",
+      "bytes": 5855008,
+      "sha256": "e6699f79359cd4e6775d898b04ffdb40b1bf8e2c1a08368f91be8e72565a5383"
+    },
+    {
+      "path": "library/首帧参考图_178张.zip",
+      "bytes": 16628402,
+      "sha256": "e3310047996dd57eff223b4e191b15b12587715ebb74202645edb88366dee61f"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/after/request.json",
+      "bytes": 2731,
+      "sha256": "1d59ad16bd61defbb1b27802100e28b8420f09b3b26bde1091105a33ea4cc620"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/after/source.mp4",
+      "bytes": 2003632,
+      "sha256": "5285e360728902bf5ca415675d84aac2020cf923143478fdd1b4d3a072666813"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/after/task.json",
+      "bytes": 87,
+      "sha256": "7a9440a8c4dd1636d4d46f19d564f22a1e43ddd24073b165ad8807e3b89309f7"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/after_prompt.txt",
+      "bytes": 2304,
+      "sha256": "0b5572ace4a01784ebc7a5bd61da1afc01379b67cb1971713c7d5baadc7881db"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/assets.json",
+      "bytes": 473,
+      "sha256": "b34dbbc47929bc705d3dea0b93f9b8ff2c38b05723ae7afdd159fb57e484ad53"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/before/request.json",
+      "bytes": 2085,
+      "sha256": "0ca7a5e486e6d8ddaa05643e0a0b722b6c7b1eaaad9dbdebd4c488cd13172bea"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/before/source.mp4",
+      "bytes": 1107772,
+      "sha256": "7143c408c2431156045149b574871460d3b3881a386e1a4ade22c3f70e906833"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/before/task.json",
+      "bytes": 87,
+      "sha256": "a73faa4f0d824eb8f8fdc3133b45270120076e37ab9b40c9734f4569dabb44a2"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/before_after_14p73s_seedance20fast_480p_silent.mp4",
+      "bytes": 2496472,
+      "sha256": "699457a69d79dd76dc2e9a29ab6b46208769d11623d0c44cd47fbc8113cd6601"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/before_prompt.txt",
+      "bytes": 1658,
+      "sha256": "cbd7833493c855574100606561e0de9b294052685504b49881e01c8cb96e42f9"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/build_final.py",
+      "bytes": 3327,
+      "sha256": "991b07b8d1240099bbdff86a294a1348f74d511f8178d67b61725568ee8df276"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/generate.mjs",
+      "bytes": 4655,
+      "sha256": "3681bf56c1f476a4014168bdd3a82f2e85f5eae5081c0d0dd4520e19e7fba598"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/generation_summary.json",
+      "bytes": 472,
+      "sha256": "e0f71d78a94e4614885df51f00a2ee6eaa1f963badf405a1170c6a5689c63f11"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/inputs/after.png",
+      "bytes": 2335238,
+      "sha256": "7c2f01e3d22f056a7fe6d8da5c9e6a6ebaf31d2c44f7fc1fbc8e100c03ad92e3"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/inputs/before.png",
+      "bytes": 2157204,
+      "sha256": "d08738fbea682dea5776f38d2eda82fc4809d03e763d372bc4d9484f3275dd8a"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/plan.json",
+      "bytes": 4231,
+      "sha256": "d584d8fb3a2a864c4080adcfde96c2334d1f3d8b01c1ada12b211c13578a7b56"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/status.json",
+      "bytes": 1654,
+      "sha256": "4829cb41eecde7bde96ac3a3c617b758a327f2501b17a67a8b769a8c974f57af"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/timeline.json",
+      "bytes": 809,
+      "sha256": "d32ebf0b82f2a619caf39eb2fad1f783b4dd776219ca96a4430f28505ab4e217"
+    },
+    {
+      "path": "projects/face_pair_480p_20261105/verification.json",
+      "bytes": 337,
+      "sha256": "65e844198e6fd3ff7f984a75d4d4b25db49335b18c159da02c6ff3682bdf4c25"
+    },
+    {
+      "path": "source_scripts/2.mp4",
+      "bytes": 6330649,
+      "sha256": "4204428cfdb9f2fa08b844025dbb85a213129b49c6add0c1188a529a936334a5"
+    },
+    {
+      "path": "source_scripts/3.27拍摄脚本 .xlsx",
+      "bytes": 3464349,
+      "sha256": "234c685fc79de3300d6b9aa2c6b55fa55a414eab5d43740f7f2b7ee03df2642f"
+    },
+    {
+      "path": "source_scripts/reference_7624.mp4",
+      "bytes": 2078498,
+      "sha256": "11ee2d2476978a4cf35630d46cdba6b6a8e610e370d412f1216d3ad04f0a7099"
+    },
+    {
+      "path": "source_scripts/体雕.mp4",
+      "bytes": 2038126,
+      "sha256": "29b87dc088d15da7dcc34a9b76db32913442b0279f37d350542a8fd5a1bf47d6"
+    }
+  ]
+}

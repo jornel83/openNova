@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Deterministic tool plans run through real Harness filesystem tools. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -11,6 +12,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Filesystem access fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const index=options.messages.findLastIndex(message=>message.role==='user'&&message.content.some(block=>block.type==='text'&&block.text.includes('FS_ACCESS_PLAN=')));
       const prompt=options.messages[index]?.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')??'';
       const encoded=[...prompt.matchAll(/FS_ACCESS_PLAN=([A-Za-z0-9+/=]+)/g)].at(-1)?.[1];

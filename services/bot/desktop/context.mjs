@@ -20,6 +20,7 @@ export function createWorkContext({inspectFile=file=>file,initial,onChange=()=>{
   },
   selectFile(file){if(browser)browser={...browser,selection:null};current={kind:'file',file:structuredClone(file)};changed();},
   snapshot:copy,capture:()=>freeze(copy()),
+  restore(value){browser=null;cleared=null;current=value?.kind==='file'?{kind:'file',file:structuredClone(value.file),historical:true}:{kind:'none'};changed();},
   clearSelection(){if(browser?.selection)cleared={page:browser.page,selection:JSON.stringify(browser.selection)};if(browser)browser={...browser,selection:null};if(current.kind==='browser')current=browser;changed();},
   invalidate(){browser=null;if(current.kind==='browser')current={kind:'none'};changed();},
  };

@@ -1,0 +1,4 @@
+interface:
+  display_name: "医美 AI 视频制作与项目接续"
+  short_description: "接续医美视频项目，使用 Seedance 或 MiniMax H3 Veda 生成镜头并剪辑成片"
+  default_prompt: "使用 $aesthetic-video-workflow 读取接续记录，检查迁移素材并继续医美 AI 视频项目。"

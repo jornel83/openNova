@@ -1,5 +1,5 @@
 #!/bin/zsh
-# One entry point for the persistent Bot + Studio TTS + continuous voice client.
+# Persistent Bot and optional voice; --no-voice defers audio until explicitly enabled.
 set -euo pipefail
 OPENNOVA_START_ROOT="${0:A:h}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -16,4 +16,10 @@ if [[ ! -x "$OPENNOVA_START_NODE" ]]; then
   exit 1
 fi
 export OPENNOVA_NODE="$OPENNOVA_START_NODE"
-exec "$OPENNOVA_START_NODE" "$OPENNOVA_START_ROOT/scripts/project.mjs" start:voice "$@"
+node_args=()
+daily_profile="$OPENNOVA_START_ROOT/config/.env.daily"
+# An explicit instance keeps its own data directory and port defaults.
+if [[ -f "$daily_profile" && -z "${OPENNOVA_BOT_HOME:-}" && -z "${OPENNOVA_BOT_PORT:-}" && -z "${OPENNOVA_BOT_WEB_PORT:-}" ]]; then
+  node_args+=("--env-file=$daily_profile")
+fi
+exec "$OPENNOVA_START_NODE" "${node_args[@]}" "$OPENNOVA_START_ROOT/scripts/project.mjs" start:voice "$@"

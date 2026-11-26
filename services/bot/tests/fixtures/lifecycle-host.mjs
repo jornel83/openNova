@@ -1,6 +1,6 @@
 /** Real Bot and Harness in an isolated external directory, with offline providers. */
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,realpathSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createServer} from 'node:net';
@@ -13,17 +13,21 @@ import {runtimePatch} from '../../configuration.mjs';
 
 export const alive=pid=>{try{process.kill(pid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}};
 async function freePort(){const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port;}
-export async function lifecycleHost(t,{provider='task-provider.mjs',foregroundProvider='lifecycle-provider.mjs',videoTransportModule}={}){
-  const sources=requireBuiltHarness(),home=mkdtempSync(join(tmpdir(),'nova-team-lifecycle-')),port=await freePort();let webPort=await freePort();while(webPort===port)webPort=await freePort();
+export async function lifecycleHost(t,{provider='task-provider.mjs',foregroundProvider='lifecycle-provider.mjs',videoTransportModule,nativeFileReaderModule,hostEnv={},canonicalHome=false}={}){
+  const sources=requireBuiltHarness(),temporary=mkdtempSync(join(tmpdir(),'nova-team-lifecycle-')),home=canonicalHome?realpathSync(temporary):temporary,port=await freePort();let webPort=await freePort();while(webPort===port)webPort=await freePort();
   const b={...botSettings({OPENNOVA_BOT_HOME:home,OPENNOVA_BOT_PORT:String(port),OPENNOVA_BOT_WEB_PORT:String(webPort)}),workspace:join(home,'workspace')};
   mkdirSync(b.workspace);writeFileSync(join(b.workspace,'sample.txt'),'original\n');writeFileSync(b.tokenPath,'offline-fixture-token');
   const patch=runtimePatch({bot:b,agent:{harnessRoot:sources.harnessRoot},webAssets:join(ROOT,'output/bot/web'),desktop:true}),insert=patch.find(row=>row.insert).insert;
   insert.find(plugin=>plugin.id==='opennova-chatgpt').name=join(ROOT,'services/bot/tests/fixtures',foregroundProvider);
   insert.find(plugin=>plugin.id==='opennova-bot').config.agentProviderModule=join(ROOT,'services/bot/tests/fixtures',provider);
   if(videoTransportModule)insert.find(plugin=>plugin.id==='opennova-bot').config.videoTransportModule=join(ROOT,'services/bot/tests/fixtures',videoTransportModule);
+  if(nativeFileReaderModule)insert.find(plugin=>plugin.id==='opennova-bot').config.nativeFileReaderModule=join(ROOT,'services/bot/tests/fixtures',nativeFileReaderModule);
   const patchPath=join(home,'fixture.patch.json');writeFileSync(patchPath,JSON.stringify(patch));let child,logs='',sequence=0;
   async function api(path,body={},status=200){
     const response=await fetch(b.url+path,{method:'POST',headers:{Authorization:'Bearer offline-fixture-token','Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
+    if(response.headers.get('content-type')==='video/mp4'){
+      assert.equal(response.status,status);return Buffer.from(await response.arrayBuffer());
+    }
     const value=await response.json();assert.equal(response.status,status,JSON.stringify(value));return value;
   }
   async function until(fn,ms=30000){
@@ -37,7 +41,7 @@ export async function lifecycleHost(t,{provider='task-provider.mjs',foregroundPr
     try{await exit;}finally{clearTimeout(timer);}
   }
   async function start(){
-    child=spawn(process.execPath,[join(sources.harnessRoot,'apps/cli/lib/bin.js'),'--profile','web','--patch',patchPath,'--host','127.0.0.1','--port',String(webPort),'--no-open'],{cwd:b.workspace,stdio:['ignore','pipe','pipe'],env:{...process.env,DSH_HOME:join(home,'harness'),OPENNOVA_BOT_PLUGIN:sources.botRoot,OPENNOVA_HARNESS_ROOT:sources.harnessRoot,NODE_OPTIONS:'--import='+JSON.stringify(join(ROOT,'services/bot/resolve.mjs')),PATH:dirname(process.execPath)+':'+process.env.PATH}});
+    child=spawn(process.execPath,[join(sources.harnessRoot,'apps/cli/lib/bin.js'),'--profile','web','--patch',patchPath,'--host','127.0.0.1','--port',String(webPort),'--no-open'],{cwd:b.workspace,stdio:['ignore','pipe','pipe'],env:{...process.env,...hostEnv,DSH_HOME:join(home,'harness'),OPENNOVA_BOT_PLUGIN:sources.botRoot,OPENNOVA_HARNESS_ROOT:sources.harnessRoot,NODE_OPTIONS:'--import='+JSON.stringify(join(ROOT,'services/bot/resolve.mjs')),PATH:dirname(process.execPath)+':'+process.env.PATH}});
     const collect=data=>{logs=(logs+data).slice(-20000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
     return until(async()=>{if(child.exitCode!==null||child.signalCode!==null)throw Error('fixture host stopped\n'+logs);try{const health=await api('/health');return health.ready&&health;}catch{return false;}});
   }

@@ -6,6 +6,7 @@ import {readJson} from '../tasks/agent-files.mjs';
 import {normalizeReviewDecision,prepareReviewEvidence} from './review.mjs';
 import {validBudget,remainingBudget,capBudget} from '../tasks/budgets.mjs';
 import {assertTaskOpen,taskIsClosed} from '../tasks/closure.mjs';
+import {recoverableModelFailure} from '../tasks/failure.mjs';
 const assertOpen=(tasks,task)=>tasks.assertOpen?tasks.assertOpen(task):assertTaskOpen(task);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const idOk=value=>typeof value==='string'&&/^[\w-]{1,100}$/.test(value);
@@ -48,7 +49,7 @@ export class TeamSupervisor {
   summary(task){
     const report=this.reports.current(task),review=report&&this.history(task.id).find(item=>item.reportId===report.id&&item.runId===task.runId&&item.assignmentVersion===(task.assignmentVersion??1));
     let status=review?.status,reason;
-    if(status==='accepted'&&(report.evidence?.captureIncomplete||(report.artifacts??[]).some(item=>item.status!=='available'||item.sourceStatus&&!['available','unchanged'].includes(item.sourceStatus))||(report.evidence?.codeChanges??[]).some(item=>item.deleted&&existsSync(item.path)))){status='stale';reason='accepted_report_evidence_changed';}
+    if(status==='accepted'&&(report.evidence?.candidateReview&&!this.reports.candidatePatchCurrent(task,report)||report.evidence?.captureIncomplete||(report.artifacts??[]).some(item=>item.status!=='available'||item.sourceStatus&&!['available','unchanged'].includes(item.sourceStatus))||(report.evidence?.codeChanges??[]).some(item=>item.deleted&&existsSync(item.path)))){status='stale';reason='accepted_report_evidence_changed';}
     return {reportId:report?.id,reviewStatus:status??(report?'pending':undefined),reviewVersion:review?.id,
       inboxReason:reason??(review&&['needs_user','budget_exhausted','failed'].includes(status)?review.decision?.summary??review.error:undefined)};
   }
@@ -58,7 +59,7 @@ export class TeamSupervisor {
       const child=this.tasks.row('task',current.managementTaskId),run=this.tasks.row('run',child.runId),job=this.tasks.row('job',run.jobId);
       if(child.managementReview?.reportId===current.reportId)activity=this.tasks.activity?.(child,run,job);
     }catch{}
-    return {management:{...this.management(task),...this.usage(task)},currentReview:current?{...current,status:effective.reviewStatus,effectiveReason:effective.inboxReason,...activity?{activity}:{} }:null,reviewHistory:reviews,reviews};
+    return {management:{...this.management(task),...this.usage(task)},currentReview:current?{...current,status:effective.reviewStatus,effectiveReason:effective.inboxReason,canRetry:this.canRetry(current),...activity?{activity}:{} }:null,reviewHistory:reviews,reviews};
   }
   continuationBudget(task){
     if(taskIsClosed(task))return {reason:'task_closed'};
@@ -73,19 +74,20 @@ export class TeamSupervisor {
     const task=this.tasks.row('task',report.taskId),effective=this.summary(task);
     return !taskIsClosed(task)&&effective.reportId===report.id&&effective.reviewStatus==='accepted';
   }
-  current(review){
+  current(review,{verifyCandidate=true}={}){
     const task=this.tasks.row('task',review.taskId);
     assertOpen(this.tasks,task);
     if(review.source!=='user'&&this.history(task.id).some(other=>other.id!==review.id&&other.reportId===review.reportId&&other.runId===review.runId&&other.assignmentVersion===review.assignmentVersion&&other.source==='user'&&['accepted','changes_requested','answered','needs_user'].includes(other.status)))throw Error('review_stale');
     if(task.runId!==review.runId||task.assignmentVersion!==review.assignmentVersion||live.has(task.status)||!waiting.has(task.status))throw Error('review_stale');
-    const report=this.reports.assertCurrent(task,review.reportId)??this.reports.get(review.reportId);
+    const report=this.reports.assertCurrent(task,review.reportId,{verifyCandidate})??this.reports.get(review.reportId);
     if(report.runId!==task.runId||report.assignmentVersion!==task.assignmentVersion)throw Error('review_stale');
     return {task,report};
   }
   configure(body){
+    if(body.retryReview!==undefined){if(body.retryReview!==true)throw Error('invalid_management_policy');return this.retryReview(body);}
     const task=this.tasks.row('task',body.id);if(task.runId!==body.runId)throw Error('task_run_changed');
     assertOpen(this.tasks,task);
-    if(task.managementReview)throw Error('management_task_not_configurable');
+    if(task.managementReview||task.parentTaskId)throw Error('management_task_not_configurable');
     const settings=this.management(task);
     for(const key of ['enabled','paused'])if(body[key]!==undefined){if(typeof body[key]!=='boolean')throw Error('invalid_management_policy');settings[key]=body[key];}
     for(const [key,min,max] of [['maxReworks',0,5],['tokenBudget',1000,3000000],['timeBudgetMs',1000,28800000]])if(body[key]!==undefined){if(!validBudget(body[key],min,max))throw Error('invalid_management_policy');settings[key]=body[key];}
@@ -97,14 +99,34 @@ export class TeamSupervisor {
     if(settings.enabled&&!settings.paused)for(const review of this.history(task.id))if(review.status==='paused')this.put({...review,status:'queued',resumePending:true,error:undefined,finishedAt:undefined});
     this.tasks.changed(task);return this.view(task);
   }
+  canRetry(review){
+    if(review?.source!=='supervisor'||review.status!=='needs_user'||review.error!=='management_review_incomplete')return false;
+    try{
+      const {task}=this.current(review),settings=this.management(task),child=this.tasks.row('task',review.managementTaskId),run=this.tasks.row('run',child.runId),job=this.tasks.row('job',run.jobId);
+      return settings.enabled&&!settings.paused&&!live.has(child.status)&&job.cleanupConfirmed===true&&recoverableModelFailure(job.agentResult);
+    }catch{return false;}
+  }
+  retryReview(body){
+    if(!idOk(body.actionId)||['enabled','paused','maxReworks','tokenBudget','timeBudgetMs'].some(k=>body[k]!==undefined))throw Error('invalid_review_action_id');
+    const task=this.tasks.row('task',body.id);assertOpen(this.tasks,task);
+    const review=this.get(body.reviewId),fingerprint=JSON.stringify([body.id,body.runId,body.reportId,body.reviewId]);
+    const priorAction=review?.retryActions?.[body.actionId]??(review?.retryActionId===body.actionId?review.retryFingerprint:undefined);
+    if(priorAction){if(priorAction!==fingerprint)throw Error('review_action_conflict');return this.view(task);}
+    if(task.runId!==body.runId||review?.taskId!==task.id||review.reportId!==body.reportId||!this.canRetry(review))throw Error('review_retry_unavailable');
+    const child=this.tasks.row('task',review.managementTaskId),run=this.tasks.row('run',child.runId),job=this.tasks.row('job',run.jobId);
+    const budget=this.continuationBudget(task);if(budget.reason)throw Error(budget.reason);
+    this.put({...review,status:'queued',resumePending:true,reviewOnly:true,error:undefined,finishedAt:undefined,retryActionId:body.actionId,retryFingerprint:fingerprint,retryActions:{...review.retryActions,[body.actionId]:fingerprint},
+      failedAttempts:[...(review.failedAttempts??[]),{runId:run.id,diagnostic:job.agentResult?.diagnostic,error:job.agentResult?.error,finishedAt:run.finishedAt}].slice(-20)});
+    this.tasks.changed(task);queueMicrotask(()=>this.tick());return this.view(task);
+  }
   userDecision(body){
     if(!idOk(body.actionId))throw Error('invalid_review_action_id');
     const id='user-review-'+hash(body.actionId),fingerprint=JSON.stringify(body),old=this.get(id);
     if(old){if(old.fingerprint!==fingerprint)throw Error('review_action_conflict');return old;}
     const task=this.tasks.row('task',body.id);if(task.runId!==body.runId)throw Error('task_run_changed');
     assertOpen(this.tasks,task);
-    const report=this.reports.assertCurrent(task,body.reportId)??this.reports.get(body.reportId);
-    const review={id,fingerprint,taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion,reportId:report.id,source:'user',createdAt:this.now()};
+    const report=this.reports.assertCurrent(task,body.reportId,{verifyCandidate:false})??this.reports.get(body.reportId);
+    const review={id,fingerprint,taskId:task.id,projectId:task.projectId,runId:task.runId,assignmentVersion:task.assignmentVersion,reportId:report.id,source:'user',createdAt:this.now()};
     const result=this.apply(review,normalizeReviewDecision(body,report,{manual:true}),true);
     for(const other of this.history(task.id))if(other.id!==id&&other.reportId===report.id&&['queued','reviewing'].includes(other.status)){
       this.put({...other,status:'stale',error:'superseded_by_user_decision',finishedAt:this.now()});
@@ -113,10 +135,11 @@ export class TeamSupervisor {
     return result;
   }
   apply(review,decision,manual=false){
-    const {task,report}=this.current(review),settings=this.management(task),usage=this.usage(task);
+    const {task,report}=this.current(review,{verifyCandidate:false}),settings=this.management(task),usage=this.usage(task);
     decision=normalizeReviewDecision(decision,report,{manual});
     if(!manual&&(!settings.enabled||settings.paused))return this.put({...review,status:'paused',decision,finishedAt:this.now()});
     const continueTask=['request_changes','answer'].includes(decision.action);
+    if(!manual&&review.reviewOnly&&continueTask)decision={action:'needs_user',summary:'本次仅重试验收；检查认为还需处理，未重新执行原任务。'+decision.summary,evidenceIds:decision.evidenceIds};
     if(continueTask&&task.kind!=='agent')decision={action:'needs_user',summary:'命令任务需要用户指定新的执行要求，不能自动重放原命令。',evidenceIds:[]};
     if(continueTask&&decision.action!=='needs_user'){
       const remainingTokens=remainingBudget(settings.tokenBudget,usage.usedTokens),remainingTime=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
@@ -137,14 +160,14 @@ export class TeamSupervisor {
     try{
       for(const row of this.db.prepare("SELECT body FROM team_review WHERE json_extract(body,'$.status') IN ('queued','reviewing')").all()){
         const review=JSON.parse(row.body);if(!['queued','reviewing'].includes(review.status))continue;
-        let current;try{current=this.current(review);}catch(error){
+        let current;try{current=this.current(review,{verifyCandidate:false});}catch(error){
           this.put({...review,status:error.message==='task_closed'?'paused':'stale',error:error.message==='task_closed'?'task_closed':undefined,finishedAt:this.now()});
           try{const child=this.tasks.row('task',review.managementTaskId);if(live.has(child.status))this.tasks.pause({id:child.id,runId:child.runId});}catch{}
           continue;
         }
         if(!this.management(current.task).enabled||this.management(current.task).paused){this.put({...review,status:'paused',finishedAt:this.now()});continue;}
         let child;try{child=this.tasks.row('task',review.managementTaskId);}catch{
-          try{this.createManagementTask({id:review.managementTaskId,report:current.report,review,managementReview:review.managementReview,goal:'读取 report.json，验收员工交付并调用 review_decide。',budgets:review.budgets});}catch{}
+          try{this.createManagementTask({id:review.managementTaskId,report:current.report,review,managementReview:review.managementReview,goal:'读取 report.json，独立检查任务成果并调用 review_decide。',budgets:review.budgets});}catch{}
           continue;
         }
         if(live.has(child.status)){if(child.status==='running'&&review.status!=='reviewing')this.put({...review,status:'reviewing'});continue;}
@@ -161,19 +184,19 @@ export class TeamSupervisor {
           });this.tasks.changed(child);continue;
         }
         const receipt=readJson(join(this.tasks.directory(job),'review-decision.json'));
-        if(child.status!=='completed'||receipt?.reviewId!==review.id||receipt?.targetTaskId!==review.taskId||receipt?.targetRunId!==review.runId||receipt?.assignmentVersion!==review.assignmentVersion||receipt?.reportId!==review.reportId||receipt?.managementRunId!==run.id){this.put({...review,status:'needs_user',error:'management_review_incomplete',finishedAt:this.now()});continue;}
+        if(child.status!=='completed'||receipt?.reviewId!==review.id||receipt?.targetTaskId!==review.taskId||receipt?.targetRunId!==review.runId||receipt?.assignmentVersion!==review.assignmentVersion||receipt?.reportId!==review.reportId||receipt?.managementRunId!==run.id){this.put({...review,status:'needs_user',error:'management_review_incomplete',diagnostic:job.agentResult?.diagnostic,finishedAt:this.now()});continue;}
         try{this.apply(review,receipt.decision);}catch(error){this.put({...review,status:error.message==='review_stale'?'stale':'needs_user',error:String(error.message).slice(0,200),finishedAt:this.now()});}
       }
       for(const task of this.tasks.queries?.pendingReviews()??this.tasks.all()){
         const settings=this.management(task);
-        if(taskIsClosed(task)||!task.management||!settings.enabled||settings.paused||task.managementReview||!waiting.has(task.status)||task.assignedBotId===this.tasks.team?.chiefId)continue;
+        if(taskIsClosed(task)||!task.management||!settings.enabled||settings.paused||task.managementReview||task.parentTaskId||!waiting.has(task.status))continue;
         // Accepted/history rows need no file hashing on every scheduler tick.
         // Resolve the current immutable report id each time: a new capture in
         // the same Run must still enter independent review.
         const reportId=this.reports.currentId?.(task);if(reportId&&this.hasReview(task,reportId))continue;
         const report=this.reports.current(task);if(!report||!this.reports.isDelivered(report.id))continue;
         if(this.hasReview(task,report.id))continue;
-        const review={id:'review-'+hash(report.id),reportId:report.id,taskId:task.id,runId:task.runId,assignmentVersion:task.assignmentVersion,source:'supervisor',createdAt:this.now()};
+        const review={id:'review-'+hash(report.id),reportId:report.id,taskId:task.id,projectId:task.projectId,runId:task.runId,assignmentVersion:task.assignmentVersion,source:'supervisor',createdAt:this.now(),...(report.recovery?.kind==='summary_only'?{reviewOnly:true}:{})};
         try{
           this.current(review);const usage=this.usage(task),tokensLeft=remainingBudget(settings.tokenBudget,usage.usedTokens),timeLeft=remainingBudget(settings.timeBudgetMs,usage.usedDurationMs);
           if(tokensLeft<1000||timeLeft<1000){this.put({...review,status:'budget_exhausted',error:'management_budget_exhausted',finishedAt:this.now()});continue;}
@@ -183,7 +206,7 @@ export class TeamSupervisor {
           const managementReview={reviewId:review.id,reportId:report.id,targetTaskId:task.id,targetRunId:task.runId,assignmentVersion:task.assignmentVersion,evidenceDirectory};
           const budgets={maxSteps:0,tokenBudget,timeoutMs};
           this.put({...review,status:'queued',managementTaskId,managementReview,budgets});
-          try{this.createManagementTask({id:managementTaskId,report,review,managementReview,goal:'读取 report.json，验收员工交付并调用 review_decide。',budgets});}catch(error){
+          try{this.createManagementTask({id:managementTaskId,report,review,managementReview,goal:'读取 report.json，独立检查任务成果并调用 review_decide。',budgets});}catch(error){
             // Keep a recoverable intent even if creation or acknowledgement was interrupted.
             this.put({...this.get(review.id),error:String(error.message).slice(0,200)});
           }

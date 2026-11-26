@@ -42,7 +42,7 @@ def load_key(path=None, *, environ=None):
     key = env.get('DOUBAO_ASR_API_KEY', '').strip()
     if key:
         return key
-    path = Path(path or env.get('OPENNOVA_SECRETS_FILE') or ROOT / 'config/secrets.local.json').expanduser()
+    path = Path(path or env.get('OPENNOVA_SECRETS_FILE') or env.get('OPENNOVA_SECRETS') or ROOT / 'config/secrets.local.json').expanduser()
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
         key = data['doubao']['api_key']

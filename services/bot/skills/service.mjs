@@ -32,10 +32,23 @@ export class SkillService {
   async initialize(){
     this.store.transaction(()=>{
       for(const op of this.store.pendingAssignments())this.queueSync('assignment-'+op.input.actionId,[op.input.actionId]);
-      if(!this.store.row('chief-builtins')){
-        const current=this.store.assignment(this.team.chiefId),names=[...new Set([...current.names,...this.store.catalog({}).skills.filter(skill=>skill.source==='bundled').map(skill=>skill.name)])];
+      const initial=!this.store.row('chief-builtins'),chief=this.team.chiefId;
+      if(initial){
+        const current=this.store.assignment(chief),names=[...new Set([...current.names,...this.store.catalog({}).skills.filter(skill=>skill.source==='bundled').map(skill=>skill.name)])];
         if(names.length){const body={action:'assign',actionId:'m5-initial-chief-skills',botId:this.team.chiefId,names,revision:current.revision};this.store.prepareAssignment(body);this.queueSync('initial-chief',[body.actionId]);}
         this.store.put('chief-builtins',{kind:'bootstrap',completed:true});
+      }
+      const media=this.store.row('head:image-production');
+      if(media&&!this.store.row('chief-image-production-v1')){
+        const current=this.store.assignment(chief);
+        const pending=this.store.pendingAssignments().some(op=>op.input.botId===chief);
+        // Existing installs learn only about this new built-in. Honour an existing
+        // selection, pending user edit, or disabled/personal version of the skill.
+        if(!initial&&!pending&&media.enabled&&media.source==='bundled'&&!current.names.includes(media.name)){
+          const body={action:'assign',actionId:'m4-chief-image-production',botId:chief,names:[...current.names,media.name],revision:current.revision};
+          if(body.names.length<=20){this.store.prepareAssignment(body);this.queueSync('m4-chief-image-production',[body.actionId]);}
+        }
+        this.store.put('chief-image-production-v1',{kind:'bootstrap',completed:true});
       }
       this.queueMirror();
     });
@@ -126,7 +139,7 @@ export class SkillService {
     const run=this.tasks.row('run',review.runId);
     if(run.skills?.length)this.store.recordUsage({taskId:task.id,runId:run.id,skills:run.skills,status:'accepted',reviewId:review.id});
     if(!this.store.policy().autoCandidate)return;
-    const id='learn-'+hash(review.id);if(!this.get(id))this.put({id,source:{taskId:task.id,runId:review.runId,reportId:review.reportId,reviewId:review.id},status:'pending',createdAt:Date.now()});
+    const id='learn-'+hash(review.id);if(!this.get(id))this.put({id,source:{taskId:task.id,projectId:task.projectId,runId:review.runId,reportId:review.reportId,reviewId:review.id},status:'pending',createdAt:Date.now()});
   }
   candidate(body){
     const {taskId,runId,reportId,reviewId,actionId}=body;
@@ -137,7 +150,7 @@ export class SkillService {
     if(task.runId!==runId)throw Error('task_run_changed');this.store.assertAccepted(task,report,review);
     const id='learn-'+hash(reviewId),previous=this.get(id);
     const learning=this.store.transaction(()=>{
-      const value=previous?.status==='running'||previous?.status==='completed'?previous:this.put({...previous,id,source:{taskId,runId,reportId,reviewId},status:'pending',manual:true,lastActionId:actionId,attempt:(previous?.attempt??0)+1,error:undefined,finishedAt:undefined,createdAt:previous?.createdAt??Date.now()});
+      const value=previous?.status==='running'||previous?.status==='completed'?previous:this.put({...previous,id,source:{taskId,projectId:task.projectId,runId,reportId,reviewId},status:'pending',manual:true,lastActionId:actionId,attempt:(previous?.attempt??0)+1,error:undefined,finishedAt:undefined,createdAt:previous?.createdAt??Date.now()});
       this.db.prepare('INSERT INTO opennova_skill_learning_action VALUES (?,?)').run(actionId,JSON.stringify({signature,learningId:id,createdAt:Date.now()}));return value;
     });
     this.tick(true);return {candidate:this.store.row(this.get(id)?.candidateId),learning};
@@ -156,7 +169,7 @@ export class SkillService {
             const internalId='skill-draft-'+hash(entry.id+':'+(entry.attempt??0)).slice(0,40),directory=join(this.home,'skills','evidence',internalId);
             prepareReviewEvidence({task,report,directory});
             const managementReview={kind:'skill-extraction',candidateId:candidate.id,candidateRevision:candidate.revision,reviewId:review.id,reportId:report.id,targetTaskId:task.id,targetRunId:task.runId,assignmentVersion:task.assignmentVersion??1,evidenceDirectory:directory};
-            entry=this.put({...entry,candidateId:candidate.id,internalId,managementReview,status:'running'});
+            entry=this.put({...entry,source:candidate.source,candidateId:candidate.id,internalId,managementReview,status:'running'});
             this.tasks.create({id:internalId,kind:'agent',assignedBotId:this.team.chiefId,title:'整理技能：'+task.title.slice(0,130),goal:'阅读 report.json 及必要成果，提炼可复用方法，并调用 skill_draft 提交参数化技能草稿。',
               constraints:'只读现有证据；不执行原业务、不修改来源、不重新生成视频。将具体名称和路径参数化，不保存凭据或原始私有内容。',workspaceMode:'general',permission:'read-only',managementEnabled:false},{source:'supervisor',managementReview});
             this.store.put(candidate.id,{...candidate,status:'refining',error:undefined});this.store.changed();

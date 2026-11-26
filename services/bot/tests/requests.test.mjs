@@ -10,6 +10,26 @@ test('admission is synchronous and duplicate request never runs twice',async()=>
   await new Promise(r=>setImmediate(r));release();await requests.active.work;
   assert.equal(calls,1);assert.equal(ops.request('one').status,'completed');
 });
+test('desktop references belong to the accepted turn, even if the user changes windows before inference',async()=>{
+  const ops=store(),observed=[];
+  let activePath='/papers/a.pdf',captures=0;
+  const openDocuments={capture({source}){
+    assert.equal(source,'web');captures++;
+    return Promise.resolve({status:'available',file:{path:activePath}});
+  }};
+  const requests=new Requests(ops,async(record,active)=>{
+    observed.push([active.inputText,(await active.entryOpenDocument).file.path]);
+    assert.equal(Object.hasOwn(record,'entryOpenDocument'),false);
+    return {text:'done'};
+  },{openDocuments});
+  requests.submit('desktop','读我打开的 PDF','web');
+  activePath='/papers/b.pdf';
+  requests.submit('desktop','读我打开的 PDF','web');
+  assert.throws(()=>requests.submit('second','later','web'),/bot_busy/);
+  await requests.active.work;
+  assert.deepEqual(observed,[['读我打开的 PDF','/papers/a.pdf']]);
+  assert.equal(captures,1);
+});
 test('cancel before the runner starts cannot admit model work',async()=>{
   const ops=store();let calls=0;
   const requests=new Requests(ops,async()=>{calls++;return {text:'wrong'};});
@@ -51,4 +71,16 @@ test('user cancellation clears incidental model failures from the final result',
  });
  requests.submit('one','hello');await entered;await requests.cancel('one');
  assert.equal(ops.request('one').status,'cancelled');assert.equal(ops.request('one').diagnostic,undefined);
+ assert.equal(ops.request('one').userMessage,undefined);
+});
+
+test('a routing failure persists its stage and a user-facing hint without fabricating an answer',async()=>{
+ const ops=store();
+ const requests=new Requests(ops,async()=>{throw Object.assign(Error('private provider response'),{code:'network_error',stage:'routing'});});
+ requests.submit('route','test input');await requests.active.work;
+ const record=ops.request('route');
+ assert.equal(record.status,'failed');assert.equal(record.text,undefined);
+ assert.deepEqual(record.diagnostic,{type:'error',code:'network_error',stage:'routing'});
+ assert.match(record.userMessage,/话题识别失败.*无法连接 ChatGPT.*代理设置/);
+ assert.ok(!JSON.stringify(record).includes('private'));
 });

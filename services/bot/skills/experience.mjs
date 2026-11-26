@@ -3,7 +3,7 @@ import {digest} from './bundle.mjs';
 const toolName=value=>typeof value==='string'&&/^[a-z][a-z0-9_]{0,63}$/.test(value);
 
 export function experienceCandidate(task,report,review,now=Date.now()){
-  const source={taskId:task.id,runId:report.runId,assignmentVersion:report.assignmentVersion??1,reportId:report.id,reviewId:review.id};
+  const source={taskId:task.id,projectId:task.projectId,runId:report.runId,assignmentVersion:report.assignmentVersion??1,reportId:report.id,reviewId:review.id};
   const key=digest(JSON.stringify(source)),tools=[...new Set((report.evidence?.steps??[]).filter(step=>step.status==='completed'&&toolName(step.tool)).map(step=>step.tool))];
   const outputs=[...new Set((report.artifacts??[]).map(item=>/\.([a-z0-9]{1,8})$/i.exec(item.name??'')?.[1]?.toLowerCase()).filter(Boolean))];
   const checks=(report.evidence?.commands??[]).filter(item=>item.status==='completed'&&item.exitCode===0).length+(report.evidence?.checks??[]).filter(item=>item.status==='completed'&&item.exitCode===0).length;

@@ -145,9 +145,25 @@ function SkillPolicy({api,policy,disabled,onRefresh}){
   </form></details>;
 }
 
-export function TaskVideoProgress({detail,currentRun}){
+function VideoPreview({api,taskId,recordId}){
+  const [open,setOpen]=useState(false),[url,setUrl]=useState(''),[error,setError]=useState('');
+  useEffect(()=>{
+    if(!open)return;
+    let active=true,objectUrl;
+    setUrl('');setError('');
+    api.call('background-video-preview',{id:taskId,recordId}).then(blob=>{
+      if(active){objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);}
+    }).catch(e=>{if(active)setError(errorText(e));});
+    return ()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[open,api,taskId,recordId]);
+  if(!open)return <button type="button" onClick={()=>setOpen(true)}>预览视频</button>;
+  return <div>{error?<p role="alert">{error}</p>:url?<video controls playsInline src={url} aria-label="生成的视频"/>:<p role="status">正在读取视频…</p>}
+    <button type="button" onClick={()=>setOpen(false)}>关闭预览</button></div>;
+}
+
+export function TaskVideoProgress({api,detail,currentRun}){
   const values=Array.isArray(detail.video)?detail.video:detail.video?.records??[];
   const items=values.filter(item=>currentRun?.id===detail.task.runId||item.runId===currentRun?.id);
   if(!items.length)return null;
-  return <details className="task-video-progress" open><summary>视频制作进度</summary>{items.map((item,index)=><article key={item.id||index}><strong>{videoStatusLabel(item.remoteStatus)}</strong>{item.remoteTaskId&&<p>远端任务：{item.remoteTaskId}</p>}{item.localStatus==='stopped'&&<p className="subtle">已停止本地跟进</p>}{item.waitingTimedOut&&<p className="subtle">本次等待已到期，远端任务状态仍以上方记录为准。</p>}{item.artifact?.path&&<p>{item.artifact.path}</p>}{(item.lastError||item.error)&&<p className="error">{errorText({message:item.lastError||item.error})}</p>}</article>)}<p className="subtle">停止本地跟进不代表远端生成已经取消。</p></details>;
+  return <details className="task-video-progress" open><summary>视频制作进度</summary>{items.map((item,index)=><article key={item.id||index}><strong>{videoStatusLabel(item.remoteStatus)}</strong>{item.remoteTaskId&&<p>远端任务：{item.remoteTaskId}</p>}{item.localStatus==='stopped'&&<p className="subtle">已停止本地跟进</p>}{item.waitingTimedOut&&<p className="subtle">本次等待已到期，远端任务状态仍以上方记录为准。</p>}{item.artifact?.path&&<p>{item.artifact.path}</p>}{item.autoGenerate&&item.artifact?.sha256&&<VideoPreview key={item.artifact.sha256} api={api} taskId={detail.task.id} recordId={item.id}/>}{(item.lastError||item.error)&&<p className="error">{errorText({message:item.lastError||item.error})}</p>}</article>)}<p className="subtle">停止本地跟进不代表远端生成已经取消。</p></details>;
 }

@@ -1,0 +1,5 @@
+# Media and editable project state are local; back up data/ separately.
+data/
+exports/
+analysis/
+verification/

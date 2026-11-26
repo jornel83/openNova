@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def failure_message(event):
     stage = {'authorization':'ChatGPT 授权检查', 'model_catalog':'获取 GPT 模型列表',
-             'harness_start':'Harness 启动', 'conversation':'Agent 对话'}.get(event.get('stage'), 'Agent')
+             'harness_start':'Harness 启动', 'conversation':'Agent 对话', 'routing':'话题识别'}.get(event.get('stage'), 'Agent')
     hints = {
         'network_error':'无法连接 ChatGPT，请检查当前网络连接。',
         'connection_error':'无法连接 ChatGPT，请检查当前网络连接。',
@@ -24,6 +24,10 @@ def failure_message(event):
         'harness_connection_closed':'Harness 子进程在初始化时提前退出，请检查运行环境。',
         'harness_dependency_missing':'缺少 Harness 依赖或构建，请运行环境检查。',
         'incomplete_agent_turn':'本轮模型回复未完整完成。',
+        'incomplete_model_response':'模型没有返回完整的回答，请稍后重试。',
+        'routing_timeout':'话题识别服务响应超时，当前项目保持不变，请稍后重试。',
+        'invalid_route_response':'话题识别服务未返回可用结果，当前项目保持不变，请稍后重试。',
+        'model_service_unavailable':'ChatGPT 服务暂时不可用，请稍后重试。',
         'subscription_sharing_usage_limit_exceeded':'ChatGPT 共享用量已达上限。',
         'web_api_key_missing':'联网模式需要 Exa API Key，请配置本机 config/secrets.local.json 的 web.exa_api_key。',
         'deepseek_api_key_missing':'联网模式需要 DeepSeek API Key，请配置本机 config/secrets.local.json 的 web.deepseek_api_key。',

@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Deterministic model; all browser transport and file effects remain real. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -21,6 +22,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Browser task fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const history=JSON.stringify(options.messages),prior=options.messages.filter(message=>message.role==='tool');
       let tool,args,text='Browser source delivered to report.md';
       if(history.includes('READONLY_BROWSER_CATALOG')){

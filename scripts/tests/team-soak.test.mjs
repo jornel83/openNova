@@ -44,7 +44,7 @@ test('short real Bot/Harness exercise measures work, deduplication, cancellation
   const result=JSON.parse(readFileSync(join(home,'result.json'),'utf8'));
   assert.equal(result.status,'passed');assert.equal(result.eightHourComplete,false);assert.equal(result.mode,'smoke');assert.ok(result.elapsedMs>=1000);
   assert.equal(result.cycles,1);assert.equal(result.restarts,1);assert.equal(result.foregroundReplies,2);assert.equal(result.cancellations,1);assert.equal(result.commandExecutions,1);assert.equal(result.duplicateExecutions,0);
-  assert.equal(result.skillExtractions,1);assert.equal(result.database.managementTasks,3);assert.equal(result.database.reports,4);assert.equal(result.database.pendingDelivery,0);assert.equal(result.database.events,result.database.delivered);
+  assert.equal(result.skillExtractions,1);assert.equal(result.chiefCommandReviews,1);assert.equal(result.database.tasks,7);assert.equal(result.database.runs,8);assert.equal(result.database.managementTasks,4);assert.equal(result.database.reports,4);assert.equal(result.database.pendingDelivery,0);assert.equal(result.database.events,result.database.delivered);
   assert.ok(result.resource.samples>0);assert.ok(result.resource.peakTreeRssKb>0);assert.equal(result.cleanupConfirmed,true);assert.deepEqual(result.observationGaps,[]);
   const cycles=logs.split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line)).filter(line=>line.requestedDurationMs);
   const samples=readFileSync(join(home,'samples.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));

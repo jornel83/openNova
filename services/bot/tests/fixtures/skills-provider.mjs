@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Deterministic requests exercise the real skill catalog and employee tool gate. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -12,9 +13,12 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Skills fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
-      const matches=text=>/SKILLS_PLAN=|SKILLS_VIDEO_FLOW|^lifecycle:/.test(text);
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
+      const matches=text=>/SKILLS_PLAN=|SKILLS_VIDEO_(?:FLOW|GENERATE)|^lifecycle:/.test(text);
       const index=options.messages.findLastIndex(message=>message.role==='user'&&(message.content??[]).some(block=>block.type==='text'&&matches(block.text)));
-      const prompt=texts(options.messages.slice(index,index+1)),current=options.messages.slice(index+1),prior=current.filter(message=>message.role==='tool').length;
+      // A real user turn can also carry work/task reference blocks. The fixture
+      // action belongs to its own block; appended reference JSON is not input.
+      const prompt=options.messages[index]?.content.find(block=>block.type==='text'&&matches(block.text))?.text??'',current=options.messages.slice(index+1),prior=current.filter(message=>message.role==='tool').length;
       const history=texts(options.messages),names=(options.tools??[]).map(tool=>tool.name),catalog=history.includes('<available_skills>')&&history.includes('video-production');
       let actions=[],tool,args;
       const encoded=[...prompt.matchAll(/SKILLS_PLAN=([A-Za-z0-9+/=]+)/g)].at(-1)?.[1];
@@ -23,7 +27,14 @@ export async function apply(ctx,config){
         if(plan.requireCatalog&&!catalog)throw Error('fixture_skill_catalog_missing');
         if(plan.requiredTools?.some(name=>!names.includes(name)))throw Error('fixture_skill_tool_missing');
       }else if(prompt.startsWith('lifecycle:'))actions=[[JSON.parse(prompt.slice(10)).name,JSON.parse(prompt.slice(10)).arguments]];
-      else if(prompt.includes('SKILLS_VIDEO_FLOW')){
+      else if(prompt.includes('SKILLS_VIDEO_GENERATE')){
+        if(!catalog||!names.includes('video_generate'))throw Error('fixture_video_generate_unavailable');
+        const resumed=prompt.includes('视频后台跟进返回：');
+        actions=resumed?[]:[
+          ['video_generate',{config:{model:'minimax-h3-veda',prompt:'Offline blue test shot',duration:4},
+            output_dir:'local-shot',filename:'result.mp4',timeout_seconds:60}],
+        ];
+      }else if(prompt.includes('SKILLS_VIDEO_FLOW')){
         if(!catalog||!names.includes('skill')||!names.includes('video_validate'))throw Error('fixture_employee_skill_tools_missing');
         const resumed=prompt.includes('视频后台跟进返回：');
         actions=resumed?[

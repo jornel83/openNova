@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {cpSync,mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {SkillService} from '../skills/service.mjs';
+import {ROOT} from '../../runtime/sources.mjs';
 
 async function fixture(t){
   const folder=mkdtempSync(join(tmpdir(),'nova-skill-sync-')),root=join(folder,'project'),home=join(folder,'private');mkdirSync(join(root,'skills','sample'),{recursive:true});mkdirSync(home);
@@ -14,9 +15,26 @@ async function fixture(t){
   const rt={state,async capabilitySave(body){if(fail)throw Error('fixture_mirror_unavailable');state.capabilities.items[body.name]={...body};},async capabilityEndpoint(route,{botId,name,attached}){assert.equal(route,'bot-capability');bindings.push({botId,name,attached});const names=new Set(bots[botId].capabilities);attached?names.add(name):names.delete(name);bots[botId].capabilities=[...names];}};
   const team={chiefId:'chief',rt,bot:id=>{if(!bots[id])throw Error('unknown_team_member');return bots[id];}},tasks={closed:false},options={db,root,home,team,tasks};let service=new SkillService(options);await service.initialize();
   t.after(async()=>{tasks.closed=true;if(service.syncing)await service.syncing;db.close();rmSync(folder,{recursive:true,force:true});});
-  return {bots,db,team,tasks,bindings,get service(){return service;},fail(value){fail=value;},async restart(){service=new SkillService(options);await service.initialize();return service;}};
+  return {root,bots,db,team,tasks,bindings,get service(){return service;},fail(value){fail=value;},async restart(){service=new SkillService(options);await service.initialize();return service;}};
 }
 const save=(actionId,name)=>({action:'save',actionId,name,description:'Reusable task method',content:'Read {{input}}, validate the requested output, and report evidence.'});
+
+test('an existing install discovers image-production once without changing employee selections or reversing a later opt-out',async t=>{
+  const f=await fixture(t);
+  await f.service.mutate({action:'assign',actionId:'existing-employee',botId:'employee',names:['sample'],revision:1});
+  cpSync(join(ROOT,'skills/image-production'),join(f.root,'skills/image-production'),{recursive:true});
+  cpSync(join(ROOT,'tools/image'),join(f.root,'tools/image'),{recursive:true});
+  cpSync(join(ROOT,'tools/__init__.py'),join(f.root,'tools/__init__.py'));
+  if(f.service.store.row('head:image-production'))assert.fail('fixture should simulate an earlier install');
+  await f.restart();
+  assert.deepEqual(f.service.store.assignment('chief').names,['image-production','sample']);
+  assert.deepEqual(f.service.store.assignment('employee').names,['sample']);
+  const {revision}=f.service.store.assignment('chief');
+  await f.service.mutate({action:'assign',actionId:'remove-image-production',botId:'chief',names:['sample'],revision});
+  await f.restart();
+  assert.deepEqual(f.service.store.assignment('chief').names,['sample']);
+  assert.deepEqual(f.service.store.assignment('employee').names,['sample']);
+});
 
 test('saving makes a skill available to the chief once, and restart or old request replay preserves later removal',async t=>{
   const f=await fixture(t),body=save('save-new','document-method');await f.service.mutate(body);assert.ok(f.bots.chief.capabilities.includes('document-method'));

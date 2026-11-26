@@ -9,8 +9,8 @@ export {hasFullFilesystemAccess} from './execution.mjs';
 export function resolveTaskPath(config,value,{directory=false}={}){
   if(typeof value!=='string'||!value||value.includes('\0'))throw Error('invalid_file_path');
   const path=resolve(config.workspace,value);
-  if(!hasFullFilesystemAccess(config)){
-    // Read-only tasks may inspect their immutable skill resources, not arbitrary homes.
+  if(!hasFullFilesystemAccess(config)||config.media){
+    // Scoped tasks may inspect their immutable skill resources, not arbitrary homes.
     const skillRoot=!directory&&(config.skills??[]).map(skill=>skill.archiveRoot).find(root=>typeof root==='string'&&inside(root,path));
     if(skillRoot){
       let existing=path;while(!existsSync(existing)&&existing!==dirname(existing))existing=dirname(existing);

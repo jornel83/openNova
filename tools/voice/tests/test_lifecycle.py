@@ -1,14 +1,147 @@
 import asyncio
+import os
 from pathlib import Path
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from continuous_run import run
+from continuous_run import run, VOICE_DISABLED_EXIT_CODE
 from continuous import Conversation
+from bot_agent import BotAgent
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        environment = patch.dict(os.environ, {'OPENNOVA_BOT_HOME':home.name})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    async def test_disable_releases_devices_and_owned_pipeline_without_cancelling_web_or_tasks(self):
+        for replying in (False, True):
+            with self.subTest(replying=replying):
+                calls,resources,acks=[],{},[]
+                ready=asyncio.Event()
+                response_started=asyncio.Event()
+                response_closed=asyncio.Event()
+                async def api(path,body,**kwargs):
+                    calls.append((path,body))
+                    if path=='/health':return {'sessionId':'shared'}
+                    if path=='/snapshot':return {'activeId':'unrelated-web-request'}
+                    return {}
+                agent=BotAgent(api=api)
+                class Audio:
+                    def __init__(self,**devices):
+                        self.input=asyncio.Queue();self.closed=False;self.captures=[]
+                        resources['audio']=self
+                    async def start(self):ready.set();return {'input':'AirPods','output':'AirPods'}
+                    async def capture(self,enabled,epoch):self.captures.append(enabled)
+                    async def clear(self,generation):pass
+                    async def close(self):self.closed=True
+                class Capture:
+                    def __init__(self,*args,**kwargs):self.closed=False;resources['capture']=self
+                    def reset(self,epoch):pass
+                    async def close(self):self.closed=True
+                class Controller(Conversation):
+                    def __init__(self,*args,**kwargs):
+                        super().__init__(*args,**kwargs)
+                        if replying:
+                            self.agent.current='owned-voice-request'
+                            async def pipeline():
+                                response_started.set()
+                                try:await asyncio.Future()
+                                finally:
+                                    await self.agent.cancel()
+                                    self.agent.current=None
+                                    response_closed.set()
+                            self.response=asyncio.create_task(pipeline())
+                            self.tasks.add(self.response)
+                            self.response_record={'status':'running','input':'voice test','admitted':True,'requestId':'owned-voice-request'}
+                class Bridge:
+                    instance_id='native-client'
+                    def __init__(self,*args,**kwargs):self.closed=False;resources['bridge']=self
+                    def publish(self,state):pass
+                    async def connect(self):pass
+                    async def run(self,commands):
+                        await ready.wait()
+                        if replying:await response_started.wait()
+                        await commands.put({'id':'disable','action':'disable','voiceInstanceId':self.instance_id,'generation':0})
+                        await asyncio.Future()
+                    def ack(self,command,result):acks.append(result['status'])
+                    async def close(self):self.closed=True
+                class Speaker:
+                    def __init__(self,*args,**kwargs):pass
+                    async def run(self):await asyncio.Future()
+                async def terminal(commands):await asyncio.Future()
+                async def check(*args,**kwargs):return {'input':'AirPods','output':'AirPods'}
+                args=SimpleNamespace(bot=True,audio=None,no_play=False,output_dir=None,check=False,device=None,output_device=None,tts_url='http://unused',silence_ms=800,extended_silence_ms=1600)
+                with patch('continuous_run.NativeAudio',Audio),patch('continuous_run.BotAgent',lambda:agent), \
+                     patch('continuous_run.UiBridge',Bridge),patch('continuous_run.Conversation',Controller), \
+                     patch('continuous_run.TurnCapture',Capture),patch('continuous_run.SileroOnnx',lambda:None), \
+                     patch('continuous_run.TaskNotificationSpeaker',Speaker),patch('continuous_run.read_controls',terminal), \
+                     patch('continuous_run.check_native',check),patch('conversation.preflight',lambda _:None), \
+                     patch('conversation.check_cloud_tts',check),patch('builtins.print'):
+                    result=await asyncio.wait_for(run(args,''),1)
+                self.assertEqual(result,VOICE_DISABLED_EXIT_CODE)
+                self.assertTrue(all(resource.closed for resource in resources.values()))
+                self.assertTrue(agent.closed)
+                self.assertEqual(resources['audio'].captures,[False])
+                self.assertEqual(acks,['applied'])
+                cancellations=[body['id'] for path,body in calls if path=='/voice/cancel-request']
+                self.assertEqual(cancellations,['owned-voice-request'] if replying else [])
+                self.assertNotIn('/snapshot',[path for path,_ in calls])
+                self.assertFalse(any('background-task' in path or path=='/shutdown' for path,_ in calls))
+                self.assertEqual(response_closed.is_set(),replying)
+
+    async def test_mic_muted_start_publishes_muted_before_native_capture_and_never_enables_input(self):
+        order, audios = [], []
+        started = asyncio.Event()
+        class Audio:
+            def __init__(self,**devices):
+                self.enabled=True; self.epoch=0; self.input=asyncio.Queue(); self.closed=False; self.captures=[]; audios.append(self)
+            async def start(self):
+                order.append('native-start')
+                await self.capture(self.enabled,self.epoch)
+                started.set()
+                return {'input':'Air','output':'Air'}
+            async def capture(self,enabled,epoch): self.captures.append(enabled)
+            async def clear(self,generation): pass
+            async def close(self): self.closed=True
+        class Agent:
+            def __init__(self): self.error=None; self.process=None
+            async def start(self): return {'sessionId':'shared'}
+            async def _api(self,*args,**kwargs): return {}
+            async def control(self,command): return None
+            async def close(self): pass
+        class Bridge:
+            instance_id='muted-client'
+            def __init__(self,*args,**kwargs): self.state={}
+            def publish(self,state): self.state.update(state)
+            async def connect(self):
+                self_test.assertEqual(self.state['capture'],'muted')
+                order.append('muted-connected')
+            async def run(self,commands): await asyncio.Future()
+            async def close(self): pass
+        class Capture:
+            def __init__(self,*args,**kwargs): pass
+            def reset(self,epoch): pass
+            async def close(self): pass
+        async def terminal(queue):
+            await started.wait(); await queue.put('/quit'); await asyncio.Future()
+        async def check(*args,**kwargs): return {'input':'Air','output':'Air'}
+        self_test=self
+        args=SimpleNamespace(bot=True,mic_muted=True,audio=None,no_play=False,output_dir=None,check=False,device=None,output_device=None,tts_url='http://unused',silence_ms=800,extended_silence_ms=1600)
+        with patch('continuous_run.NativeAudio',Audio),patch('continuous_run.BotAgent',Agent),patch('continuous_run.UiBridge',Bridge),\
+             patch('continuous_run.TurnCapture',Capture),patch('continuous_run.SileroOnnx',lambda:None),\
+             patch('continuous_run.check_native',check),patch('conversation.preflight',lambda _:None),\
+             patch('conversation.check_cloud_tts',check),patch('continuous_run.read_controls',terminal),patch('builtins.print'):
+            await asyncio.wait_for(run(args,''),1)
+        self.assertEqual(order,['muted-connected','native-start'])
+        self.assertEqual(audios[0].captures,[False])
+        self.assertTrue(audios[0].closed)
+
     async def scenario(self, action, *, quit_during_ready=False):
         instances=[]
         second_started=asyncio.Event()
@@ -182,6 +315,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             async def _api(self,*a,**k):return {}
             async def close(self):pass
         class Bridge:
+            instance_id='lost-client'
             def __init__(self,*a,**k):pass
             async def connect(self):pass
             async def run(self,commands):await commands.put('/voice-owner-lost');await asyncio.Future()

@@ -2,7 +2,7 @@
 import asyncio
 import sys
 
-HELP = '操作（输入后回车）：/stop 停止回复 · /mute 静音 · /unmute 恢复 · /end 结束交流 · /start 开始 · /retry 重连音频 · /quit 退出；Ctrl+C 退出。'
+HELP = '操作（输入后回车）：/stop 停止当前回复或播报 · /mute 关闭麦克风（仍可播报） · /unmute 开启麦克风 · /end 结束交流 · /start 开始 · /retry 重连音频 · /disable 关闭语音并释放音频设备 · /quit 退出；Ctrl+C 退出。'
 
 async def read_controls(queue):
     reader = asyncio.StreamReader(limit=4096)

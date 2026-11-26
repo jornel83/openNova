@@ -8,6 +8,14 @@ function fixture(t,{finish=true,code=0,stderr='',timeoutMs=10000}={}){
  const opener=createDocumentOpener({workspace,ops,context,spawnOpen,timeoutMs});
  t.after(()=>{ops.close();rmSync(home,{recursive:true,force:true});});return {workspace,ops,context,calls,opener,spawnOpen};
 }
+test('local GIF can open without replacing the selected still and is not a native readable attachment',async t=>{
+ const f=fixture(t);const old={id:'still',path:join(f.workspace,'still.png')};f.context.selectFile(old);
+ writeFileSync(join(f.workspace,'actual.gif'),'GIF89a');
+ const result=await f.opener.open({id:'gif-open',path:'actual.gif'},{selectContext:false});
+ assert.equal(result.status,'dispatched');assert.equal(result.file.contentAccess,'not_connected');
+ assert.deepEqual(f.context.capture().file,old);
+ assert.ok(f.calls[0].args[1].includes(join(f.workspace,'actual.gif')));
+});
 test('document paths are literal argv, private model environment never reaches open, only dispatch selects file',async t=>{
  const f=fixture(t),name='方案 空格\'"$(touch BAD);.txt';writeFileSync(join(f.workspace,name),'内容');
  const r=await f.opener.open({id:'open-1',requestId:'req',path:name});
@@ -40,10 +48,11 @@ test('missing/local/type errors do not launch; source code uses a text editor, n
  assert.equal((await f.opener.open({id:'python',path:'script.py'})).status,'dispatched');assert.deepEqual(f.calls[0].args[1],['-t','--',join(f.workspace,'script.py')]);
  assert.equal((await f.opener.open({id:'bad-app',path:'script.py',applicationId:'org.python.Python'})).error,'source_requires_editor');assert.equal(f.calls.length,1);
 });
-test('unsupported document body and unavailable explicit app are reported truthfully',async t=>{
+test('opening reports reading capability without claiming body was read; unavailable apps remain errors',async t=>{
  const f=fixture(t,{code:1,stderr:'Unable to find application named com.example.Missing'});writeFileSync(join(f.workspace,'test.pdf'),'%PDF');
  assert.equal((await f.opener.open({id:'missing-app',path:'test.pdf',applicationId:'com.example.Missing'})).error,'application_not_found');assert.equal(f.context.capture().kind,'none');
- const ok=fixture(t);writeFileSync(join(ok.workspace,'test.pdf'),'%PDF');const r=await ok.opener.open({id:'pdf',path:'test.pdf'});assert.equal(r.file.contentAccess,'not_connected');
+ const ok=fixture(t);writeFileSync(join(ok.workspace,'test.pdf'),'%PDF');const r=await ok.opener.open({id:'pdf',path:'test.pdf'});assert.equal(r.file.contentAccess,'native_file');assert.equal(r.file.readStatus,undefined);
+ writeFileSync(join(ok.workspace,'legacy.doc'),'legacy Office');const unsupported=await ok.opener.open({id:'legacy',path:'legacy.doc'});assert.equal(unsupported.file.contentAccess,'not_connected');
 });
 test('host recovery preserves unknown dispatch and file reference reports saved-disk changes',async t=>{
  const {recoverToolRuns}=await import('../project.mjs');const {inspectFileReference}=await import('../desktop/documents.mjs');
@@ -51,4 +60,12 @@ test('host recovery preserves unknown dispatch and file reference reports saved-
  assert.equal(f.ops.get('in-flight').status,'unknown');
  writeFileSync(join(f.workspace,'saved.md'),'old');const r=await f.opener.open({id:'saved',path:'saved.md'});writeFileSync(join(f.workspace,'saved.md'),'new longer content');
  assert.equal(inspectFileReference(r.file).diskStatus,'changed');rmSync(r.file.path);assert.equal(inspectFileReference(r.file).invalid,true);
+});
+test('verified report video can be dispatched without selecting the archived file',async t=>{
+ const f=fixture(t);writeFileSync(join(f.workspace,'source.mp4'),'sample video');
+ const denied=await f.opener.open({id:'ordinary-open',path:'source.mp4'});
+ assert.equal(denied.error,'unsupported_file_type');assert.equal(f.calls.length,0);
+ const opened=await f.opener.open({id:'report-open',path:'source.mp4'},{selectContext:false,allowVideo:true});
+ assert.equal(opened.status,'dispatched');assert.equal(f.calls.length,1);
+ assert.equal(f.context.capture().kind,'none');
 });

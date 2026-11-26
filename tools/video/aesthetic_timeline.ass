@@ -1,0 +1,37 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 720
+PlayResY: 1280
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,Hiragino Sans GB,35,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,1,0,1,0,0,7,0,0,0,1
+Style: Mark,Hiragino Sans GB,23,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,1,0,1,0,0,7,0,0,0,1
+Style: Graphics,Arial,24,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:01.70,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&H151919&\1a&H52&\fad(65,65)}m 35 1157 l 174 1157 174 1226 35 1226
+Dialogue: 0,0:00:00.00,0:00:01.70,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&HC4DCDE&\1a&H18&\fad(65,65)}m 35 1157 l 39 1157 39 1226 35 1226
+Dialogue: 1,0:00:00.00,0:00:01.70,Title,,0,0,0,,{\an7\pos(54,1166)\fs30\fad(65,65)}原理示意
+Dialogue: 0,0:00:01.70,0:00:04.07,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&H151919&\1a&H52&\fad(65,65)}m 35 1117 l 161 1117 161 1186 35 1186
+Dialogue: 0,0:00:01.70,0:00:04.07,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&HC4DCDE&\1a&H18&\fad(65,65)}m 35 1117 l 39 1117 39 1186 35 1186
+Dialogue: 1,0:00:01.70,0:00:04.07,Title,,0,0,0,,{\an7\pos(54,1126)\fs35\fad(65,65)}前状态
+Dialogue: 0,0:00:04.07,0:00:05.97,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&H151919&\1a&H52&\fad(65,65)}m 35 1117 l 191 1117 191 1186 35 1186
+Dialogue: 0,0:00:04.07,0:00:05.97,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&HC4DCDE&\1a&H18&\fad(65,65)}m 35 1117 l 39 1117 39 1186 35 1186
+Dialogue: 1,0:00:04.07,0:00:05.97,Title,,0,0,0,,{\an7\pos(54,1126)\fs35\fad(65,65)}操作示意
+Dialogue: 0,0:00:05.97,0:00:07.80,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&H151919&\1a&H52&\fad(65,65)}m 35 1117 l 287 1117 287 1186 35 1186
+Dialogue: 0,0:00:05.97,0:00:07.80,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&HC4DCDE&\1a&H18&\fad(65,65)}m 35 1117 l 39 1117 39 1186 35 1186
+Dialogue: 1,0:00:05.97,0:00:07.80,Title,,0,0,0,,{\an7\pos(54,1126)\fs35\fad(65,65)}恢复示意 · 包扎
+Dialogue: 0,0:00:07.80,0:00:09.40,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&H151919&\1a&H52&\fad(65,65)}m 35 1117 l 287 1117 287 1186 35 1186
+Dialogue: 0,0:00:07.80,0:00:09.40,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&HC4DCDE&\1a&H18&\fad(65,65)}m 35 1117 l 39 1117 39 1186 35 1186
+Dialogue: 1,0:00:07.80,0:00:09.40,Title,,0,0,0,,{\an7\pos(54,1126)\fs35\fad(65,65)}恢复示意 · 贴布
+Dialogue: 0,0:00:09.40,0:00:11.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&H151919&\1a&H52&\fad(65,65)}m 35 1117 l 161 1117 161 1186 35 1186
+Dialogue: 0,0:00:09.40,0:00:11.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\bord0\shad0\1c&HC4DCDE&\1a&H18&\fad(65,65)}m 35 1117 l 39 1117 39 1186 35 1186
+Dialogue: 1,0:00:09.40,0:00:11.93,Title,,0,0,0,,{\an7\pos(54,1126)\fs35\fad(65,65)}后状态
+Dialogue: 1,0:00:02.70,0:00:03.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\1c&HFFFFFF&\1a&H3A&\bord0\shad0\fad(170,120)}m 284 504 b 260 515 224 532 187 508 b 218 536 260 521 284 505
+Dialogue: 1,0:00:02.70,0:00:03.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\1c&HFFFFFF&\1a&H3A&\bord0\shad0\fad(170,120)}m 278 524 b 250 540 214 549 181 523 b 213 552 251 545 278 526
+Dialogue: 1,0:00:02.70,0:00:03.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\1c&HFFFFFF&\1a&H3A&\bord0\shad0\fad(170,120)}m 269 546 b 243 559 211 563 181 541 b 209 566 246 563 269 547
+Dialogue: 1,0:00:02.70,0:00:03.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\1c&HFFFFFF&\1a&H3A&\bord0\shad0\fad(170,120)}m 429 503 b 452 515 487 527 525 506 b 491 532 451 519 429 505
+Dialogue: 1,0:00:02.70,0:00:03.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\1c&HFFFFFF&\1a&H3A&\bord0\shad0\fad(170,120)}m 435 524 b 462 539 499 544 529 521 b 502 548 463 545 435 526
+Dialogue: 1,0:00:02.70,0:00:03.93,Graphics,,0,0,0,,{\an7\pos(0,0)\p1\1c&HFFFFFF&\1a&H3A&\bord0\shad0\fad(170,120)}m 443 546 b 471 557 502 560 531 538 b 504 563 470 562 443 548

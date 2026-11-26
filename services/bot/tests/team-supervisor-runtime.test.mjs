@@ -21,9 +21,9 @@ function fixture(t){
   t.after(async()=>{await tasks.close();ops.close();rmSync(home,{recursive:true,force:true});});
   return {tasks,delivery};
 }
-test('real Harness independently reviews a delivery, requests bounded rework and accepts the new evidence',{timeout:60000},async t=>{
+for(const assignee of ['employee','chief'])test(`real Harness independently reviews ${assignee} delivery, requests bounded rework and accepts new evidence`,{timeout:60000},async t=>{
   const {tasks,delivery}=fixture(t);
-  tasks.create({id:'employee-task',kind:'agent',title:'提交完整报告',goal:'生成 report.md，完整说明结论。',assignedBotId:'employee',timeoutMs:20000});
+  tasks.create({id:'employee-task',kind:'agent',title:'提交完整报告',goal:'生成 report.md，完整说明结论。',assignedBotId:assignee,timeoutMs:20000});
   const deadline=Date.now()+45000;let accepted;
   while(Date.now()<deadline){
     const task=tasks.row('task','employee-task'),report=tasks.reports.current(task);if(report&&tasks.supervisor.isAccepted(report)){accepted=tasks.detail(task.id);break;}
@@ -42,6 +42,35 @@ test('real Harness independently reviews a delivery, requests bounded rework and
     assert.equal(tasks.reports.history(child.id).length,0,'management tasks never generate a new employee report');
   }
   assert.equal(delivery.messages().length,2);assert.ok(accepted.teamReview.management.usedTokens>0);
+});
+
+test('chief review escalates unresolved judgment and an opted-out completed task can be reviewed without rerunning its work',{timeout:60000},async t=>{
+  const {tasks}=fixture(t);
+  tasks.create({id:'chief-judgment',kind:'agent',title:'需要判断的成果',goal:'生成 report.md。REWORK_COMPLETE_MARKER NEEDS_USER_REVIEW_FIXTURE',timeoutMs:20000});
+  const manual=tasks.create({id:'chief-opt-out',kind:'agent',title:'先人工验收的成果',goal:'生成 report.md。REWORK_COMPLETE_MARKER',managementEnabled:false,timeoutMs:20000});
+  const deadline=Date.now()+45000;
+  while(Date.now()<deadline&&(!tasks.supervisor.history('chief-judgment').some(r=>r.status==='needs_user')||tasks.row('task','chief-opt-out').status!=='completed'))await delay(30);
+  const judgment=tasks.detail('chief-judgment');assert.equal(judgment.task.reviewStatus,'needs_user');assert.equal(judgment.runs.length,1);
+  assert.match(judgment.teamReview.currentReview.decision.summary,/用户判断/);assert.equal(judgment.task.management.usedReworks,0);
+  assert.equal(tasks.row('task','chief-opt-out').status,'completed');assert.deepEqual(tasks.supervisor.history('chief-opt-out'),[]);
+  const report=tasks.reports.current(tasks.row('task','chief-opt-out'));
+  tasks.configureManagement({id:manual.task.id,runId:manual.task.runId,enabled:true});
+  while(Date.now()<deadline&&!tasks.supervisor.isAccepted(report))await delay(30);
+  assert.equal(tasks.supervisor.isAccepted(report),true);assert.equal(tasks.detail(manual.task.id).runs.length,1);assert.equal(tasks.row('task',manual.task.id).runId,manual.task.runId);
+  const child=tasks.row('task',tasks.supervisor.history(manual.task.id)[0].managementTaskId);
+  assert.equal(child.permission,'read-only');assert.notEqual(child.sessionId,manual.task.sessionId);assert.equal(child.management.enabled,false);
+});
+
+test('chief top-level commands receive evidence review and failed commands are never automatically replayed',{timeout:60000},async t=>{
+  const {tasks}=fixture(t);
+  for(const [id,command] of [['command-ok','printf COMMAND_REVIEW_FIXTURE'],['command-failed','printf COMMAND_REVIEW_FIXTURE_COMMAND_FAILURE_MARKER; exit 7']])tasks.create({id,title:id,command});
+  const deadline=Date.now()+45000;
+  while(Date.now()<deadline&&(!tasks.supervisor.history('command-ok').some(r=>r.status==='accepted')||!tasks.supervisor.history('command-failed').some(r=>r.status==='needs_user')))await delay(30);
+  const done=tasks.detail('command-ok'),failed=tasks.detail('command-failed');
+  assert.equal(done.task.reviewStatus,'accepted');assert.equal(done.task.exitCode,0);
+  assert.equal(failed.task.reviewStatus,'needs_user');assert.equal(failed.task.exitCode,7);assert.equal(failed.runs.length,1);
+  assert.match(failed.teamReview.currentReview.decision.summary,/不能自动重放原命令/);
+  assert.equal(tasks.all().filter(task=>task.managementReview).length,2);
 });
 test('real Harness resumes a paused supervisor session against the same report with a fresh decision receipt',{timeout:60000},async t=>{
   const {tasks}=fixture(t);

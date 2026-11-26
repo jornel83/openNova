@@ -1,0 +1,7 @@
+{
+  "edit_reference_qwen_min_short_edge": 576,
+  "edit_reference_qwen_max_short_edge": 576,
+  "edit_reference_vae_min_short_edge": 576,
+  "edit_reference_vae_max_short_edge": 576,
+  "min_generation_area": 1327104
+}

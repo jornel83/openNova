@@ -1,0 +1,371 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "image_generate",
+      "description": "默认用 Seedream 5.5，根据提示词生成图片或参考项目内图片改稿。选择 minimax-h3-image 可在 Spark 上生成。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "outputPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedTarget": {
+            "type": "string",
+            "enum": [
+              "absent"
+            ],
+            "default": "absent"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "edit"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32000
+          },
+          "references": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ark",
+              "spark"
+            ],
+            "default": "ark",
+            "description": "默认使用方舟；指定 Minimax H3 Image 时可省略 provider。"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "doubao-seedream-5-5-261028",
+              "minimax-h3-image"
+            ],
+            "default": "doubao-seedream-5-5-261028",
+            "description": "默认 Seedream 5.5。Spark 上的 minimax-h3-image 支持方形文生图、单张方图或 9:16 竖屏参考图编辑。"
+          },
+          "outputFormat": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^(1K|1\\.5K|2K|[0-9]{3,5}x[0-9]{3,5})$",
+            "description": "模型原始生成尺寸。Spark 文生图和方图编辑为 2048x2048，9:16 参考图编辑为 864x1536。省略时按参考图比例选择。width/height 为本地交付尺寸。"
+          },
+          "watermark": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "prompt",
+          "outputPath"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "gif_generate",
+      "description": "使用 Seedance 2.5 根据已确认的图片生成视频，在项目内的新版本目录保存源 MP4、GIF 和实际首帧 PNG。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourcePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "已确认的项目内静态图；对话中可沿用当前图片。"
+          },
+          "outputDir": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "项目内尚不存在的新版本目录，父目录必须存在。"
+          },
+          "fixedOverlayPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "可选的透明 PNG 固定图层，逐帧在本地合成；指定时同时填写 GIF 宽高。"
+          },
+          "motionReferencePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "可选的干净首帧，例如去除固定文字后的静态图；需搭配固定图层。"
+          },
+          "motion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32000
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ark"
+            ],
+            "default": "ark"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "video"
+            ],
+            "default": "video",
+            "description": "Seedance先生成视频，再在本地转换GIF；auto当前也只选择video，不调用原生GIF接口。"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "doubao-seedance-2-5-260628"
+            ],
+            "default": "doubao-seedance-2-5-260628",
+            "description": "通常省略，由执行器使用已验证的 Seedance 2.5。"
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 10,
+            "default": 4
+          },
+          "videoResolution": {
+            "type": "string",
+            "enum": [
+              "480p",
+              "720p",
+              "1080p"
+            ],
+            "default": "480p"
+          },
+          "fps": {
+            "type": "integer",
+            "enum": [
+              5,
+              10,
+              20,
+              25
+            ],
+            "default": 10
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20971520
+          },
+          "loop": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "default": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "expectedTarget": {
+            "type": "string",
+            "enum": [
+              "absent"
+            ],
+            "default": "absent"
+          }
+        },
+        "required": [
+          "sourcePath",
+          "outputDir",
+          "motion"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "media_export",
+      "description": "本地提取首帧、压缩GIF、缩放、静态格式转换、合成帧或视频转GIF；不调用生成模型。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "outputPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedTarget": {
+            "type": "string",
+            "enum": [
+              "absent"
+            ],
+            "default": "absent"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "first_frame",
+              "optimize_gif",
+              "resize",
+              "convert_image",
+              "assemble_frames",
+              "video_to_gif"
+            ]
+          },
+          "sourcePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "fixedOverlayPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "透明 PNG 固定图层，仅适用于视频转 GIF。"
+          },
+          "frames": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 20,
+                  "maximum": 655350,
+                  "multipleOf": 10
+                }
+              },
+              "required": [
+                "path",
+                "durationMs"
+              ]
+            }
+          },
+          "outputFormat": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg",
+              "webp",
+              "gif"
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "contain",
+              "cover"
+            ],
+            "default": "contain"
+          },
+          "background": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "quality": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "colors": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 256
+          },
+          "loop": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 67108864
+          },
+          "fps": {
+            "type": "integer",
+            "enum": [
+              5,
+              10,
+              20,
+              25
+            ],
+            "default": 10
+          },
+          "startMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600000,
+            "default": 0
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 4000
+          }
+        },
+        "required": [
+          "action",
+          "outputPath"
+        ]
+      }
+    }
+  }
+]

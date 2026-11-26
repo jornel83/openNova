@@ -160,6 +160,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device', help='输入设备名称，例如 SRS-XB100 或 MacBook Air麦克风；默认系统输入')
     parser.add_argument('--output-device', help='Air 播放设备；默认系统输出')
+    parser.add_argument('--mic-muted', action='store_true', help='持续模式启动时关闭麦克风，仍可播放回复和任务汇报')
     parser.add_argument('--list-devices', action='store_true', help='列出可用输入、输出设备，不打开麦克风')
     parser.add_argument('--turns', type=int, default=20)
     parser.add_argument('--listen-seconds', type=float, default=60)
@@ -181,6 +182,8 @@ def main():
         parser.error('--bot 需要 --continuous，当前实验不与 --web 同时使用。')
     if args.web and not args.continuous:
         parser.error('--web 需要 --continuous；普通轮流对话模式不启用联网工具。')
+    if args.mic_muted and (not args.continuous or args.audio):
+        parser.error('--mic-muted 仅用于持续语音模式，不能与文件输入同时使用。')
     if not 1 <= args.turns <= 100 or not 1 <= args.listen_seconds <= 600 or not 200 <= args.silence_ms <= 3000:
         parser.error('轮数 1–100、聆听上限 1–600 秒、静音阈值 200–3000 ms。')
     if args.continuous and not args.silence_ms <= args.extended_silence_ms <= 3000:
@@ -203,7 +206,9 @@ def main():
             args.output_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
         if args.continuous:
             from continuous_run import run as run_continuous
-            asyncio.run(run_continuous(args, key))
+            exit_code = asyncio.run(run_continuous(args, key))
+            if isinstance(exit_code, int) and exit_code:
+                raise SystemExit(exit_code)
         else:
             asyncio.run(run(args, key))
     except KeyboardInterrupt:

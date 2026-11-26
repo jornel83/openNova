@@ -34,7 +34,7 @@ def load_tts_key(*, environ=None):
     key = env.get('DOUBAO_TTS_API_KEY', '').strip()
     if key:
         return _validated_key(key)
-    path = Path(env.get('OPENNOVA_SECRETS_FILE') or ROOT / 'config/secrets.local.json').expanduser()
+    path = Path(env.get('OPENNOVA_SECRETS_FILE') or env.get('OPENNOVA_SECRETS') or ROOT / 'config/secrets.local.json').expanduser()
     try:
         section = json.loads(path.read_text(encoding='utf-8'))['doubao']
         key = (section.get('tts_api_key') or section.get('api_key') or '').strip()
@@ -45,12 +45,22 @@ def load_tts_key(*, environ=None):
     return _validated_key(key)
 
 
-def service_error(code):
+def service_error(code, message=None):
+    # Classify only this known code/phrase; remote text and credentials never
+    # become part of the exception, including when a service echoes the key.
+    if code == 45000010:
+        if isinstance(message, str) and 'Invalid X-Api-Key' in message:
+            return DoubaoTTSError('豆包 TTS API Key 无效（错误码 45000010）。请从火山引擎「豆包语音」控制台重新复制 API Key，'
+                                  '更新 OpenNova 的「豆包 TTS 密钥」并保存；未配置独立 TTS 密钥时更新「豆包 ASR 密钥」。'
+                                  '保存后关闭并重新开启语音。')
+        return DoubaoTTSError('豆包 TTS 鉴权失败（错误码 45000010）；请检查豆包语音 API Key 是否有效及对应服务权限，'
+                              '保存正确配置后关闭并重新开启语音。')
     if code in (401, 403, 45000030):
         return DoubaoTTSError('豆包 TTS 鉴权或资源权限不足；请检查 Key，并在同一应用开通语音合成模型 2.0（45000030 表示资源未授权）。')
     if code in (429, 45000000):
         return DoubaoTTSError('豆包 TTS 调用受限；请检查音色权限、额度和并发限制。')
-    return DoubaoTTSError('豆包 TTS 服务请求失败，请稍后重试或检查控制台。')
+    diagnostic = f'（错误码 {code}）' if type(code) is int and 0 <= code <= 99999999 else ''
+    return DoubaoTTSError(f'豆包 TTS 服务请求失败{diagnostic}，请稍后重试或检查控制台。')
 
 
 def decode_sse(response):
@@ -83,13 +93,13 @@ def decode_sse(response):
         except (ValueError, TypeError, KeyError):
             raise DoubaoTTSError('豆包 TTS 返回无效事件。') from None
         if kind in (b'151', b'153'):
-            raise service_error(code)
+            raise service_error(code, result.get('message'))
         if code == 20000000:
             if not received or received % 2:
                 raise DoubaoTTSError('豆包 TTS 返回空音频或不完整 PCM。')
             return
         if code != 0:
-            raise service_error(code)
+            raise service_error(code, result.get('message'))
         encoded = result.get('data')
         if encoded is not None:
             try:

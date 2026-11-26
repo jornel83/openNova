@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Offline responses exercise real evidence reading, skill extraction and later reuse. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -15,6 +16,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Skills learning fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const taskIndex=options.messages.findLastIndex(message=>message.role==='user'&&message.content?.some(block=>block.type==='text'&&block.text.includes('任务目标：')));
       const index=taskIndex<0?options.messages.findLastIndex(message=>message.role==='user'):taskIndex,current=options.messages.slice(index),history=JSON.stringify(current),prior=current.filter(message=>message.role==='tool').length;
       const names=(options.tools??[]).map(tool=>tool.name);let tool,args,text='已计算 CSV 金额并生成 summary.md，检查通过。';
@@ -22,6 +24,13 @@ export async function apply(ctx,config){
         if(names.some(name=>!['glob','grep','read','skill_draft'].includes(name)))throw Error('learning_exposed_mutation_tool');
         if(prior===0){tool='read';args={file_path:'report.json'};}
         else if(prior===1){tool='read';args={file_path:history.match(/artifacts\/\d{3}-summary\.md/)?.[0]??'artifacts/001-summary.md'};}
+        else if(history.includes('LEARNING_REPAIR_NAMES')&&prior<=4){
+          if(prior>2){
+            const feedback=JSON.stringify(current.findLast(message=>message.role==='tool'));
+            if(!/invalid_skill/.test(feedback)||!/name/.test(feedback)||!/32/.test(feedback)||!/(?:小写英文字母|a-z)/.test(feedback)||!/中文/.test(feedback))throw Error('learning_name_feedback_missing: '+feedback);
+          }
+          tool='skill_draft';args={...DRAFT,name:prior===2?'csv-decimal-amount-summary-validation':prior===3?'金额汇总技能':DRAFT.name};
+        }
         else if(prior===2){
           const flag=history.match(/LEARNING_FAIL_ONCE=([A-Za-z0-9+/=]+)/)?.[1];
           const path=flag&&Buffer.from(flag,'base64').toString('utf8');

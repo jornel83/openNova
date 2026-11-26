@@ -6,6 +6,7 @@ import {publicResearchConfig,researchTools} from '../research/config.mjs';
 import {researchPlugins} from '../research/plugins.mjs';
 import {installNativeResearch} from '../research/native-runtime.mjs';
 import {saveJson} from './agent-files.mjs';
+import {checkpointWebOrigin} from './research-recovery.mjs';
 
 export const name='opennova-task-research';
 export const inject=['tools','systemPrompt'];
@@ -25,7 +26,8 @@ export function installTaskResearch(ctx,config){
   ops.finish(active.id,{status:'running',taskId:config.taskId,sessionId:config.sessionId,startedAt:Date.now()});
   const observationError=()=>{observationFailed=true;};
   const runtime=installNativeResearch(ctx,{ops,requests:{active},config:{...publicResearchConfig({...config.research,mode:'native'}),
-    botId:'task:'+config.taskId,workspace:config.workspace},onObservationError:observationError});
+    botId:'task:'+config.taskId,workspace:config.workspace},onObservationError:observationError,
+    replayedCall:(record,args)=>checkpointWebOrigin(config,record,args)});
   runtime.begin(active);
   const persist=()=>{
     try{saveJson(join(config.runDir,'research.json'),{runId:config.runId,taskId:config.taskId,sources:runtime.sources.forRequest(active.id),
@@ -34,7 +36,7 @@ export function installTaskResearch(ctx,config){
   };
   ctx.systemPrompt.context({name:'opennova-task-research-scope',order:9911,required:true,interpolate:false,text:()=>
     '联网资料与来源记录仅属于当前任务，research_sources 可回查同一任务之前轮次。仅使用本轮实际提供的工具。'+
-    (config.permission==='read-only'?'当前为只读权限：可搜索和读取网页，不得写文件、运行命令或修改外部内容。':'需要执行处理脚本时使用 task_command，成果写入当前任务工作目录。')});
+    (config.permission==='read-only'?'当前为只读权限：可搜索和读取网页，不得写文件、运行命令或修改外部内容。':config.documentResearch?'研究成果用正式文档工具按约定位置交付；网页引用使用该次 observationId。':'需要执行处理脚本时使用 task_command，成果写入当前任务工作目录。')});
   ctx.on('session/event',(session,event)=>{
     if(closed||session.id!==active.sessionId)return;
     if(event.type==='turn/start')ops.finish(active.id,{status:'running'});

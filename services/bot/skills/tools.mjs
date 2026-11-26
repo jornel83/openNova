@@ -1,7 +1,7 @@
 /** Skills share the original dialogue channel and never create their own employee identity. */
 import {createHash} from 'node:crypto';
 export const SKILL_TOOLS=['skill','skill_list','skill_extract','skill_manage'];
-export const SKILL_INSTRUCTIONS='技能：先 skill_list 查看当前技能、版本及员工绑定；明确匹配技能时先用 skill 加载完整说明。派工可用 skillNames 指定已绑定技能，空数组表示不使用；技能内容与资源按执行轮固定。技能仅提供工作方法，不扩大原任务范围、执行权限、预算或验收要求。用户要求保存做法时先查询已验收任务生成的候选，再用 skill_manage promote；尚无候选或提炼失败时，先查询任务详情取得当前 taskId/runId/reportId/reviewId，用 skill_extract 在后台只读整理，完成后再保存。提炼成功只代表草稿已准备好，不代表已启用；更新、停用、回退和员工绑定均遵从用户要求。不要把一次成功说成通用可靠能力；私有资料、凭据和具体用户事实不写入共享技能。视频生成通过使用 video-production 的后台任务完成；远端提交返回任务编号不代表视频完成，等待后查询同一任务，不重复收费提交。';
+export const SKILL_INSTRUCTIONS='技能：先 skill_list 查看当前技能、版本及员工绑定；明确匹配技能时先用 skill 加载完整说明。派工可用 skillNames 指定已绑定技能，空数组表示不使用；技能内容与资源按执行轮固定。技能仅提供工作方法，不扩大原任务范围、执行权限、预算或验收要求。用户要求保存做法时先查询已验收任务生成的候选，再用 skill_manage promote；尚无候选或提炼失败时，先查询任务详情取得当前 taskId/runId/reportId/reviewId，用 skill_extract 在后台只读整理，完成后再保存。提炼成功只代表草稿已准备好，不代表已启用；更新、停用、回退和员工绑定均遵从用户要求。不要把一次成功说成通用可靠能力；私有资料、凭据和具体用户事实不写入共享技能。视频生成通过使用 video-production 的后台任务完成；优先用 video_generate 接受提示词或首帧，宿主按原任务编号跟进，收到 MP4 回执后交付。';
 export function skillTools(skills,getRequest){
   const actionId=(name,args)=>{
     const request=getRequest();if(!request||request.cancelled||request.signal?.aborted)throw Error('bridge_request_required');

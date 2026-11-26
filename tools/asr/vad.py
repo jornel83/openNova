@@ -4,6 +4,7 @@ from collections import deque
 from contextlib import aclosing
 import hashlib
 import math
+import os
 from pathlib import Path
 import tempfile
 import time
@@ -19,6 +20,14 @@ MODEL_PATH = Path.home() / '.cache/opennova/silero-vad' / REVISION / 'silero_vad
 
 
 def ensure_model():
+    supplied = os.environ.get('OPENNOVA_VAD_MODEL')
+    if supplied or os.environ.get('OPENNOVA_PACKAGED') == '1':
+        path = Path(supplied).expanduser() if supplied else None
+        if path is None or not path.is_file():
+            raise ValueError('OpenNova 安装包缺少 VAD 模型，请重新安装。')
+        if hashlib.sha256(path.read_bytes()).hexdigest() != MODEL_SHA256:
+            raise ValueError('OpenNova VAD 模型校验失败，请重新安装。')
+        return path
     if MODEL_PATH.is_file():
         if hashlib.sha256(MODEL_PATH.read_bytes()).hexdigest() != MODEL_SHA256:
             raise ValueError(f'VAD 模型校验失败，请移走损坏文件后重试：{MODEL_PATH}')

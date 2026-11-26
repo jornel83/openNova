@@ -8,6 +8,7 @@ import {createServer} from 'node:net';
 import {createServer as httpServer} from 'node:http';
 import {spawn, spawnSync} from 'node:child_process';
 import {launch, parseArgs, probeTts, ttsProvider,studioSettings} from '../start.mjs';
+import {ROOT} from '../../../services/bot/settings.mjs';
 
 async function freePort() {
   const server=createServer();
@@ -25,7 +26,7 @@ async function fixture(t) {
   for(const dir of ['tools/bot','tools/voice','bin','state'])mkdirSync(join(root,dir),{recursive:true});
   const botPort=await freePort(),ttsPort=await freePort();
   const env={...process.env,OPENNOVA_BOT_HOME:home,OPENNOVA_BOT_PORT:String(botPort),
-    OPENNOVA_BOT_WEB_PORT:String(await freePort()),FIXTURE_ROOT:root,FIXTURE_TTS_PORT:String(ttsPort),
+    OPENNOVA_BOT_WEB_PORT:String(await freePort()),FIXTURE_ROOT:root,FIXTURE_WORKSPACE:ROOT,FIXTURE_TTS_PORT:String(ttsPort),
     PATH:join(root,'bin')+':'+process.env.PATH};
   const script=(path,code)=>writeFileSync(join(root,path),`#!${process.execPath}\n${code}`,{mode:0o700});
   const serverCode=`
@@ -35,17 +36,30 @@ async function fixture(t) {
     if(!tts)fs.writeFileSync(root+'/bot-args',JSON.stringify(process.argv.slice(2)));
     fs.appendFileSync(root+'/pids', process.pid+'\\n');
     if(!tts)fs.writeFileSync(root+'/state/client.token','fixture-token');
-    const server=http.createServer((req,res)=>{
+    const channel=tts?null:require(${JSON.stringify(fileURLToPath(new URL('../../../services/bot/desktop/voice.mjs',import.meta.url)))}).createVoiceChannel({pollMs:40});
+    const server=http.createServer(async(req,res)=>{
       res.setHeader('Content-Type','application/json');
       if(!tts && req.headers.authorization!=='Bearer fixture-token'){res.writeHead(401);return res.end('{}');}
       if(!tts){
         fs.appendFileSync(root+'/requests',req.url+'\\n');
         if(req.url==='/desktop/status')return res.end(JSON.stringify({paired:true,connected:process.env.EXTENSION_OFF!=='1'||fs.existsSync(root+'/browser-ready')}));
         if(req.url==='/desktop/chat'){fs.appendFileSync(root+'/window-ensures','ensure\\n');return res.end(JSON.stringify({status:'completed',windows:{chatWindowId:2}}));}
-        if(req.url==='/snapshot')return res.end(JSON.stringify({desktop:{voice:{connected:process.env.EXISTING_VOICE==='1'}}}));
+        if(req.url==='/snapshot')return res.end(JSON.stringify({desktop:{voice:process.env.EXISTING_VOICE==='1'?{connected:true}:channel.snapshot()}}));
+        if(req.url==='/voice-device-settings'){
+          if(process.env.LEGACY_DEVICE_SETTINGS==='1'){res.statusCode=404;return res.end(JSON.stringify({error:'not_found'}));}
+          return res.end(fs.existsSync(root+'/device-settings.json')?fs.readFileSync(root+'/device-settings.json'):JSON.stringify({revision:0,selection:{input:null,output:null}}));
+        }
+        if(req.url.startsWith('/voice/')){
+          let text='';for await(const chunk of req)text+=chunk;
+          const body=JSON.parse(text||'{}');
+          try{
+            const methods={'/voice/publish':()=>channel.publish(body),'/voice/poll':()=>channel.poll(body.voiceInstanceId),'/voice/ack':()=>channel.ack(body),'/voice/control':()=>channel.enqueue(body)};
+            return res.end(JSON.stringify(await methods[req.url]()));
+          }catch(e){res.statusCode=409;return res.end(JSON.stringify({error:e.message}));}
+        }
       }
       const data=tts?{paths:{'/v1/audio/speech':{post:{}}}}:
-        {ready:true,runtimeId:'fixture-boot',workspace:root,model:'opennova-chatgpt/gpt-6.1-sol'};
+        {ready:true,runtimeId:'fixture-boot',workspace:process.env.FIXTURE_WORKSPACE,model:'opennova-chatgpt/gpt-6.1-sol'};
       res.end(JSON.stringify(data));
     });
     server.listen(Number(tts?process.env.FIXTURE_TTS_PORT:process.env.OPENNOVA_BOT_PORT),'127.0.0.1');
@@ -74,19 +88,22 @@ async function fixture(t) {
     rmSync(root,{recursive:true,force:true});
   });
   return {root,env,options:{ttsPort,studioHost:'studio-test',studioTtsDir:'/tmp/Studio project/tts'},
-    runtime:{root,env,waitMs:10000,pollMs:30,log:()=>{}}};
+    runtime:{root,env,waitMs:10000,pollMs:30,log:()=>{},input:null}};
 }
 
 test('cold launch starts dependencies, forwards devices and keeps Bot for the next launch',async t=>{
   const f=await fixture(t);
+  const owned=[];f.runtime.onBotStarted=value=>owned.push(value);
   const options={...f.options,device:'Air 麦克风',outputDevice:'耳机 $(touch NEVER)',proxy:'http://127.0.0.1:7897'};
   assert.equal(await launch(options,f.runtime),0);
+  assert.equal(owned.length,1);assert.ok(owned[0].child.pid>0);assert.equal(owned[0].health.runtimeId,'fixture-boot');
   const voice=JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8'));
   assert.deepEqual(voice.args,['--bot','--tts-url',`http://127.0.0.1:${f.options.ttsPort}`,
     '--device','Air 麦克风','--output-device','耳机 $(touch NEVER)']);
   assert.equal(voice.proxy,'http://127.0.0.1:7897');
   assert.equal(await probeTts(`http://127.0.0.1:${f.options.ttsPort}`),false,'owned tunnel must close');
   assert.equal(await launch(options,f.runtime),0);
+  assert.equal(owned.length,1,'reusing a Bot must not claim ownership');
   assert.equal(readFileSync(join(f.root,'starts'),'utf8').split('\n').filter(x=>x==='bot').length,1);
 });
 
@@ -100,6 +117,40 @@ test('cloud TTS skips Studio and an occupied local TTS port, and forwards voice 
   assert.equal(readFileSync(join(f.root,'starts'),'utf8'),'bot\n');
   const args=JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args;
   assert.deepEqual(args,['--bot','--tts-provider','doubao','--tts-voice','female-test','--check']);
+});
+
+test('packaged launch writes logs outside the application and checks the configured workspace',async t=>{
+  const f=await fixture(t),data=mkdtempSync(join(tmpdir(),'nova packaged data '));
+  t.after(()=>rmSync(data,{recursive:true,force:true}));
+  const workspace=join(data,'workspace');mkdirSync(workspace);
+  const home=join(data,'bot-spike');mkdirSync(home);
+  // The local fixture host writes its token under fixture-root/state.
+  f.env.OPENNOVA_BOT_HOME=home;
+  writeFileSync(join(home,'client.token'),'fixture-token');
+  Object.assign(f.env,{OPENNOVA_PACKAGED:'1',OPENNOVA_APP_DATA:data,OPENNOVA_WORKSPACE:workspace,FIXTURE_WORKSPACE:workspace});
+  assert.equal(await launch({...f.options,ttsProvider:'doubao',check:true},f.runtime),0);
+  assert.equal(existsSync(join(data,'logs/voice/bot.log')),true);
+  assert.equal(existsSync(join(f.root,'output')),false);
+});
+
+test('packaged voice command runs the supplied Python directly without uv',async t=>{
+  const f=await fixture(t),runner=join(f.root,'tools/voice/run-continuous.command'),python=join(f.root,'bin/packaged-python');
+  writeFileSync(runner,readFileSync(new URL('../run-continuous.command',import.meta.url)),{mode:0o700});
+  writeFileSync(python,`#!${process.execPath}\nconsole.log(JSON.stringify({args:process.argv.slice(2),dontWrite:process.env.PYTHONDONTWRITEBYTECODE}));\n`,{mode:0o700});
+  const env={...f.env,OPENNOVA_PACKAGED:'1',OPENNOVA_PYTHON:python};
+  const result=spawnSync(runner,['--check'],{env,encoding:'utf8',timeout:5000});
+  assert.equal(result.status,0,result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout),{args:['-B','tools/voice/conversation.py','--continuous','--check'],dontWrite:'1'});
+  const missing=spawnSync(runner,['--check'],{env:{...env,OPENNOVA_PYTHON:''},encoding:'utf8',timeout:5000});
+  assert.equal(missing.status,1);assert.match(missing.stderr,/缺少 Python/);
+});
+
+test('muted startup is explicitly forwarded without changing device or TTS choices',async t=>{
+  const f=await fixture(t),options=parseArgs(['--tts-provider','doubao','--device','Mac microphone','--output-device','Mac speaker','--mic-muted','--no-ui']);
+  assert.equal(options.micMuted,true);
+  assert.equal(await launch({...f.options,...options},f.runtime),0);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args,
+    ['--bot','--tts-provider','doubao','--device','Mac microphone','--output-device','Mac speaker','--mic-muted']);
 });
 
 test('TTS provider precedence is CLI then environment then config, preserving the Studio default',async t=>{
@@ -128,14 +179,14 @@ test('an unrelated occupied TTS port fails before SSH or microphone launch',asyn
   const server=httpServer((req,res)=>res.end('{}'));
   await new Promise(resolve=>server.listen(f.options.ttsPort,'127.0.0.1',resolve));
   t.after(()=>server.close());
-  await assert.rejects(launch(f.options,f.runtime),/端口.*占用/);
+  await assert.rejects(launch({...f.options,check:true},f.runtime),/端口.*占用/);
   assert.equal(existsSync(join(f.root,'remote')),false);
   assert.equal(existsSync(join(f.root,'voice.json')),false);
 });
 
 test('SSH failure stops before voice; list-devices skips every service',async t=>{
   const f=await fixture(t);f.env.SSH_FAIL='255';
-  await assert.rejects(launch(f.options,f.runtime),/SSH|Studio/);
+  await assert.rejects(launch({...f.options,check:true},f.runtime),/SSH|Studio/);
   assert.equal(existsSync(join(f.root,'voice.json')),false);
   await launch({...f.options,listDevices:true},f.runtime);
   assert.deepEqual(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args,['--list-devices']);
@@ -238,7 +289,10 @@ test('root command works outside the project and help needs no services',()=>{
 
 test('UI startup opens only Nova before TTS and voice, enables desktop on a cold Bot',async t=>{
  const f=await fixture(t);f.env.SSH_FAIL='255';const logs=[];
- await assert.rejects(launch({...f.options,ui:true},{...f.runtime,log:s=>logs.push(s)}),/Studio/);
+ const c=new AbortController();
+ const done=assert.rejects(launch({...f.options,ui:true},{...f.runtime,signal:c.signal,log:s=>logs.push(s)}),/test_cancel/);
+ try{await until(async()=>{const v=await fixtureApi(f,'/snapshot');return v.desktop.voice.phase==='standby';});}
+ finally{c.abort(Error('test_cancel'));await done;}
  assert.deepEqual(JSON.parse(readFileSync(join(f.root,'bot-args'),'utf8')),['--no-ui']);
  assert.equal(readFileSync(join(f.root,'window-ensures'),'utf8'),'ensure\n');
  assert.ok(!readFileSync(join(f.root,'requests'),'utf8').includes('/desktop/open'));
@@ -298,13 +352,21 @@ test('UI preflight and list-devices never open windows; explicit no-ui overrides
  await launch({...f.options,ui:true,listDevices:true},{...f.runtime,openBrowser});
  assert.equal(existsSync(join(f.root,'window-ensures')),false);
 });
-test('microphone startup failure keeps the text service and reports recovery URL',async t=>{
- const f=await fixture(t);f.env.VOICE_EXIT='7';const logs=[];
- assert.equal(await launch({...f.options,ui:true,ttsProvider:'doubao'},{...f.runtime,log:s=>logs.push(s)}),7);
- assert.ok(logs.some(s=>s.includes('文字对话仍可使用')&&s.includes(f.env.OPENNOVA_BOT_PORT)));
+test('microphone failure stays in text mode and retries without another Bot',async t=>{
+ const f=await fixture(t);f.env.VOICE_EXIT='7';const logs=[],c=new AbortController();
+ const running=launch({...f.options,ui:true,ttsProvider:'doubao'},{...f.runtime,signal:c.signal,log:s=>logs.push(s)});
+ const done=assert.rejects(running,/test_cancel/);
+ try{
+  await until(async()=>{const {desktop:{voice:v}}=await fixtureApi(f,'/snapshot');return v.phase==='standby'&&v.problem;});
+  assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'voice-launch.lock')),true);
+  await control(f,'start');
+  await until(()=>readFileSync(join(f.root,'voice-starts'),'utf8').trim().split('\n').length===2);
+  await until(async()=>{const v=(await fixtureApi(f,'/snapshot')).desktop.voice;return v.phase==='standby';});
+  assert.equal(readFileSync(join(f.root,'starts'),'utf8'),'bot\n');
+  assert.ok(logs.some(s=>s.includes('文字对话仍可使用')));
+  assert.ok(logs.every(s=>!s.includes('连接设备后')&&!s.includes('请连接音频设备')));
+ }finally{c.abort(Error('test_cancel'));await done;}
  assert.equal(existsSync(join(f.env.OPENNOVA_BOT_HOME,'voice-launch.lock')),false);
- f.env.VOICE_EXIT='0';await launch({...f.options,ui:true,ttsProvider:'doubao'},f.runtime);
- assert.equal(readFileSync(join(f.root,'starts'),'utf8'),'bot\n');
 });
 
  test('Studio deployment path comes from explicit configuration instead of a personal checkout',async t=>{
@@ -323,6 +385,92 @@ test('microphone startup failure keeps the text service and reports recovery URL
 test('missing Studio deployment path never starts SSH',async t=>{
   const f=await fixture(t);
   const options={...f.options};delete options.studioTtsDir;
-  await assert.rejects(launch(options,f.runtime),/studio_tts_dir/);
+  await assert.rejects(launch({...options,check:true},f.runtime),/studio_tts_dir/);
   assert.equal(existsSync(join(f.root,'remote')),false);
+});
+
+async function fixtureApi(f,path,body={}){
+ const res=await fetch('http://127.0.0.1:'+f.env.OPENNOVA_BOT_PORT+path,{method:'POST',headers:{Authorization:'Bearer fixture-token','Content-Type':'application/json'},body:JSON.stringify(body)});
+ const data=await res.json();if(!res.ok)throw Error(data.error);return data;
+}
+async function until(check){
+ for(let i=0;i<150;i++){try{const v=await check();if(v)return v;}catch{}await new Promise(r=>setTimeout(r,40));}
+ assert.fail('fixture state did not arrive');
+}
+async function control(f,action){
+ const v=(await fixtureApi(f,'/snapshot')).desktop.voice;
+ return fixtureApi(f,'/voice/control',{id:crypto.randomUUID(),action,voiceInstanceId:v.voiceInstanceId,generation:v.generation,requestId:v.requestId});
+}
+test('text-only starts no speech dependencies until explicitly enabled',async t=>{
+ const f=await fixture(t);
+ const running=launch({...f.options,voice:false,ui:true},f.runtime);
+ await until(async()=>{const v=(await fixtureApi(f,'/snapshot')).desktop.voice;return v.phase==='standby';});
+ assert.equal(existsSync(join(f.root,'voice.json')),false);
+ assert.equal(existsSync(join(f.root,'remote')),false);
+ assert.equal(readFileSync(join(f.root,'starts'),'utf8'),'bot\n');
+ await control(f,'start');
+ assert.equal(await running,0);
+ assert.equal(existsSync(join(f.root,'voice.json')),true);
+ assert.equal(readFileSync(join(f.root,'voice-starts'),'utf8'),'start\n');
+});
+test('CLI defaults to voice and accepts explicit text-only with later re-enable',()=>{
+ assert.equal(parseArgs([]).voice,true);
+ assert.equal(parseArgs(['--no-voice']).voice,false);
+ assert.equal(parseArgs(['--no-voice','--voice']).voice,true);
+ assert.throws(()=>parseArgs(['--no-voice','--check']),/不能/);
+});
+test('disable exit releases owned speech tunnel and returns to reusable standby',async t=>{
+ const f=await fixture(t);f.env.VOICE_EXIT='20';const c=new AbortController();
+ const done=assert.rejects(launch(f.options,{...f.runtime,signal:c.signal}),/test_cancel/);
+ try{
+  await until(async()=>{const v=(await fixtureApi(f,'/snapshot')).desktop.voice;return v.phase==='standby';});
+  assert.equal(await probeTts('http://127.0.0.1:'+f.options.ttsPort),false);
+  assert.equal(readFileSync(join(f.root,'voice-starts'),'utf8'),'start\n');
+  await control(f,'start');
+  await until(()=>readFileSync(join(f.root,'voice-starts'),'utf8').trim().split('\n').length===2);
+  assert.equal(readFileSync(join(f.root,'starts'),'utf8').split('\n').filter(x=>x==='bot').length,1);
+ }finally{c.abort(Error('test_cancel'));await done;}
+});
+
+test('saved audio choices are loaded without inventory and explicit CLI overrides only its side',async t=>{
+ const f=await fixture(t);
+ writeFileSync(join(f.root,'device-settings.json'),JSON.stringify({revision:3,selection:{input:'uid:stored-mic',output:'uid:stored-speaker'}}));
+ await launch({...f.options,ttsProvider:'doubao'},f.runtime);
+ assert.deepEqual(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args,
+   ['--bot','--tts-provider','doubao','--device','uid:stored-mic','--output-device','uid:stored-speaker']);
+ await launch({...f.options,ttsProvider:'doubao',device:'CLI microphone'},f.runtime);
+ assert.deepEqual(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args,
+   ['--bot','--tts-provider','doubao','--device','CLI microphone','--output-device','uid:stored-speaker']);
+ assert.ok(!readFileSync(join(f.root,'requests'),'utf8').split('\n').includes('/voice-devices'));
+});
+
+test('standby UI selections override CLI, including defaults, and survive disable/re-enable',async t=>{
+ const f=await fixture(t);f.env.VOICE_EXIT='20';const c=new AbortController();
+ writeFileSync(join(f.root,'device-settings.json'),JSON.stringify({revision:4,selection:{input:'uid:saved-mic',output:'uid:saved-speaker'}}));
+ const done=assert.rejects(launch({...f.options,voice:false,ttsProvider:'doubao',device:'CLI microphone'},
+   {...f.runtime,signal:c.signal}),/test_cancel/);
+ try{
+   const initial=await until(async()=>{const v=(await fixtureApi(f,'/snapshot')).desktop.voice;return v.phase==='standby'&&v;});
+   assert.equal(initial.devices.input,'CLI microphone');
+   assert.equal(existsSync(join(f.root,'voice.json')),false);
+   writeFileSync(join(f.root,'device-settings.json'),JSON.stringify({revision:5,selection:{input:null,output:'uid:bluetooth-speaker'}}));
+   await until(async()=>{const v=(await fixtureApi(f,'/snapshot')).desktop.voice;return v.deviceRevision===5&&v.devices.input===null;});
+   await control(f,'start');
+   await until(async()=>{const v=(await fixtureApi(f,'/snapshot')).desktop.voice;return v.phase==='standby'&&existsSync(join(f.root,'voice.json'));});
+   const expected=['--bot','--tts-provider','doubao','--output-device','uid:bluetooth-speaker'];
+   assert.deepEqual(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args,expected);
+   await control(f,'start');
+   await until(()=>readFileSync(join(f.root,'voice-starts'),'utf8').trim().split('\n').length===2);
+   assert.deepEqual(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args,expected);
+ }finally{c.abort(Error('test_cancel'));await done;}
+});
+
+test('old hosts without the settings endpoint retain CLI behavior; corrupt settings do not start audio',async t=>{
+ const f=await fixture(t);f.env.LEGACY_DEVICE_SETTINGS='1';
+ await launch({...f.options,ttsProvider:'doubao',device:'legacy mic'},f.runtime);
+ assert.ok(JSON.parse(readFileSync(join(f.root,'voice.json'),'utf8')).args.includes('legacy mic'));
+ const bad=await fixture(t);
+ writeFileSync(join(bad.root,'device-settings.json'),JSON.stringify({revision:1,selection:{input:22,output:null}}));
+ await assert.rejects(launch({...bad.options,check:true,ttsProvider:'doubao'},bad.runtime),/音频设备设置无效/);
+ assert.equal(existsSync(join(bad.root,'voice.json')),false);
 });

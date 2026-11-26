@@ -14,11 +14,12 @@ func property<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelecto
 struct AudioDevice {
     let id: AudioObjectID
     let name: String
+    let uid: String
     let inputChannels: Int
     let outputChannels: Int
     let builtin: Bool
     var json: [String: Any] {
-        ["id":id, "name":name, "input_channels":inputChannels,
+        ["id":id, "name":name, "uid":uid, "input_channels":inputChannels,
          "output_channels":outputChannels, "builtin":builtin]
     }
 }
@@ -43,8 +44,9 @@ func audioDevices() -> [AudioDevice] {
     guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
     return ids.map { id in
         let name: CFString = property(id, kAudioObjectPropertyName, initial: "unknown" as CFString)
+        let uid: CFString = property(id, kAudioDevicePropertyDeviceUID, initial: "" as CFString)
         let transport: UInt32 = property(id, kAudioDevicePropertyTransportType, initial: 0)
-        return AudioDevice(id: id, name: name as String,
+        return AudioDevice(id: id, name: name as String, uid: uid as String,
             inputChannels: channels(id, scope: kAudioDevicePropertyScopeInput),
             outputChannels: channels(id, scope: kAudioDevicePropertyScopeOutput),
             builtin: transport == kAudioDeviceTransportTypeBuiltIn)
@@ -59,6 +61,13 @@ func selectDevice(_ requested: String?, input: Bool, defaultID: AudioObjectID, d
     let eligible = devices.filter { input ? $0.inputChannels > 0 : $0.outputChannels > 0 }
     guard let requested else {
         guard let device = eligible.first(where: { $0.id == defaultID }) else {
+            throw NSError(domain: "audio_device_not_found", code: 1)
+        }
+        return device
+    }
+    if requested.hasPrefix("uid:") {
+        let uid = String(requested.dropFirst(4))
+        guard !uid.isEmpty, let device = eligible.first(where: { $0.uid == uid }) else {
             throw NSError(domain: "audio_device_not_found", code: 1)
         }
         return device

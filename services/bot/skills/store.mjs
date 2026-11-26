@@ -154,10 +154,11 @@ export class SkillStore {
     this.changed();return {...this.catalog({includeDisabled:true}),result};
   }
 
-  candidates({taskId,limit=50}={}){
+  candidates({taskId,projectId,limit=50}={}){
     if(!Number.isInteger(limit)||limit<1||limit>200)throw Error('invalid_skill_page');
-    const sql="SELECT body FROM opennova_skill_record WHERE json_extract(body,'$.kind')='candidate'"+(taskId?" AND json_extract(body,'$.source.taskId')=?":"")+' ORDER BY rowid DESC LIMIT ?';
-    return this.db.prepare(sql).all(...taskId?[taskId,limit]:[limit]).map(row=>JSON.parse(row.body));
+    if(projectId!==undefined&&!idValid(projectId))throw Error('invalid_skill_project');
+    const sql="SELECT body FROM opennova_skill_record WHERE json_extract(body,'$.kind')='candidate'"+(taskId?" AND json_extract(body,'$.source.taskId')=?":"")+(projectId?" AND json_extract(body,'$.source.projectId')=?":"")+' ORDER BY rowid DESC LIMIT ?';
+    return this.db.prepare(sql).all(...(taskId?[taskId]:[]),...(projectId?[projectId]:[]),limit).map(row=>JSON.parse(row.body));
   }
   assertAccepted(task,report,review){
     if(!task||!report||!review||task.kind!=='agent'||task.managementReview||task.parentTaskId||['closing','closed'].includes(task.closure?.status)||task.status!=='completed'||review.status!=='accepted'||report.status!=='completed'||report.taskId!==task.id||report.runId!==task.runId||review.taskId!==task.id||review.runId!==task.runId||review.reportId!==report.id||(report.assignmentVersion??1)!==(task.assignmentVersion??1)||(review.assignmentVersion??1)!==(task.assignmentVersion??1))throw Error('skill_source_not_accepted');
@@ -169,6 +170,7 @@ export class SkillStore {
     const source=candidate.source;
     if(!this.tasks?.row||!this.tasks?.reports||!this.tasks?.supervisor)throw Error('skill_source_unavailable');
     const task=this.tasks.row('task',source.taskId),report=this.tasks.reports.get(source.reportId,{fresh:true}),review=this.tasks.supervisor.get(source.reviewId);
+    if(source.projectId!==undefined&&source.projectId!==task.projectId)throw Error('skill_candidate_source_changed');
     this.assertAccepted(task,report,review);
   }
   hasObservation(reportId,reviewId){return !!this.db.prepare("SELECT id FROM opennova_skill_record WHERE json_extract(body,'$.kind')='candidate' AND json_extract(body,'$.source.reportId')=? AND json_extract(body,'$.source.reviewId')=? LIMIT 1").get(reportId,reviewId);}

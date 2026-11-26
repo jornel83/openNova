@@ -1,6 +1,6 @@
 import {createServer} from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
-import {browserHandler,streamEvents} from './web-http.mjs';
+import {browserHandler,streamEvents,sendArtifactBytes} from './web-http.mjs';
 export function createBridge({token,handle,web,extension,events,taskRuntime}) {
   const browser=web?browserHandler(web,handle):null;
   return createServer(async(req,res)=>{
@@ -17,7 +17,9 @@ export function createBridge({token,handle,web,extension,events,taskRuntime}) {
       const body=JSON.parse(raw||'{}');
       if(!body||typeof body!=='object'||Array.isArray(body))throw Error('invalid_request');
       if(req.url==='/events'){if(!events)throw Error('events_not_enabled');streamEvents(events,body.cursor,res);return;}
-      reply(200,await handle(req.url,body));
+      const result=await handle(req.url,body);
+      if(['/background-video-preview','/project-edition-file','/experiment-evidence'].includes(req.url))sendArtifactBytes(res,result);
+      else reply(200,result);
     }catch(error){reply(error.message==='cursor_reset'?409:400,{error:String(error.message||'bot_error').slice(0,300)});}
   });
 }

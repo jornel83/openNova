@@ -4,6 +4,14 @@
 
 当前统一入口默认只打开右侧 Nova 对话窗口，然后连接共享 Bot 语音。工作窗口在点击“打开工作窗口”或要求助手浏览网页时打开。公司网络可以运行 `./start.command --tts-provider doubao`；`--no-ui` 关闭自动开窗，`--ui` 保留为兼容参数。`--check` 和 `--list-devices` 不开窗口或麦克风。
 
+2026-11-13：支持 `./start.command --no-voice --tts-provider doubao` 仅文字启动。待机只保持本地语音控制连接，不启动原生音频、VAD、ASR、TTS 或 Studio SSH；点击窗口“开启语音”或在终端输入 `/start` 后才连接设备。默认仍自动开启语音；启动失败保留文字对话和重试入口，接好设备后再次开启即可。指定的设备不可用时不会改用其他麦克风。`--check` 保持严格检查并返回失败码，不与 `--no-voice` 混用。
+
+窗口“关闭语音”或终端 `/disable` 取消本语音客户端正在处理的语音、停止收音和播放、释放设备，回到可再次开启的文字模式；无关文字请求和后台任务继续。它与 `/mute`（仅静音收音）及 `/end`（结束当前交流）不同。保留启动器终端即可使用网页开关；`/quit` 或 Ctrl+C 会退出该入口，但 Bot 文字服务仍保留。TTS 参数改变后仍需退出旧启动器再启动。
+
+窗口的“音频设备”入口分别选择麦克风和外放，支持“系统默认”、刷新设备列表以及“Mac 内置麦克风 + 蓝牙音响”等组合。蓝牙配对和连接先在 macOS 系统设置完成；列表仅显示系统当前可用的音频设备，刷新列表不会开启收音或播报。仅文字模式保存后保持待机，下次点击“开启语音”时使用所选设备；语音运行中可以应用并重连，切换会停止本轮语音，保留静音或结束交流的状态、项目及后台任务。设备不可用时明确提示，不自动换用其他麦克风。
+
+设备选择保存在当前 Bot 数据目录，下一次启动继续使用；首次未选择时使用系统默认设备。显式 `--device` / `--output-device` 参数覆盖该次启动的已保存选择，之后在界面更改设备会更新当前选择。设备使用系统稳定标识，避免重连后临时设备编号改变或同名设备被误选。升级已有 Bot 和语音进程后需重新启动，才能使用新增设备接口。
+
 首次使用需加载本工程 `extensions/browser` 扩展并与同一 Bot 配对，启动器会给出步骤。已配对浏览器会自动重连并复用窗口；语音未就绪时文字窗口仍保留。浏览器程序与外部 profile 由 `desktop.browser_executable` / `desktop.browser_user_data_dir` 或对应 `OPENNOVA_BROWSER_*` 环境变量配置。profile、授权、会话和记忆均应保存在仓库外。
 
 
@@ -14,7 +22,7 @@
 2026-10-14 新增根目录 `start.command`，推荐用于当前 DeepSeek-Bot 版本。它自动使用 `--bot`，与网页共享上下文、工程文件和 Shell 能力；下文原有 `run-continuous.command` 仍是手动入口。
 
 ```sh
-# 在项目根目录运行；省略设备参数则使用系统默认输入 / 输出
+# 在项目根目录运行；省略设备参数则使用已保存选择，首次使用系统默认
 ./start.command
 
 # 内置麦克风 + 有线耳机
@@ -33,11 +41,14 @@
 ./start.command --tts-provider doubao --device 'MacBook Air麦克风' --output-device '外置耳机'
 ./start.command --tts-provider doubao --check
 
+# 办公室先用文字；稍后开启语音时才寻找 AirPods
+./start.command --no-voice --tts-provider doubao --device 'AirPods' --output-device 'AirPods'
+
 # 回家使用 Vivian
 ./start.command --tts-provider studio
 ```
 
-从其他目录可执行 `/path/to/openNova/start.command` 并附加相同参数。也可双击 `start.command` 使用系统默认设备。
+从其他目录可执行 `/path/to/openNova/start.command` 并附加相同参数。也可双击 `start.command` 使用已保存的设备选择。
 
 启动按顺序完成：
 
@@ -227,6 +238,8 @@ output/voice/device-tests
 蓝牙快速重建若出现“音频设备已断开或默认设备已变化”，可先等待几秒再输入 `/retry`；本次 3 秒等待复测成功，不代表所有设备都能在固定时间内恢复。该问题保留为后续音频恢复优化项，本版不自动循环重试或切换设备。
 
 ## 文件验证与记录
+
+Bot 麦克风模式默认将播放与取消的元数据写入当前 `OPENNOVA_BOT_HOME` 下的 `voice-evidence.jsonl`，另保留一个 `voice-evidence.previous.jsonl` 轮转文件，每个约 1 MiB、权限 0600。记录请求 ID、输入起始项目与版本、generation、原生播放回执及清队列确认，不保存转写、回复文字、PCM、设备名或凭据；实际回复归属通过请求 ID 对照 Bot 记录。写盘失败不停止语音，队列丢弃量会记在后续条目中。此日志用于核对播放协议，不能证明扬声器声学效果或蓝牙听感。
 
 ```sh
 OPENNOVA_PROXY=http://127.0.0.1:7897 tools/voice/run-continuous.command \

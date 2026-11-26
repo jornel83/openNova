@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Local fixture that deliberately exceeds the former default step and Token caps. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -11,6 +12,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Unlimited budget fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const calls=options.messages.filter(message=>message.role==='tool').length;
       const output=calls<40?[{type:'function_call',id:'fc_'+randomUUID(),call_id:'call_'+randomUUID(),name:'read',arguments:JSON.stringify({file_path:'sample.txt'}),status:'completed'}]
         :[{type:'message',id:'msg_'+randomUUID(),role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:'Completed forty tool calls with usage recorded.',annotations:[]}]}];

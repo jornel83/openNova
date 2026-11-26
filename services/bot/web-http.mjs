@@ -4,6 +4,12 @@ import {readFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 
 const routes=new Set(['team','team-member','desktop-open','voice-control','snapshot','context-clear','document-open','ask','result','cancel','approvals','approve','reject']);
+routes.add('document-proposal');
+routes.add('document-proposal-action');
+for(const name of ['voice-devices','voice-device-settings','voice-devices-select'])routes.add(name);
+for(const name of ['background-video-preview','image-preview','image-select','image-open','gif-open'])routes.add(name);
+for(const name of ['projects','project-detail','project-action','project-reference','project-record'])routes.add(name);
+for(const name of ['project-edition','project-edition-file','project-experiments','experiment-evidence'])routes.add(name);
 for(const name of ['skills','skill-action','skill-history','skill-candidate'])routes.add(name);
 for(const name of ['team-overview','team-watch','team-watch-policy','team-watch-ack'])routes.add(name);
 for(const name of ['background-task-close','background-task-reopen'])routes.add(name);
@@ -12,6 +18,10 @@ for(const name of ['tasks/review','tasks/management','tasks/reassign','tasks/dep
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.svg':'image/svg+xml'};
 const equal=(a,b)=>typeof a==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
+export function sendArtifactBytes(res,result){
+  res.writeHead(200,{'Content-Type':result.contentType,'Content-Length':result.bytes.length,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});
+  res.end(result.bytes);
+}
 
 export function browserHandler({assets,events},handle) {
   const cookie=randomBytes(32).toString('hex'),csrf=randomBytes(32).toString('hex');
@@ -23,7 +33,7 @@ export function browserHandler({assets,events},handle) {
     if(![`127.0.0.1:${port}`,`localhost:${port}`].includes(host)){json(res,403,{error:'unauthorized'});return true;}
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     if(req.method==='GET'&&(path==='/'||path.startsWith('/assets/'))){
       const file=path==='/'?resolve(root,'index.html'):resolve(root,'.'+path);
       if(!file.startsWith(root+sep)||!/^\/[\w./-]*$/.test(path)||path.split('/').includes('..')){json(res,404,{error:'not_found'});return true;}
@@ -52,7 +62,10 @@ export function browserHandler({assets,events},handle) {
       if(!body||typeof body!=='object'||Array.isArray(body))throw Error('invalid_request');
       if(path==='/web/events'){if(!events)throw Error('events_not_enabled');streamEvents(events,body.cursor,res);return true;}
       if(name==='ask')body.source='web';
-      json(res,200,await handle('/'+name,body));
+      if(['ask','background-task-start'].includes(name))body.webClient=true;
+      const result=await handle('/'+name,body);
+      if(['background-video-preview','image-preview','project-edition-file','experiment-evidence'].includes(name))sendArtifactBytes(res,result);
+      else json(res,200,result);
     }catch(error){json(res,error.message==='cursor_reset'?409:400,{error:String(error.message||'bot_error').slice(0,300)});}
     return true;
   };

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
+import {createHash} from 'node:crypto';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,appendFileSync,rmSync,realpathSync,statSync,openSync,writeSync,closeSync,truncateSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -38,17 +39,19 @@ function largePlayableVideo(path){
   assert.equal(spawnSync('ffprobe',['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1',path],{stdio:'ignore'}).status,0);
 }
 
-test('a real 21 MiB video receives an independent snapshot and supports manual, not automatic, acceptance',async t=>{
+test('a real 21 MiB video receives an independent snapshot and generation-only automatic acceptance',async t=>{
   const f=fixture(t),source=join(f.workspace,'result.mp4');largePlayableVideo(source);await f.receipt(source);
   const report=f.capture(),file=report.artifacts[0];
   assert.equal(report.artifacts.length,1,'the persisted receipt adds media even if directory scanning omitted it');
   assert.equal(file.media,true);assert.equal(file.status,'available');assert.equal(file.sourceStatus,'available');assert.equal(file.size,21*MiB);
   assert.notEqual(file.path,source);assert.notEqual(statSync(file.path).ino,statSync(source).ino,'snapshot must not be a hard link');
-  const decision={action:'accept',summary:'Human reviewed the delivered video.',evidenceIds:[file.id]};
-  assert.throws(()=>normalizeReviewDecision(decision,report),/review_artifact_not_readable/);
+  const decision={action:'accept',summary:'The generated video file has been independently verified.',evidenceIds:[file.id]};
+  assert.equal(normalizeReviewDecision(decision,report).action,'accept');
   assert.equal(normalizeReviewDecision(decision,report,{manual:true}).action,'accept');
   const evidenceDirectory=prepareReviewEvidence({report,task:f.task,directory:join(f.home,'review')});
-  const evidence=JSON.parse(readFileSync(join(evidenceDirectory,'report.json'),'utf8'));assert.equal(evidence.artifacts[0].reviewContent,'unavailable');assert.equal(evidence.artifacts[0].path,undefined);
+  const evidence=JSON.parse(readFileSync(join(evidenceDirectory,'report.json'),'utf8'));assert.equal(evidence.artifacts[0].reviewContent,'generated_media');assert.match(evidence.artifacts[0].path,/\.generated\.json$/);
+  const receipt=JSON.parse(readFileSync(join(evidenceDirectory,evidence.artifacts[0].path),'utf8'));assert.equal(receipt.generatedMedia.sha256,file.sha256);assert.equal(receipt.generatedMedia.size,file.size);
+  assert.equal(normalizeReviewDecision(decision,evidence).action,'accept');
   const fd=openSync(source,'r+');try{writeSync(fd,Buffer.from([127]),0,1,100);}finally{closeSync(fd);}
   const changed=f.reports.get(report.id,{fresh:true});assert.equal(changed.artifacts[0].status,'available');assert.equal(changed.artifacts[0].sourceStatus,'changed');
   assert.throws(()=>f.reports.assertCurrent(f.task,report.id),/artifact_changed/);
@@ -98,4 +101,29 @@ test('video-specific file and total limits remain explicit while ordinary file l
   for(const name of ['one.txt','two.txt']){const path=join(total.workspace,name);writeFileSync(path,Buffer.alloc(9));total.job.artifacts.push({name,path});}
   const limited=total.capture();assert.deepEqual(limited.artifacts.filter(file=>file.name.endsWith('.mp4')).map(file=>file.status).sort(),['available','too_large']);
   assert.deepEqual(limited.artifacts.filter(file=>file.name.endsWith('.txt')).map(file=>file.status).sort(),['available','too_large']);
+});
+
+test('typed image deliveries archive only verified artifacts at ordinary file limits',t=>{
+  const f=fixture(t,{maxFileBytes:20,maxTotalBytes:64}),project=join(f.home,'project'),dir=join(f.home,'evidence');
+  mkdirSync(project);mkdirSync(dir);f.task.sourceWorkspace=project;
+  const files=[];
+  function add(root,name,scope,format,role,bytes){
+    const path=join(root,name);writeFileSync(path,Buffer.alloc(bytes));
+    files.push({name,path,scope,format,role,size:bytes,sha256:createHash('sha256').update(Buffer.alloc(bytes)).digest('hex'),operationId:'task-media-origin'});
+    return path;
+  }
+  add(project,'animation.gif','project','gif','gif',10);
+  add(dir,'gif-contact-sheet.png','evidence','png','contactSheet',10);
+  add(project,'source.mp4','project','mp4','video',21);
+  const changed=add(f.workspace,'first-frame.png','task','png','firstFrame',10);writeFileSync(changed,Buffer.alloc(10,1));
+  const untrusted=add(f.home,'outside.png','project','png','outside',10);
+  f.job.artifacts=[{name:'scratch.txt',path:join(f.workspace,'scratch.txt')},{name:'outside.png',path:untrusted}];
+  f.tasks.media={reportOnly:()=>true,evidenceRoot:dir,evidence:()=>[{id:'task-media-origin',status:'completed'}],artifacts:()=>files};
+  const report=f.capture();
+  assert.deepEqual(Object.fromEntries(report.artifacts.map(file=>[file.name,file.status])),{
+    'animation.gif':'available','gif-contact-sheet.png':'available','source.mp4':'too_large','first-frame.png':'changed','outside.png':'changed',
+  });
+  assert.equal(report.evidence.media[0].id,'task-media-origin');
+  assert.equal(report.artifacts.find(file=>file.name==='animation.gif').mediaRole,'gif');
+  assert.throws(()=>f.reports.assertCurrent(f.task,report.id),/artifact_changed/);
 });

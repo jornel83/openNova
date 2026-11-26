@@ -38,7 +38,8 @@ export function buildArtifacts(root=ROOT) {
   if(process.platform==='darwin')files.add('output/bin/siwc-keychain');
   for(const pattern of ['engine/harness/apps/*/{lib,dist}/**/*','engine/harness/packages/*/*/lib/**/*',
     'engine/harness/vendor/*/lib/**/*','engine/harness/native/system/packages/*/{lib,prebuilds}/**/*',
-    'engine/harness/native/system/packages/*/*.node','output/bot/web/**/*','engine/siwc/packages/local/dist/**/*']) {
+    'engine/harness/native/system/packages/*/bin/**/*.node','engine/harness/native/system/packages/*/*.node',
+    'output/bot/web/**/*','engine/siwc/packages/local/dist/**/*']) {
     for(const path of globSync(pattern,{cwd:root}))if(lstatSync(join(root,path)).isFile())files.add(path);
   }
   return [...files].sort();

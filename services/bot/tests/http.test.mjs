@@ -29,3 +29,16 @@ test('bearer event streams replay only after authentication and stale cursors re
   const expired=await request({Authorization:'Bearer test-only'},{cursor});assert.equal(expired.status,409);
   assert.equal((await expired.json()).error,'cursor_reset');
 });
+test('edition downloads and experiment evidence preserve exact binary bytes',async t=>{
+  const bytes=Buffer.from([0,0xff,0x81,10]);
+  const server=createBridge({token:'test-only',handle:async path=>({bytes,contentType:path==='/experiment-evidence'?'audio/wav':'application/pdf'})});
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  t.after(()=>{server.closeAllConnections();server.close();});
+  for(const [path,type] of [['project-edition-file','application/pdf'],['experiment-evidence','audio/wav']]){
+    const url='http://127.0.0.1:'+server.address().port+'/'+path;
+    assert.equal((await fetch(url,{method:'POST'})).status,403);
+    const response=await fetch(url,{method:'POST',headers:{Authorization:'Bearer test-only'},body:'{}'});
+    assert.equal(response.headers.get('content-type'),type);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()),bytes);
+  }
+});

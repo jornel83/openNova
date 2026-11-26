@@ -1,11 +1,12 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ResearchSources} from './research-sources.jsx';
 import {AssigneeSelect} from './team.jsx';
-import {taskLabels,taskActivityText,taskUnavailable} from './task-view.mjs';
+import {taskLabels,taskActivityText,taskUnavailable,taskMediaLabels,taskMediaStatus} from './task-view.mjs';
 import {errorText} from './api.mjs';
 import {reviewView,reviewLabels,priorityLabels,localDateValue,canEditDependencies,artifactLabel,employeeTask,dependencyReason} from './team-view.mjs';
 import {budgetInput,budgetMinutesInput,managementExecutionBudget,managementUsageLabel} from './task-budget.mjs';
 import {ResultSkills} from './skills.jsx';
+import {diagnosticText} from '../../agent/errors.mjs';
 
 export function TaskPlanningFields({value,tasks=[],onChange,taskId,disabled=false}){
   const selected=value.dependsOn??[];
@@ -29,36 +30,66 @@ function useBoundAction(action){
   };
 }
 
+const mediaRoles={image:'静态图',gif:'GIF 动图',firstFrame:'GIF 首帧',video:'Seedance 原视频',contactSheet:'抽帧检查页',export:'本地导出文件'};
+
+const candidateCheckLabels={build:'正式构建',doctor:'运行环境检查',coldStart:'无音频设备冷启动',warmStart:'复用文字实例',chat:'网页文字对话回显',oldDefault:'默认语音入口',cleanup:'候选端口清理'};
+
 export function TeamResults({api,detail,currentRun,action,disabled=false,busy=false}){
   const view=reviewView(detail,currentRun?.id),{report,review,binding}=view,readOnly=taskUnavailable(detail.task);
   const [text,setText]=useState(''),send=useBoundAction(action);
   useEffect(()=>setText(''),[report?.id]);
   if(!report)return null;
-  const evidence=report.evidence??{},execution=evidence.execution??{},commands=evidence.commands??[],checks=evidence.checks??[];
+  const evidence=report.evidence??{},execution=evidence.execution??{},commands=evidence.commands??[],checks=evidence.checks??[],media=evidence.media??[];
+  const reviewed=media.some(operation=>operation.visualReview?.checkedFrameIndices?.length);
+  const candidate=evidence.candidateReview;
+  const commandFailed=[...commands,...checks].some(c=>c.status!=='completed'||c.exitCode!=null&&c.exitCode!==0);
   async function decide(kind){const result=await send('tasks/review',{...binding,action:kind,text:text.trim()||(kind==='accept'?'用户手动验收通过。':'')});if(result)setText('');}
   return <section className="team-results" aria-label="成果与验收">
     <div className="task-heading"><h3>成果与验收</h3><span>第 {report.version} 版</span></div>
-    <div className="team-result-states"><span>执行：{taskLabels[report.status]||report.status}</span><span>验收：{reviewLabels[review?.status]||'待查看'}</span></div>
+    <div className="team-result-states"><span>执行：{taskLabels[report.status]||report.status}</span><span>验收：{reviewLabels[review?.status]||(view.management?.enabled?(view.management.paused?'跟进已暂停':'待自动检查'):'待你验收')}</span></div>
     {!readOnly&&view.latest&&review?.activity&&taskActivityText(review)&&<p className="subtle" aria-label="总管活动">总管：{taskActivityText(review)}</p>}
-    <p className="subtle">{employeeTask(detail.task)?'员工交付，按验收标准检查。':'总管亲自执行，由你查看成果。'}{report.delivery==='delivered'?' 汇报已送达管理记录。':''}</p>
+    <p className="subtle">{employeeTask(detail.task)?'员工交付。':'总管交付。'}{view.management?.enabled?(view.management.paused?'自动检查已暂停，可恢复跟进或手动验收。':'由独立检查核对成果与执行证据，需要你判断时再交给你处理。'):'自动检查已关闭，可启用跟进或手动验收。'}{report.delivery==='delivered'?' 汇报已送达管理记录。':''}</p>
     {!view.latest&&<p className="team-callout">这是历史成果，仅供查看。{!readOnly&&'请切换到最新执行记录后处理。'}</p>}
+    {media.length>0?<p className="subtle">{reviewed?'视觉结论仅覆盖已检查的帧；请打开 GIF 核对真实循环。':'已保存的回执包含生成与文件检查；画面需要另行查看。'}</p>:
+      (report.artifacts??[]).some(item=>/\.(?:mp4|mov|webm|m4v|avi|mkv|png|jpe?g|gif|webp|avif|heic|heif|svg|bmp|tiff?)$/i.test(item.name??''))&&<p className="subtle">图片与视频默认检查是否已生成并交付，无需人工确认画面。</p>}
     {view.latest&&view.evidenceChanged&&<p className="team-callout">当前文件或成果快照已有变化，或快照未完整保存。{!readOnly&&'请核对后接续任务，形成新的成果再验收。'}</p>}
-    {view.verificationFailed&&<p className="team-callout">命令或检查没有全部成功，本版暂不能验收。{!readOnly&&'请查看退出码和日志后决定是否返工。'}</p>}
+    {view.verificationFailed&&<p className="team-callout">{candidate?'候选版仍有未通过的检查或缺少证据，请查看回执和执行记录。':commandFailed?'命令或检查没有全部成功，本版暂不能验收。':'工作会话未成功结束，本版暂不能验收；已执行的命令结果以下方证据为准。'}{!candidate&&!readOnly&&commandFailed&&'请查看退出码和日志后决定是否返工。'}</p>}
+    {report.status==='failed'&&commands.length>0&&commands.every(c=>c.status==='completed'&&c.exitCode===0)&&<p className="team-callout">已记录的命令均成功，工作会话后续未完成；这不代表整个任务或验收通过。</p>}
+    {execution.diagnostic&&<p className="team-callout">{diagnosticText(execution.diagnostic)}</p>}
+    {report.recovery?.kind==='summary_only'&&<p className="subtle">本版仅补充汇总；下方命令证据来自原执行记录，没有重新运行。原失败记录仍保留。</p>}
     <p className="team-result-summary">{report.summary||'尚无文字摘要，请查看执行证据。'}</p>
     {report.question&&<p className="task-question">{readOnly?'本轮问题：':'需要补充：'}{report.question}</p>}
     {detail.task.acceptanceCriteria&&<details className="task-command"><summary>验收标准</summary><p>{detail.task.acceptanceCriteria}</p></details>}
+    {candidate&&<section aria-label="候选版技术验收"><h4>候选版技术验收</h4>
+      <p>{view.evidenceChanged?'证据或补丁已变化，需重新验收。':review?.status==='accepted'?(view.latest?'技术验收通过。启用候选版仍需你确认。':'该历史版本曾通过技术验收。'):candidate.status==='passed'?'已取得最终回执，可在下方核对各项证据。':'最终检查未通过或证据不完整。'}</p>
+      {candidate.patchSha256&&<details><summary>查看补丁 SHA-256</summary><code>{candidate.patchSha256}</code></details>}
+      {candidate.reason&&<p>{errorText({message:candidate.reason})} <code>{candidate.reason}</code></p>}
+      <ul>{(candidate.requiredChecks??candidate.checks?.map(check=>check.check)??[]).map(id=>{
+        const check=candidate.checks?.find(c=>c.check===id);
+        return <li key={id}>{candidateCheckLabels[id]||id} · {check?.status==='passed'?'通过':'缺少通过证据'}</li>;
+      })}</ul>
+    </section>}
     <h4>交付文件</h4>
-    {report.artifacts?.length?<ul className="task-artifacts team-result-files">{report.artifacts.map(file=><li key={file.id}><div><span>{file.name}</span>{file.sourceStatus==='changed'&&<small>工作目录原件已有新修改，此处为本版成果快照。</small>}{file.sourceStatus==='missing'&&<small>工作目录原件已移除，此处为本版成果快照。</small>}</div><button type="button" disabled={disabled||busy||file.status!=='available'} onClick={()=>void send('tasks/report-artifact',{id:detail.task.id,reportId:report.id,artifactId:file.id})}>{file.status==='available'?'打开成果':artifactLabel(file)}</button></li>)}</ul>:<p className="subtle">此版没有文件成果，可查看摘要与参考来源。</p>}
+    {report.artifacts?.length?<ul className="task-artifacts team-result-files">{report.artifacts.map(file=><li key={file.id}><div><span>{file.name}</span>{mediaRoles[file.mediaRole]&&<small>{mediaRoles[file.mediaRole]}</small>}{file.sourceStatus==='changed'&&<small>工作目录原件已有新修改，此处为本版成果快照。</small>}{file.sourceStatus==='missing'&&<small>工作目录原件已移除，此处为本版成果快照。</small>}</div><button type="button" disabled={disabled||busy||file.status!=='available'} onClick={()=>void send('tasks/report-artifact',{id:detail.task.id,reportId:report.id,artifactId:file.id})}>{file.status==='available'?'打开成果':artifactLabel(file)}</button></li>)}</ul>:<p className="subtle">此版没有文件成果，可查看摘要与参考来源。</p>}
     <ResearchSources sources={report.sources??[]}/>
     <details className="team-evidence" open><summary>实际执行证据</summary>
       <p>执行状态：{taskLabels[execution.status]||execution.status||'未报告'}{execution.exitCode!=null&&` · 退出码 ${execution.exitCode}`}</p>
       {execution.cleanupConfirmed===false&&<p className="error">作业停止尚未确认，当前不能验收。</p>}
-      {commands.map((command,index)=><details className="task-command" key={command.stepId||index}><summary>命令 {index+1} · {taskLabels[command.status]||command.status}{command.exitCode!=null&&` · 退出码 ${command.exitCode}`}</summary>{command.command&&<pre>{command.command}</pre>}{command.workdir&&<p className="subtle">工作目录：{command.workdir}</p>}<pre className="task-log">{command.log||'没有保存的命令输出。'}</pre></details>)}
+      {commands.map((command,index)=><details className="task-command" key={command.stepId||index}><summary>命令 {index+1} · {taskLabels[command.status]||command.status}{view.covered.has(command.stepId)&&'（同项最终检查已通过）'}{command.exitCode!=null&&` · 退出码 ${command.exitCode}`}</summary>{command.command&&<pre>{command.command}</pre>}{command.workdir&&<p className="subtle">工作目录：{command.workdir}</p>}<pre className="task-log">{command.log||'没有保存的命令输出。'}</pre></details>)}
       {checks.map(check=><details className="task-command" key={check.runId}><summary>{check.title||'后台检查'} · {taskLabels[check.status]||check.status}{check.exitCode!=null&&` · 退出码 ${check.exitCode}`}</summary>{check.command&&<pre>{check.command}</pre>}<pre className="task-log">{check.log||check.output||'没有保存的检查输出。'}</pre></details>)}
+      {media.map(operation=><details className="task-command" key={operation.id}><summary>{taskMediaLabels[operation.operation]||'媒体处理'} · {taskMediaStatus(operation)}</summary>
+        {operation.generation?.model&&<p className="subtle">模型：{operation.generation.model}{operation.generation?.taskId?' · 任务 '+operation.generation.taskId:''}</p>}
+        {operation.visualReview?.checkedFrameIndices?.length>0&&<p className="subtle">实查 {operation.visualReview.checkedFrameIndices.length}/{operation.visualReview.totalFrames} 帧（索引 {operation.visualReview.checkedFrameIndices.join('、')}）</p>}
+        {operation.visualReview?.conclusion&&<p>{operation.visualReview.conclusion}</p>}
+        {operation.visualReview?.limitation&&<p className="subtle">{operation.visualReview.limitation}</p>}
+        {operation.error&&<p className="error">{errorText({message:operation.error})}</p>}
+      </details>)}
       {!!evidence.steps?.length&&<details><summary>工具记录 · {evidence.steps.length} 项</summary><ol className="team-evidence-steps">{evidence.steps.map((step,index)=><li key={step.id||index}><strong>{step.tool}</strong> · {taskLabels[step.status]||step.status}{step.exitCode!=null&&` · 退出码 ${step.exitCode}`}<pre>{step.output||'无保存输出'}</pre></li>)}</ol></details>}
       {!commands.length&&!checks.length&&<p className="subtle">本版没有命令或测试记录；完成摘要不代表测试已通过。</p>}
     </details>
     {review?.decision?.summary&&<p className="team-callout">处理意见：{review.decision.summary}</p>}
+    {review?.status==='needs_user'&&review.diagnostic&&<p className="team-callout">自动验收未完成：{diagnosticText(review.diagnostic)}</p>}
+    {!readOnly&&view.latest&&review?.canRetry&&<div className="task-actions"><button disabled={disabled||busy} onClick={()=>void send('tasks/management',{...binding,reviewId:review.id,retryReview:true})}>仅重试验收</button><p className="subtle">复用本版成果与证据，继续只读检查；不重新执行原任务。</p></div>}
     {api&&!readOnly&&<ResultSkills api={api} detail={detail} report={report} review={review} latest={view.latest&&!view.evidenceChanged&&!view.verificationFailed} disabled={disabled||busy}/>}
     {!readOnly&&view.latest&&<div className="team-review-actions"><label>回答问题或说明返工要求<textarea rows={3} maxLength={4000} value={text} onChange={e=>setText(e.target.value)} placeholder="说明缺少什么、需要调整什么，或回答总管的问题"/></label>
       <div className="task-actions"><button type="button" disabled={disabled||!view.canAccept} onClick={()=>void decide('accept')}>验收通过</button><button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('request_changes')}>要求返工</button>{report.status==='waiting_input'&&<button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('answer')}>提交回答</button>}<button type="button" disabled={disabled||!view.actionable||!text.trim()} onClick={()=>void decide('needs_user')}>留待我处理</button></div>
@@ -79,11 +110,12 @@ export function TaskCoordination({detail,team,tasks=[],action,disabled=false}){
   const target=assignee||team?.chiefBotId,selected=target===team?.chiefBotId?'':assignee;
   const dependencies=(task.dependsOn??[]).map(id=>tasks.find(t=>t.id===id)??{id,title:id});
   return <section className="task-coordination" aria-label="任务安排">
-    {management&&employeeTask(task)&&<details className="task-management" open><summary>总管跟进</summary>
+    {management&&!task.managementReview&&!task.parentTaskId&&<details className="task-management" open><summary>总管跟进</summary>
       {!readOnly&&<label className="task-check"><input type="checkbox" checked={!!management.enabled} disabled={disabled} onChange={e=>void send('tasks/management',{...bound,enabled:e.target.checked})}/>启用成果检查与跟进</label>}
+      {!readOnly&&<p className="subtle">{management.enabled?'独立检查成果与执行证据；符合要求自动验收，需要你判断时会提示。':'独立检查会复用已有成果和执行证据，后续按验收意见处理。'}</p>}
       <p className="subtle">已自动返工 {management.usedReworks??0} / {management.maxReworks??2} 次 · {managementUsageLabel(management)}</p>
       {!readOnly&&<><label>最多自动返工次数<input type="number" min={0} max={5} value={maxReworks} onChange={e=>setMaxReworks(Number(e.target.value))}/></label>
-      <details><summary>累计执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><label>累计 Token 上限<input type="number" min={1000} max={3000000} placeholder="不限制" value={tokenBudget} onChange={e=>setTokenBudget(e.target.value)}/></label><label>累计运行时间（分钟）<input type="number" min={1/60} max={480} step="any" placeholder="不限制" value={budgetMinutes} onChange={e=>setBudgetMinutes(e.target.value)}/></label><p className="subtle">员工执行与总管检查共用累计预算。留空表示不限制；填写上限后，达到上限会停止自动跟进，等待你处理。修改用于后续轮次，当前执行保留本轮预算。</p></details>
+      <details><summary>累计执行预算 · {budget&&Object.values(budget).every(value=>value===0)?'不限制':'自定义'}</summary><label>累计 Token 上限<input type="number" min={1000} max={3000000} placeholder="不限制" value={tokenBudget} onChange={e=>setTokenBudget(e.target.value)}/></label><label>累计运行时间（分钟）<input type="number" min={1/60} max={480} step="any" placeholder="不限制" value={budgetMinutes} onChange={e=>setBudgetMinutes(e.target.value)}/></label><p className="subtle">任务执行与独立检查共用累计预算。留空表示不限制；填写上限后，达到上限会停止自动跟进，等待你处理。修改用于后续轮次，当前执行保留本轮预算。</p></details>
       <div className="task-actions"><button type="button" disabled={disabled||!validBudgets} onClick={()=>void send('tasks/management',{...bound,maxReworks,...budget})}>保存跟进设置</button>{management.enabled&&<button type="button" disabled={disabled} onClick={()=>void send('tasks/management',{...bound,paused:!management.paused})}>{management.paused?'恢复总管跟进':'暂停总管跟进'}</button>}</div></>}
       {management.paused&&<p className="team-callout">总管跟进已暂停。{!readOnly&&'恢复后会按当前成果和预算继续检查。'}</p>}
     </details>}

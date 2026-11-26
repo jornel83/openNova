@@ -117,6 +117,9 @@ export class TaskEventEngine{
       let reason;
       if(task.automationPaused)reason='automation_paused';
       else if(active.has(task.status))reason='task_busy';
+      // A user asked only to recover the report. Keep queued events intact,
+      // but require an explicit ordinary continuation before resuming work.
+      else if(this.tasks.row('run',task.runId).summaryRecovery)reason='manual_continuation_required';
       else if(!['completed','waiting_event','paused'].includes(task.status))reason='manual_continuation_required';
       else if(!this.tasks.summary(task).canContinue)reason='cleanup_unconfirmed';
       else if((this.tasks.queries?.counts({statuses:[...active],includeManagement:true}).total??this.tasks.all().filter(t=>active.has(t.status)).length)>=100)reason='queue_full';

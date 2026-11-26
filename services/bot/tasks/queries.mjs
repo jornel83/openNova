@@ -21,6 +21,7 @@ export class TaskQueries {
     this.tasks=tasks;this.db=tasks.db;
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS background_task_status ON background_task(json_extract(body,'$.status'));
+      CREATE INDEX IF NOT EXISTS background_task_project_status ON background_task(json_extract(body,'$.projectId'),json_extract(body,'$.status'));
       CREATE INDEX IF NOT EXISTS background_task_owner_status ON background_task(json_extract(body,'$.assignedBotId'),json_extract(body,'$.status'));
       CREATE INDEX IF NOT EXISTS background_task_run ON background_task(json_extract(body,'$.runId'));
       CREATE INDEX IF NOT EXISTS background_task_parent ON background_task(json_extract(body,'$.parentTaskId'));
@@ -35,11 +36,15 @@ export class TaskQueries {
       CREATE INDEX IF NOT EXISTS background_message_task ON background_message(json_extract(body,'$.taskId'));
     `);
   }
-  conditions({statuses,ownerId,search,includeManagement=false,closed=false}={}){
+  conditions({statuses,ownerId,projectId,search,includeManagement=false,closed=false}={}){
     const where=[],params=[];
     if(!includeManagement)where.push(visible);
     where.push(closed?`${field('closure.status')}='closed'`:`${notClosed} AND NOT ${closedAncestorSql()}`);
     if(statuses){where.push(`${field('status')} IN (${list(statuses)})`);params.push(...statuses);}
+    if(projectId!==undefined){
+      if(projectId===null)where.push(`${field('projectId')} IS NULL`);
+      else{if(typeof projectId!=='string'||!/^[\w-]{1,128}$/.test(projectId))throw Error('invalid_task_project');where.push(`${field('projectId')}=?`);params.push(projectId);}
+    }
     if(ownerId!==undefined){
       if(typeof ownerId!=='string'||!ownerId||ownerId.length>100)throw Error('invalid_task_owner');
       // Tasks predating team ownership belong to the chief, as in TeamRegistry.owner.
@@ -57,10 +62,10 @@ export class TaskQueries {
     const {where,params}=this.conditions(options);
     return this.db.prepare(`SELECT COUNT(*) AS total,COALESCE(SUM(${field('status')} IN ('queued','blocked','running','pausing','cancelling')),0) AS activeCount,COALESCE(SUM(COALESCE(${field('unread')},0)<>0),0) AS unreadCount FROM background_task t WHERE ${where}`).get(...params);
   }
-  page({limit=50,offset=0,ownerId,filter='all',search}={}){
+  page({limit=50,offset=0,ownerId,projectId,filter='all',search}={}){
     if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(offset)||offset<0)throw Error('invalid_task_page');
     if(!['all','active','attention','recent','closed'].includes(filter))throw Error('invalid_task_filter');
-    const options={ownerId,search},base=this.conditions({...options,closed:filter==='closed'}),where=[base.where];
+    const options={ownerId,projectId,search},base=this.conditions({...options,closed:filter==='closed'}),where=[base.where];
     if(filter==='active')where.push(`${field('status')} IN ('queued','blocked','running','pausing','cancelling')`);
     if(filter==='recent')where.push(`${field('status')} IN ('completed','failed','waiting_input','cancelled','interrupted') AND (${currentReport}) IS NOT NULL`);
     if(filter==='attention'){

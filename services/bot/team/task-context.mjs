@@ -4,7 +4,7 @@ import {readJson,readSteps} from '../tasks/agent-files.mjs';
 
 export const TASK_CONTEXT_LIMITS={events:100,textChars:8000,bytes:65536};
 export function captureTaskContext(tasks,task,run,job){
-  const context={version:1,taskId:task.id,throughRunId:run.id,assignmentVersion:run.assignmentVersion??task.assignmentVersion??1,events:[],truncated:false,omittedEvents:0};
+  const context={version:1,taskId:task.id,projectId:task.projectId,sourceWorkspace:task.sourceWorkspace,throughRunId:run.id,assignmentVersion:run.assignmentVersion??task.assignmentVersion??1,events:[],truncated:false,omittedEvents:0};
   const table=name=>!!tasks.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name);
   if(!table('background_run'))return context;
   const rows=kind=>tasks.db.prepare(`SELECT body FROM background_${kind} WHERE json_extract(body,'$.taskId')=? ORDER BY rowid`).all(task.id).map(row=>JSON.parse(row.body));

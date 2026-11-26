@@ -43,3 +43,35 @@ test('native delivery failure cannot prevent exact Agent cancellation',async()=>
  const cancelled=[];const handle=createControls({voice:{snapshot:()=>({connected:true,requestId:'r'}),enqueue:()=>{throw Error('voice_unavailable');}},requests:{cancel:async id=>{cancelled.push(id);return {id,status:'cancelled'};}}});
  await assert.rejects(handle('/cancel',{id:'r'}),/voice_unavailable/);assert.deepEqual(cancelled,['r']);
 });
+test('standby launcher hands the lease to native audio and receives it back after disable',async t=>{
+ const {v}=fixture(t),standby=state(1,{voiceInstanceId:'launcher-1',capture:'off',audioEnabled:false,phase:'standby',problem:'耳机暂未连接'});
+ v.publish(standby);
+ assert.equal(v.snapshot().audioEnabled,false);assert.equal(v.snapshot().problem,'耳机暂未连接');
+ assert.throws(()=>v.enqueue({id:'mute',action:'mute',voiceInstanceId:'launcher-1',generation:2,requestId:null}),/voice_control_unavailable/);
+ const start={id:'start',action:'start',voiceInstanceId:'launcher-1',generation:2,requestId:null};
+ v.enqueue(start);assert.equal((await v.poll('launcher-1')).commands[0].action,'start');v.ack({...start,status:'applied'});
+ v.publish({...standby,seq:2,phase:'starting',problem:null});
+ assert.throws(()=>v.enqueue({...start,id:'again'}),/voice_control_unavailable/);
+ assert.throws(()=>v.publish(state(1,{voiceInstanceId:'native'})),/voice_in_use/);
+ v.publish({...standby,seq:3,phase:'starting',connected:false});
+ v.publish(state(1,{voiceInstanceId:'native'}));
+ assert.equal(v.snapshot().audioEnabled,true);assert.equal(v.snapshot().phase,'active');assert.equal(v.snapshot().problem,null);
+ const disable={id:'disable',action:'disable',voiceInstanceId:'native',generation:2,requestId:null};
+ v.enqueue(disable);assert.equal((await v.poll('native')).commands[0].action,'disable');v.ack({...disable,status:'applied'});
+ v.publish(state(2,{voiceInstanceId:'native',connected:false,capture:'off'}));
+ v.publish({...standby,voiceInstanceId:'launcher-2',problem:null});
+ assert.equal(v.snapshot().audioEnabled,false);assert.deepEqual(v.snapshot().controls,[]);
+ assert.throws(()=>v.publish(state(3,{voiceInstanceId:'native'})),/stale_voice_instance/);
+});
+test('standby cannot claim active capture, playback or a request and phase fields are validated',t=>{
+ const {v}=fixture(t),standby=state(1,{capture:'off',audioEnabled:false,phase:'standby'});
+ for(const extra of [{capture:'listening'},{playback:'playing'},{recognition:'recognizing'},{requestId:'r'},{draft:{text:'old',utteranceId:'u'}},{phase:'active'},{phase:'unknown'},{audioEnabled:'false'},{problem:12},{problem:'x'.repeat(1001)}])assert.throws(()=>v.publish({...standby,...extra}),/invalid_voice_update/);
+ v.publish(standby);assert.equal(v.snapshot().phase,'standby');
+});
+test('full audio shutdown is delivered ahead of queued ordinary controls',async t=>{
+ const {v}=fixture(t);v.publish(state());
+ for(let i=0;i<16;i++)v.enqueue({id:'mute-'+i,action:'mute',voiceInstanceId:'v1',generation:2,requestId:null});
+ v.enqueue({id:'disable',action:'disable',voiceInstanceId:'v1',generation:2,requestId:null});
+ const queued=(await v.poll('v1')).commands;
+ assert.equal(queued.length,16);assert.equal(queued[0].action,'disable');assert.equal(v.snapshot().controls.find(c=>c.id==='mute-0').status,'stale');
+});

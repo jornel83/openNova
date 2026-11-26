@@ -114,9 +114,11 @@ export async function runTeamSoak(options){
   async function cycle(number){
     const requestId='hello-'+number;await api('/ask',{id:requestId,text:'hello',source:'voice'});
     await waitFor(async()=>{const r=await api('/result',{id:requestId});if(r.status==='failed')throw Error('soak_foreground_failed');return r.status==='completed';});state.foregroundReplies++;
-    const commandId='command-'+number,command={id:commandId,title:'Soak command '+number,command:`printf '%s\n' '${commandId}' >> execution-ledger.txt`,timeoutMs:5000};
+    const commandId='command-'+number,command={id:commandId,title:'Soak command '+number+' COMMAND_REVIEW_FIXTURE',command:`printf '%s\n' '${commandId}' >> execution-ledger.txt`,timeoutMs:5000};
     const first=await api('/background-task-start',command),retry=await api('/background-task-start',command);assert.equal(first.task.runId,retry.task.runId);
     const result=await settled(commandId);assert.equal(result.task.status,'completed');assert.equal(result.runs.length,1);assert.equal(result.task.exitCode,0);
+    const commandAccepted=await waitFor(async()=>{const d=await api('/background-task',{id:commandId});if(['failed','needs_user','budget_exhausted'].includes(d.task.reviewStatus))throw Error('soak_chief_review_failed: '+d.task.reviewStatus);return d.task.reviewStatus==='accepted'&&d;});
+    assert.equal(commandAccepted.runs.length,1);state.chiefCommandReviews=(state.chiefCommandReviews??0)+1;
     const executions=readFileSync(join(b.workspace,'execution-ledger.txt'),'utf8').trim().split('\n'),unique=new Set(executions);state.commandExecutions=executions.length;state.duplicateExecutions=executions.length-unique.size;assert.equal(state.duplicateExecutions,0);
     const agentId='employee-'+number;await api('/background-task-start',{id:agentId,kind:'agent',title:'Soak delivery '+number,goal:'生成 report.md，完整说明结论。',assignedBotId:employeeId});
     await waitFor(async()=>['running','completed'].includes((await api('/background-task',{id:agentId})).task.status));
@@ -134,9 +136,9 @@ export async function runTeamSoak(options){
     const running=await api('/background-task',{id:cancelId});await api('/background-task-cancel',{id:cancelId,runId:running.task.runId});const cancelled=await settled(cancelId);assert.equal(cancelled.task.status,'cancelled');assert.equal(alive(pid),false);state.cancellations++;
     const snapshot=await api('/snapshot');assert.equal(snapshot.team.chiefBotId,chiefId);assert.equal(snapshot.tasks.activeCount,0);assert.equal(snapshot.team.members.length,2);state.reconnections++;
     await waitFor(()=>counts(home).pendingDelivery===0);state.database=counts(home);
-    state.duplicateExecutions=Math.max(state.duplicateExecutions,state.database.runs-number*7,0);
-    assert.equal(state.database.tasks,number*6);assert.equal(state.database.runs,number*7);assert.equal(state.database.managementTasks,number*3);assert.equal(state.database.reports,number*4);assert.equal(state.database.events,state.database.delivered);
-    if(options.restartEvery&&number%options.restartEvery===0){await stop();await start();state.restarts++;const restored=await api('/background-task',{id:agentId});assert.equal(restored.task.runId,accepted.task.runId);assert.equal(restored.task.reviewStatus,'accepted');assert.equal(restored.runs.length,2);assert.equal((await api('/team')).chiefBotId,chiefId);}
+    state.duplicateExecutions=Math.max(state.duplicateExecutions,state.database.runs-number*8,0);
+    assert.equal(state.database.tasks,number*7);assert.equal(state.database.runs,number*8);assert.equal(state.database.managementTasks,number*4);assert.equal(state.database.reports,number*4);assert.equal(state.database.events,state.database.delivered);
+    if(options.restartEvery&&number%options.restartEvery===0){await stop();await start();state.restarts++;const restored=await api('/background-task',{id:agentId});assert.equal(restored.task.runId,accepted.task.runId);assert.equal(restored.task.reviewStatus,'accepted');assert.equal(restored.runs.length,2);const restoredCommand=await api('/background-task',{id:commandId});assert.equal(restoredCommand.task.runId,commandAccepted.task.runId);assert.equal(restoredCommand.task.reviewStatus,'accepted');assert.equal(restoredCommand.runs.length,1);assert.equal((await api('/team')).chiefBotId,chiefId);}
   }
   try{
     mkdirSync(dirname(home),{recursive:true,mode:0o700});mkdirSync(home,{mode:0o700});ownsHome=true;

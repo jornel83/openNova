@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 import {spawn,spawnSync} from 'node:child_process';
 import {join,dirname} from 'node:path';
-import {globSync} from 'node:fs';
+import {globSync,existsSync} from 'node:fs';
 import {ROOT,checkEngineSources,runtimeSources} from '../services/runtime/sources.mjs';
 import {recordBuild,checkBuild,sourceDigest} from './build-record.mjs';
-import {acquireBuild,buildGroupAlive} from './team-soak-lock.mjs';
+import {acquireBuild,buildGroupAlive,teamSoakLock,waitForBuild} from './team-soak-lock.mjs';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
+import {imageLockName,installedImagePython} from '../services/bot/images/runtime-path.mjs';
 
 const HELP=`OpenNova (Node 24, pnpm 11.28.5)
   pnpm run setup                 Install locked dependencies, no account required
   pnpm run setup -- --chatgpt     Also prepare the optional Keychain helper (macOS)
+  pnpm run setup -- --image-only  Prepare just the locked image/GIF Python environment
   pnpm run build                 Build included Harness, Bot, SIWC and OpenNova web
   pnpm test                      Offline product regression tests
   pnpm run test:bot               Included upstream Bot tests
@@ -24,10 +26,13 @@ export function commandPlan(command,args=[],root=ROOT) {
   const sources=runtimeSources(root),harness=sources.harnessRoot,bot=sources.botRoot,siwc=sources.siwcRoot;
   const clean=args.filter(a=>a!=='--');
   if(!['setup','build','test:bot','start','start:voice'].includes(command))throw Error('unknown_command: '+command);
-  if((command==='setup'&&clean.some(a=>a!=='--chatgpt'))||(['build','test:bot'].includes(command)&&clean.length))throw Error('unknown_option');
+  if((command==='setup'&&(clean.some(a=>!['--chatgpt','--image-only'].includes(a))||clean.includes('--image-only')&&clean.length!==1))||(['build','test:bot'].includes(command)&&clean.length))throw Error('unknown_option');
   const step=(command,args,cwd=root,env={})=>({command,args,cwd,env:{CI:'true',...env}});
+  const image=()=>step(process.env.OPENNOVA_PYTHON||'python3.11',[join(root,'tools/setup/image-runtime.py')]);
+  if(command==='setup'&&clean.includes('--image-only'))return [image()];
   if(command==='setup')return [step('pnpm',['install','--frozen-lockfile']),step('pnpm',['install','--frozen-lockfile'],harness),
     step('npm',['ci','--no-audit','--no-fund'],bot),step('npm',['ci','--no-audit','--no-fund'],join(root,'services/bot/desktop')),step('npm',['ci','--ignore-scripts','--no-audit','--no-fund','--workspace','@siwc/local','--include-workspace-root'],siwc),
+    image(),
     ...(clean.includes('--chatgpt')?[step(process.env.OPENNOVA_PYTHON||'python3.11',[join(root,'tools/setup/bootstrap.py'),'--install','--web'])]:[])];
   if(command==='build')return [step('pnpm',['run','build'],harness),step('npm',['run','build'],bot),step('npm',['run','build','-w','@siwc/local'],siwc),step(process.execPath,[join(root,'services/bot/web/build.mjs')]),
     ...(process.platform==='darwin'?[step(process.env.OPENNOVA_PYTHON||'python3.11',[join(root,'tools/setup/bootstrap.py'),'--install'])]:[])];
@@ -45,8 +50,11 @@ export function requiresBuild(command,options) {
 
 export function doctor(root=ROOT) {
   const sources=checkEngineSources(root);
+  const imageLock=join(root,imageLockName);
+  const imagePython=existsSync(imageLock)?installedImagePython(undefined,root):null;
   return {sources:true,node:process.versions.node,requiredNodeMajor:24,
-    engines:{harness:sources.harnessRoot,bot:sources.botRoot,siwc:sources.siwcRoot},build:checkBuild(root)};
+    engines:{harness:sources.harnessRoot,bot:sources.botRoot,siwc:sources.siwcRoot},build:checkBuild(root),
+    ...(imagePython?{imageRuntime:{configured:!!process.env.OPENNOVA_IMAGE_PYTHON||existsSync(imagePython)}}:{})};
 }
 
 function sourceIdentity(root) {
@@ -78,7 +86,7 @@ export async function executeSteps(steps,{root=ROOT,processGroups=false,beforeSp
   }
 }
 
-export async function executeBuild(steps,{root=ROOT,record=()=>recordBuild(root)}={}){
+export async function executeBuild(steps,{root=ROOT,record=()=>recordBuild(root),ifNeeded=false}={}){
   const owner={runId:randomUUID(),pid:process.pid,startedAt:Date.now()},unlock=acquireBuild(root,owner),children=[];
   let error,complete=false;
   async function cleanGroups(){
@@ -95,14 +103,20 @@ export async function executeBuild(steps,{root=ROOT,record=()=>recordBuild(root)
     }
   }
   try{
-    await executeSteps(steps,{root,processGroups:true,beforeSpawn:()=>unlock.update({spawning:true}),onChild:child=>{
-      if(child.pid)children.push({pid:child.pid});unlock.update({children,spawning:false});
-    },onChildExit:async child=>{
-      const entry=children.find(item=>item.pid===child.pid);if(entry&&!buildGroupAlive(child.pid))entry.cleanupConfirmed=true;unlock.update({children});
-      await cleanGroups();unlock.update({children});
-    }});
-    await cleanGroups();
-    await record();complete=true;
+    // A previous launcher may have finished between our check and acquiring the lock.
+    if(!ifNeeded||!checkBuild(root).ready){
+      if(ifNeeded)console.log('构建缺失或已过期，正在自动构建 OpenNova……');
+      await executeSteps(steps,{root,processGroups:true,beforeSpawn:()=>unlock.update({spawning:true}),onChild:child=>{
+        if(child.pid)children.push({pid:child.pid});unlock.update({children,spawning:false});
+      },onChildExit:async child=>{
+        const entry=children.find(item=>item.pid===child.pid);if(entry&&!buildGroupAlive(child.pid))entry.cleanupConfirmed=true;unlock.update({children});
+        await cleanGroups();unlock.update({children});
+      }});
+      await cleanGroups();
+      await record();
+      if(ifNeeded&&!checkBuild(root).ready)throw Error('构建校验未通过，请检查上方的构建输出。');
+    }
+    complete=true;
   }catch(value){error=value;}
   finally{
     try{
@@ -111,6 +125,20 @@ export async function executeBuild(steps,{root=ROOT,record=()=>recordBuild(root)
     }catch(value){error??=value;try{unlock.update({finishedAt:Date.now(),cleanupConfirmed:false,status:'cleanup_unconfirmed'});}catch{}}
   }
   if(error)throw error;
+}
+
+async function ensureStartupBuild(){
+  if(checkBuild().ready&&!existsSync(teamSoakLock(ROOT)))return;
+  try{
+    await executeBuild(commandPlan('build'),{ifNeeded:true});
+  }catch(error){
+    if(error.code!=='BUILD_LOCKED')throw error;
+    const waited=await waitForBuild(ROOT);
+    if(checkBuild().ready)return;
+    if(waited)throw Error('并行构建结束后校验未通过，请查看执行构建的终端输出。');
+    throw error;
+  }
+  console.log('构建已就绪，继续启动 OpenNova。');
 }
 
 export async function main(args=process.argv.slice(2)) {
@@ -124,7 +152,13 @@ export async function main(args=process.argv.slice(2)) {
     return;
   }
   const steps=commandPlan(command,options);checkEngineSources();
-  if(requiresBuild(command,options)&&!checkBuild().ready)throw Error('build_missing_or_stale: run pnpm run build');
+  if(requiresBuild(command,options)){
+    if(command==='start:voice'){
+      const {parseArgs}=await import('../tools/voice/start.mjs');
+      parseArgs(options.filter(arg=>arg!=='--'));
+      await ensureStartupBuild();
+    }else if(!checkBuild().ready)throw Error('build_missing_or_stale: run pnpm run build');
+  }
   if(command==='build'){await executeBuild(steps);console.log('OpenNova build ready.');}
   else await executeSteps(steps);
 }

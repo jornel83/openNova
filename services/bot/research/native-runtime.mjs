@@ -13,9 +13,9 @@ function argumentsOf(value){
 }
 
 /** Read-only projection of native session events; never intercepts tool execution. */
-export function installNativeResearch(ctx,{ops,requests,config={},onObservationError=()=>{}}){
+export function installNativeResearch(ctx,{ops,requests,config={},onObservationError=()=>{},replayedCall}){
  const states=new Map(),pending=new Map();
- const sources=createSources({ops,botId:config.botId,workspace:config.workspace});
+ const sources=createSources({ops,botId:config.botId,workspace:config.workspace,getProjectId:config.getProjectId});
  const derivations=createDerivations({ops,sources}); // Read compatibility for historical results.
  const valid=r=>requests.active===r&&!r.cancelled&&!r.signal.aborted&&states.has(r.id);
  const observe=(fn,fallback)=>{try{return fn();}catch(error){try{onObservationError(error);}catch{}return fallback?.();}};
@@ -45,8 +45,13 @@ export function installNativeResearch(ctx,{ops,requests,config={},onObservationE
    if(!item||item.request!==r)return;
    if(item.resultRecord){ops.put(item.resultRecord);pending.delete(key);publish(r);return;}
    const {record,args}=item,meta=data.meta??{},output=textOf(message.content),httpFailure=meta.statusCode!==undefined&&(meta.statusCode<200||meta.statusCode>=300);
-   const failed=!!message.isError||httpFailure,found=[];
+   const failed=!!message.isError||httpFailure,found=[],origin=!failed&&replayedCall?.(record,args);
    if(failed)state.failures++;
+   else if(origin){
+    if(record.tool==='web_search')state.searchCalls--;else state.fetchCalls--;
+    const old=sources.forRequest(origin.requestId).filter(s=>s.requestId===origin.requestId&&s.callId===origin.callId);
+    sources.use(r.id,old);found.push(...old);
+   }
    else if(record.tool==='web_search'){
     for(const source of meta.sources??[]){
      const s=observe(()=>sources.record({requestId:r.id,callId:record.callId,status:'completed',provider:'deepseek',...source,
@@ -59,7 +64,8 @@ export function installNativeResearch(ctx,{ops,requests,config={},onObservationE
     if(s)found.push(s);
    }
    item.resultRecord={...record,status:failed?'failed':'completed',completedAt:Date.now(),elapsed_ms:Date.now()-record.createdAt,
-    sourceIds:found.map(s=>s.id),output:output.slice(0,12000),...(meta.statusCode===undefined?{}:{http:{statusCode:meta.statusCode}}),
+    sourceIds:found.map(s=>s.id),...(origin?{reusedFrom:origin,observationIds:found.map(s=>s.observationId)}:{}),
+    output:output.slice(0,12000),...(meta.statusCode===undefined?{}:{http:{statusCode:meta.statusCode}}),
     ...(failed?{error:output.slice(0,1200)||`HTTP ${meta.statusCode}`,errorCode:data.error?.code??(httpFailure?'HTTP_'+meta.statusCode:undefined)}:{})};
    ops.put(item.resultRecord);pending.delete(key);
    publish(r);

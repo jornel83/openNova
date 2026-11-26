@@ -9,7 +9,7 @@ test('obsolete memory is removed from history, system text and replay metadata',
 });
 test('single Bot tool policy exposes project writes within the existing tool scope',()=>{
   for(const n of ['create_bot','write_file','apply_patch','message_bot'])assert.ok(!ALLOWED_TOOLS.includes(n));
-  for(const n of ['read','write','edit','glob','grep','bash'])assert.ok(ALLOWED_TOOLS.includes(n));
+  for(const n of ['read','write','edit','glob','grep','bash','image_generate','gif_generate'])assert.ok(ALLOWED_TOOLS.includes(n));
   assert.ok(MODEL_BUDGET.contextWindow<500000);
 });
 test('new user statements can reintroduce a previously deleted fact',()=>{

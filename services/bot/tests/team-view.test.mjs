@@ -7,6 +7,17 @@ function fixture(){
   const old={...current,id:'report-1',runId:'run-1',assignmentVersion:1,version:1};
   return {task:{id:'task',kind:'agent',runId:'run-2',assignmentVersion:2,status:'completed'},runs:[{id:'run-1',startedAt:1},{id:'run-2',startedAt:2}],teamReview:{current,history:[current,old],reviews:[{id:'old-review',reportId:'report-1',status:'accepted',createdAt:1},{id:'current-review',reportId:'report-2',status:'needs_user',createdAt:2}]}};
 }
+test('candidate card keeps resolved failures in history and disables acceptance for outstanding or stale checks',()=>{
+  const d=fixture(),e=d.teamReview.current.evidence;
+  e.candidateReview={status:'passed',coveredStepIds:['old']};
+  e.commands=[{stepId:'old',status:'failed',exitCode:1}];
+  e.steps=[{id:'old',tool:'task_command',status:'failed'}];
+  assert.equal(reviewView(d).canAccept,true);assert.ok(reviewView(d).covered.has('old'));
+  e.checks=[{taskId:'child',status:'failed',exitCode:1}];assert.equal(reviewView(d).canAccept,false);
+  e.checks=[];e.steps.push({id:'other',tool:'read',status:'failed'});assert.equal(reviewView(d).canAccept,false);
+  e.steps.pop();e.candidateReview.patchCurrent=false;assert.equal(reviewView(d).actionable,false);
+  e.candidateReview={status:'incomplete',coveredStepIds:['old']};assert.equal(reviewView(d).canAccept,false);assert.equal(reviewView(d).covered.size,0);
+});
 test('review actions bind the exact current report and assignment while historical reports stay readable',()=>{
   const detail=fixture(),current=reviewView(detail),old=reviewView(detail,'run-1');
   assert.deepEqual(current.binding,{id:'task',runId:'run-2',reportId:'report-2',assignmentVersion:2});

@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Offline adapter exercises the real isolated Harness runtime and native tools. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -12,6 +13,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Task fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];} async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const index=options.messages.findLastIndex(m=>m.role==='user'&&m.content.some(b=>b.type==='text'&&/任务目标：|用户补充要求：/.test(b.text)));
       const prompt=options.messages[index]?.content.filter(b=>b.type==='text').map(b=>b.text).join('\n')||'';
       const prior=options.messages.slice(index+1).filter(m=>m.role==='tool').length;

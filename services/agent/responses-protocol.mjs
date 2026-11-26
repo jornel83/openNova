@@ -78,7 +78,7 @@ export async function* responseToolChunks(client, options, allowedTools=DEFAULT_
     } else throw Error('unsupported_model_output');
     blocks.push(block);replay.push({items:[...pending,item]});pending=[];
   }
-  if (!blocks.length) throw Error('incomplete_model_response');
+  if (!ids.size && !blocks.some(block=>block.text.trim())) throw Error('incomplete_model_response');
   if (pending.length) replay.at(-1).items.push(...pending);
   preview?.settle(result.output);
   for (const [index,block] of blocks.entries()) {

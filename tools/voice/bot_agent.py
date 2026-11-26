@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 import uuid
 import urllib.request
@@ -9,6 +10,28 @@ import urllib.error
 from contextlib import aclosing
 from agent import failure_message
 from bot_events import read_events
+
+PROJECT_ERRORS = {
+    'project_state_changed': '说话期间当前项目已变化，这段语音没有提交。请确认项目后重新说话。',
+    'project_changed': '项目内容已变化，这段语音没有提交。请确认项目后重新说话。',
+    'project_archived': '这个项目已归档，这段语音没有提交。请恢复项目或选择其他项目后重新说话。',
+    'unknown_project': '当前项目已不可用，这段语音没有提交。请重新选择项目。',
+}
+
+class BotRequestFailure(ValueError):
+    """A settled host request failure, distinct from audio and transport errors."""
+    def __init__(self, message, diagnostic=None):
+        super().__init__(message)
+        self.user_message = message
+        diagnostic = diagnostic if isinstance(diagnostic, dict) else {}
+        code = diagnostic.get('code')
+        self.code = code if isinstance(code, str) and re.fullmatch(r'[a-z][a-z0-9_]{0,80}', code) else 'bot_request_failed'
+        self.stage = 'routing' if diagnostic.get('stage') == 'routing' else 'conversation'
+
+
+class BotRequestCancelled(ValueError):
+    """The host acknowledged cancellation; it is not a model/device failure."""
+
 
 class BotAgent:
     def __init__(self, *, api=None, events=None):
@@ -46,6 +69,16 @@ class BotAgent:
             and capabilities.get('enabled') and capabilities.get('version')==1) else 'settled-answer'
         return {**info,'outputMode':self.output_mode}
 
+    async def project_context(self):
+        """Capture ownership when speech begins, before delayed ASR finishes."""
+        value = await self.api('/projects',{})
+        state = value.get('state') or {}
+        project_id, revision = state.get('projectId'), state.get('revision')
+        if (not isinstance(project_id,str) or not project_id
+                or type(revision) is not int or revision < 0):
+            raise ValueError('当前项目状态尚未就绪，请稍后重新说话。')
+        return {'projectId':project_id,'revision':revision}
+
     async def _events(self,cursor):
         home=Path(os.environ.get('OPENNOVA_BOT_HOME',str(Path.home()/'.local/share/opennova/bot-spike'))).expanduser()
         token=(home/'client.token').read_text().strip()
@@ -55,12 +88,18 @@ class BotAgent:
 
     @staticmethod
     def _failure(result):
+        if result.get('status') == 'cancelled':
+            return BotRequestCancelled('本轮请求已取消。')
         error=result.get('error') or result.get('status') or 'bot_request_failed'
-        if result.get('diagnostic'):
-            return ValueError(failure_message(result['diagnostic']))
-        if error in ('network_error','connection_error','stream_interrupted','incomplete_agent_turn'):
-            return ValueError(failure_message({'code':error,'stage':'conversation'}))
-        return ValueError(error)
+        diagnostic=result.get('diagnostic')
+        if not isinstance(diagnostic,dict): diagnostic={'code':error,'stage':'conversation'}
+        diagnostic={**diagnostic,
+                    'code':diagnostic.get('code') if isinstance(diagnostic.get('code'),str) else 'bot_request_failed',
+                    'stage':diagnostic.get('stage') if isinstance(diagnostic.get('stage'),str) else 'conversation'}
+        message=result.get('userMessage')
+        if not isinstance(message,str) or not message.strip() or len(message)>1000 or any(ord(char)<32 and char not in '\n\t' for char in message):
+            message=failure_message(diagnostic)
+        return BotRequestFailure(message.strip(),diagnostic)
 
     @staticmethod
     def _progress(result, ident, state):
@@ -162,13 +201,22 @@ class BotAgent:
                 if failures>3: raise ValueError('回答事件连接中断，请重连后查看本轮结果。') from None
                 await asyncio.sleep(.1*failures)
 
-    async def stream(self,text):
+    async def stream(self,text,*,expected_project=None):
         if self.current: raise ValueError('上一轮 Bot 请求尚未结束。')
         ident=str(uuid.uuid4());self.current=self.last_request=ident
         terminal=False
         try:
             yield {'type':'request','id':ident}
-            await self.api('/ask',{'id':ident,'text':text,'source':'voice'})
+            body = {'id':ident,'text':text,'source':'voice'}
+            if expected_project is not None: body['expectedProject'] = dict(expected_project)
+            try:
+                await self.api('/ask',body)
+            except ValueError as error:
+                if str(error) in PROJECT_ERRORS:
+                    # Admission rejected the old binding: there is no request to cancel.
+                    terminal = True
+                    raise ValueError(PROJECT_ERRORS[str(error)]) from None
+                raise
             if self.output_mode=='hybrid-stream':
                 async with asyncio.timeout(650):
                     async with aclosing(self._live(ident)) as stream:
@@ -204,6 +252,11 @@ class BotAgent:
                     yield {'type':'status','id':ident,'phase':phase,'tool':result['tool'],'callId':research.get('callId')}
                 await asyncio.sleep(.3)
             raise ValueError('Bot 等待超时；可用 /result 查询已提交请求。')
+        except (BotRequestFailure,BotRequestCancelled):
+            # Both polling and SSE observed a terminal host result. Cancelling
+            # it again can replace the useful error with a cleanup HTTP failure.
+            terminal=True
+            raise
         finally:
             # Cancel only this foreground reply. Independent tasks have different IDs.
             try:

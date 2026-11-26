@@ -9,7 +9,7 @@ def matches_control(command, controller, instance_id):
     if command.get('action') == 'stop':
         return (command.get('generation') == controller.generation and
                 command.get('requestId') == (controller.response_record or {}).get('requestId'))
-    return command.get('action') in ('mute','unmute','end','start','retry')
+    return command.get('action') in ('mute','unmute','end','start','retry','disable','devices')
 
 
 class UiBridge:
@@ -35,6 +35,13 @@ class UiBridge:
         ack['status'] = result.get('status','failed')
         self.acks[command['id']] = ack
         self.seen[command['id']] = {**command,'result':ack}
+        self.changed.set()
+
+    def defer(self, command):
+        # Device startup can take seconds. Keep its acknowledgement pending,
+        # but let mute/end/disable and current telemetry proceed meanwhile.
+        # The host matches this control by owner, independent of generation.
+        self.held.discard(command['id'])
         self.changed.set()
 
     async def call(self, path, body):
@@ -84,6 +91,11 @@ class UiBridge:
                         for ident,old in tuple(self.seen.items()):
                             if old.get('result') and ident not in self.acks: self.seen.pop(ident);break
                     break  # One in-flight command; later Stop can take priority on the host.
+                else:
+                    # A deferred device change stays queued until native startup
+                    # settles, so the host may return it immediately every time.
+                    # Keep polling for stop/disable without busy HTTP spinning.
+                    await asyncio.sleep(.04)
             except Exception: await asyncio.sleep(self.interval)
 
     async def connect(self):
@@ -108,5 +120,10 @@ class UiBridge:
     async def close(self):
         self.closed=True;self.changed.set();self.seq+=1
         if self.retired: return
+        # A disable control ends the client loop immediately. Acknowledge it
+        # while this lease is still connected, before handing it to standby.
+        for ident,ack in tuple(self.acks.items()):
+            with suppress(Exception): await self.call('/voice/ack',ack)
+            self.acks.pop(ident,None);self.held.discard(ident)
         with suppress(Exception):
             await self.call('/voice/publish',{**self.state,'connected':False,'capture':'off','recognition':'idle','playback':'idle','draft':None,'voiceInstanceId':self.instance_id,'seq':self.seq})

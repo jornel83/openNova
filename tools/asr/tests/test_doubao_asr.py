@@ -42,6 +42,7 @@ class CredentialTests(unittest.TestCase):
             self.assertEqual(asr.load_key(path, environ={}), 'test-secret')
             self.assertEqual(asr.load_key(path, environ={'DOUBAO_ASR_API_KEY': ' override '}), 'override')
             self.assertEqual(asr.load_key(environ={'OPENNOVA_SECRETS_FILE': str(path)}), 'test-secret')
+            self.assertEqual(asr.load_key(environ={'OPENNOVA_SECRETS': str(path)}), 'test-secret')
 
     def test_missing_or_invalid_config_does_not_expose_contents_or_read_readme(self):
         with tempfile.TemporaryDirectory() as directory:

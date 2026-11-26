@@ -79,7 +79,10 @@ export class TeamRegistry {
     const read=path=>{try{if(!lstatSync(path).isFile()||lstatSync(path).isSymbolicLink())return '';return readFileSync(path,'utf8').slice(0,6000);}catch(e){if(e.code==='ENOENT')return '';throw e;}};
     return {botId:id,name:bot.name,role:bot.role,instructions:id===this.chiefId?'负责完成用户交代的后台工作。':bot.instructions,
       profileRevision:this.profile(id).revision,policyVersion:1,model:'opennova-chatgpt/gpt-6.1-sol',
-      memory:{own:read(join(this.rt.home,'memory','bots',id,'MEMORY.md')),team:read(join(this.rt.home,'memory','team','MEMORY.md'))}};
+      projectId:task.projectId,
+      // Pre-A1 employee/team memory contains mixed, unclassified project facts.
+      // Share identity and skills, but do not project that history into new work.
+      memory:task.projectId?{own:'',team:'',scope:'project',legacyExcluded:true}:{own:read(join(this.rt.home,'memory','bots',id,'MEMORY.md')),team:read(join(this.rt.home,'memory','team','MEMORY.md'))}};
   }
   owner(task){const id=task.assignedBotId??this.chiefId;return {assignedBotId:id,ownerName:this.rt.botOf(id)?.name??'已停用员工',ownershipOrigin:task.assignedBotId?'assigned':'legacy'};}
 }

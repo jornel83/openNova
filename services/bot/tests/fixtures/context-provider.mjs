@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Offline model validates context carried through actual employee and review Harness sessions. */
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
@@ -18,6 +19,7 @@ export async function apply(ctx,config){
     info(){return {provider:'opennova-chatgpt',id:'gpt-6.1-sol',name:'Task context fixture',inputModalities:['text'],context:{contextWindow:64000},defaultMaxTokens:4096};}
     async listModels(){return [this.info()];}async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       const index=options.messages.findLastIndex(message=>message.role==='user'),current=options.messages.slice(index),prior=current.filter(message=>message.role==='tool');
       const names=(options.tools??[]).map(tool=>tool.name);let tool,args,text='员工已按收到的名称完成 welcome.md。';
       if(names.includes('review_decide')){

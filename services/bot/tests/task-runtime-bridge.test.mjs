@@ -12,14 +12,14 @@ import {TeamActors} from '../team/actor.mjs';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
-async function fixture(t,{invoke}={}){
+async function fixture(t,{invoke,mediaInvoke}={}){
   const home=mkdtempSync(join(tmpdir(),'nova-task-bridge-'));
   writeFileSync(join(home,'workspace.json'),JSON.stringify({path:home}));
   const token='fixture-run-token',task={id:'task-one',kind:'agent',runId:'run-one',assignedBotId:'employee',assignmentVersion:1,policyVersion:2,mode:'edit',permission:'full',status:'running'};
   const run={id:'run-one',taskId:task.id,assignmentVersion:1,status:'running',toolTokenHash:digest(token)};
   const otherTask={...task,id:'task-two',runId:'run-two'},otherRun={...run,id:'run-two',taskId:'task-two',toolTokenHash:digest('other-token')};
   let checkEnabled=false,enabled=true,teamEnabled=true,busy=false;
-  const checked=[],tools=[],controls=[],grants=[];
+  const checked=[],tools=[],controls=[],grants=[],media=[];
   const tasks={closed:false,row(kind,id){const value=(kind==='task'?[task,otherTask]:[run,otherRun]).find(v=>v.id===id);if(!value)throw Error('unknown_task');return structuredClone(value);},
     automation:{canCheck:()=>checkEnabled},agentHome:()=>home,queries:{related:()=>[]},
     create(input,options){checked.push({input,options});return {task:{id:input.id,runId:'check-run'},status:'queued'};},
@@ -28,6 +28,7 @@ async function fixture(t,{invoke}={}){
     assertOpen:TaskManager.prototype.assertOpen,
     closureAncestor:TaskManager.prototype.closureAncestor,
   };
+  if(mediaInvoke)tasks.media={execute:async args=>{media.push(args);return mediaInvoke(args);}};
   const team={chiefId:'chief',bot:id=>({id}),enabled:()=>teamEnabled,profile:()=>({enabled})};
   const actors=new TeamActors({tasks,team}),issue=actors.issue.bind(actors);
   actors.issue=options=>{const actor=issue(options);grants.push(actor);return actor;};
@@ -41,9 +42,34 @@ async function fixture(t,{invoke}={}){
     const response=await fetch(url+path,{method:'POST',headers:{Authorization:'Bearer '+(options.token??token),'Content-Type':'application/json',...options.headers},body:JSON.stringify({...identity(),...body}),signal:options.signal??AbortSignal.timeout(3000)});
     return {status:response.status,body:await response.json()};
   }
-  return {task,run,tasks,actors,grants,tools,controls,checked,post,token,identity,url,
+  return {task,run,tasks,actors,grants,tools,controls,checked,media,post,token,identity,url,
     setCheck:value=>checkEnabled=value,setEnabled:value=>enabled=value,setTeamEnabled:value=>teamEnabled=value,setBusy:value=>busy=value};
 }
+test('media bridge independently enforces the trusted Run operation, permission, and pinned skill',async t=>{
+  const f=await fixture(t,{mediaInvoke:({name})=>({status:'completed',name})});
+  const endpoint='/task-runtime/media',body={name:'gif_generate',actionId:'gif-one',args:{sourcePath:'frozen.png'}};
+  assert.equal((await f.post(endpoint,body)).body.error,'task_tool_denied');
+  f.task.media={operation:'gif_generate'};f.run.media={...f.task.media};
+  f.run.skills=[{name:'image-production'}];
+  assert.equal((await f.post(endpoint,body)).body.error,'task_tool_denied');
+  f.run.skills=[{name:'image-production',archiveRoot:'/fake/archive',version:'fake-pin'}];
+  for(const patch of [{permission:'read-only'},{managementReview:{kind:'evidence'},assignedBotId:'chief'},{closure:{status:'closed'}},{media:{operation:'media_export'}}]){
+    const before={...f.task};Object.assign(f.task,patch);
+    assert.equal((await f.post(endpoint,body)).body.error,'task_tool_denied');
+    for(const key of Object.keys(patch))if(!Object.hasOwn(before,key))delete f.task[key];else f.task[key]=before[key];
+  }
+  f.run.summaryRecovery={};assert.equal((await f.post(endpoint,body)).body.error,'task_tool_denied');delete f.run.summaryRecovery;
+  for(const name of ['image_generate','media_export','video_submit','shell'])assert.equal((await f.post(endpoint,{...body,name})).body.error,'task_tool_denied');
+  assert.equal((await f.post(endpoint,{...body,taskId:'task-two'})).body.error,'task_runtime_stale');
+  assert.equal((await f.post(endpoint,body,{token:'fixture-root-token'})).body.error,'task_runtime_unauthorized');
+  f.tasks.video={execute:()=>assert.fail('no alternate paid video tool')};
+  assert.equal((await f.post('/task-runtime/video',{...body,name:'video_submit'})).body.error,'task_tool_denied');
+  assert.equal(f.media.length,0);
+  assert.equal((await f.post(endpoint,{...body,task:{permission:'read-only'},run:{id:'forged'}})).body.status,'completed');
+  assert.equal(f.media[0].task.id,f.task.id);assert.equal(f.media[0].run.id,f.run.id);
+  assert.equal(f.media[0].task.permission,'full');assert.ok(f.media[0].signal instanceof AbortSignal);
+  for(const name of ['gif_review','project_media_characters','task_media_status'])assert.equal((await f.post(endpoint,{...body,name})).status,200);
+});
 test('a Run token authorizes only runtime routes, never Bot or team controls',async t=>{
   const f=await fixture(t);
   for(const path of ['/team','/team-member','/shutdown','/background-task-check','/task-runtime/team'])assert.equal((await f.post(path)).status,403,path);

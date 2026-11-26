@@ -19,7 +19,7 @@ const b=botSettings(),s=loadSettings(),research=loadResearchConfig();
 const options=parseStartArgs(process.argv.slice(2));
 if(options.help){console.log('OpenNova Bot: pnpm start [-- --no-ui | --check | --stop] (desktop UI opens by default)');process.exit(0);}
 async function showUI(health,signal) {
-  if(health.workspace!==ROOT)throw Error('现有 Bot 使用了其他工程，请检查端口与数据目录。');
+  if(health.workspace!==b.workspace)throw Error('现有 Bot 使用了其他工程，请检查端口与数据目录。');
   if(!options.ui)return;
   if(!health.desktopEnabled)throw Error('现有 Bot 尚未启用桌面交互；请在任务结束后 pnpm start -- --stop，再重新启动。');
   await prepareDesktop({config:b,root:ROOT,health,signal,log:console.log});
@@ -43,7 +43,7 @@ const webAssets=join(ROOT,'output/bot/web');
 if(!checkBuild().ready)throw Error('build_missing_or_stale: run pnpm run build');
 if(!existsSync(b.tokenPath))writeFileSync(b.tokenPath,randomBytes(32).toString('hex'),{mode:0o600,flag:'wx'});
 // The web profile hosts the runtime; experimental interaction is bridge-only.
-const patch=runtimePatch({bot:b,agent:s,webAssets,desktop:true,research});
+const patch=runtimePatch({bot:{...b,trackOpenDocuments:process.platform==='darwin'},agent:s,webAssets,desktop:true,research});
 // JSON is valid YAML; no shell interpolation or generated executable expressions.
 const patchPath=join(b.home,'experiment.patch.yml');writeFileSync(patchPath,JSON.stringify(patch,null,2));
 const env=launchEnvironment();

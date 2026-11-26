@@ -90,7 +90,7 @@ class BotAgentTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_result_is_not_spoken(self):
         async def api(path,body):return {'status':'failed','error':'model_unavailable'}
         a=BotAgent(api=api)
-        with self.assertRaisesRegex(ValueError,'model_unavailable'):
+        with self.assertRaisesRegex(ValueError,'Agent 对话失败'):
             _=[e async for e in a.stream('hello')]
 
     async def test_operations_include_native_project_and_shell_records(self):

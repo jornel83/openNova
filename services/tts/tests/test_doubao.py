@@ -63,6 +63,44 @@ class DoubaoTests(unittest.TestCase):
                 with doubao.stream_pcm('你好', 'voice') as chunks: list(chunks)
             self.assertNotIn('private-test-key', str(error.exception))
 
+    def test_http_200_invalid_api_key_preflight_explains_settings_action_without_remote_text(self):
+        message = 'authentication failed: Invalid X-Api-Key; private-test-key'
+        with server(event(45000010, message=message)) as seen:
+            with self.assertRaises(doubao.DoubaoTTSError) as error:
+                doubao.check_service()
+        text = str(error.exception)
+        self.assertIn('API Key 无效', text)
+        self.assertIn('45000010', text)
+        self.assertIn('豆包 TTS 密钥', text)
+        self.assertIn('豆包 ASR 密钥', text)
+        self.assertIn('保存后关闭并重新开启语音', text)
+        self.assertNotIn('private-test-key', text)
+        self.assertNotIn('authentication failed', text)
+        self.assertNotIn('Invalid X-Api-Key', text)
+        self.assertEqual(seen[0][1]['req_params']['text'], '你好。')
+
+    def test_auth_code_with_unknown_or_nontext_message_keeps_safe_auth_hint(self):
+        for kind in (151, 153, 352):
+            for message in (None, 'private-test-key other authentication failure', {'private': 'private-test-key'}):
+                with self.subTest(kind=kind, message_type=type(message).__name__), self.assertRaises(doubao.DoubaoTTSError) as error:
+                    list(doubao.decode_sse(io.BytesIO(event(45000010, kind=kind, message=message))))
+                text = str(error.exception)
+                self.assertIn('鉴权失败', text)
+                self.assertIn('45000010', text)
+                self.assertNotIn('private-test-key', text)
+                self.assertNotIn('other authentication failure', text)
+
+    def test_unknown_business_errors_keep_numeric_code_without_reflecting_remote_message(self):
+        for code in (45000001, 55000000, 99999999):
+            with self.subTest(code=code), self.assertRaises(doubao.DoubaoTTSError) as error:
+                list(doubao.decode_sse(io.BytesIO(event(code, message='Invalid X-Api-Key private-test-key'))))
+            text = str(error.exception)
+            self.assertIn(str(code), text)
+            self.assertIn('服务请求失败', text)
+            self.assertNotIn('private-test-key', text)
+            self.assertNotIn('Invalid X-Api-Key', text)
+            self.assertNotIn('API Key 无效', text, 'the message whitelist must also match its error code')
+
     def test_truncation_bad_base64_odd_empty_and_cancel_are_not_success(self):
         for body in [event(data='AQ=='), event(data='!!!') + event(20000000),
                      event(20000000), event(data='AQ==') + event(20000000),
@@ -80,11 +118,13 @@ class DoubaoTests(unittest.TestCase):
             list(doubao.decode_sse(io.BytesIO(b'data: ' + b'x' * (2 * 1024 * 1024))))
 
     def test_http_errors_and_redirects_never_reflect_body(self):
-        for code in (401, 403, 429, 500, 307):
+        for code in (400, 401, 403, 429, 500, 307):
             with self.subTest(code=code), server(b'private-test-key', status=code):
                 with self.assertRaises(doubao.DoubaoTTSError) as error:
                     with doubao.stream_pcm('你好', 'voice') as chunks: list(chunks)
                 self.assertNotIn('private-test-key', str(error.exception))
+                if code in (400, 500):
+                    self.assertIn(str(code), str(error.exception))
 
     def test_key_precedence_uses_shared_saved_key_without_modifying_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -92,6 +132,7 @@ class DoubaoTests(unittest.TestCase):
             path.write_text(json.dumps({'doubao': {'api_key': 'shared'}}))
             env = {'OPENNOVA_SECRETS_FILE': str(path)}
             self.assertEqual(doubao.load_tts_key(environ=env), 'shared')
+            self.assertEqual(doubao.load_tts_key(environ={'OPENNOVA_SECRETS': str(path)}), 'shared')
             path.write_text(json.dumps({'doubao': {'api_key': 'shared', 'tts_api_key': 'tts'}}))
             self.assertEqual(doubao.load_tts_key(environ=env), 'tts')
             self.assertEqual(doubao.load_tts_key(environ={**env, 'DOUBAO_TTS_API_KEY': 'env'}), 'env')

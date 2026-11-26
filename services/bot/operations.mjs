@@ -6,12 +6,19 @@ import {randomUUID,createHash} from 'node:crypto';
 
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const copy=x=>JSON.parse(JSON.stringify(x));
+export function isProjectResult(record){
+  return !!(record.sourceEdition||record.artifact?.sourceEdition||
+    ['project_handoff','project_edition','project_experiment'].includes(record.operation));
+}
 export class Operations {
   constructor({home,workspace,legacyWorkspace=workspace,events,getRequestId=()=>undefined}) {
     mkdirSync(home,{recursive:true,mode:0o700});mkdirSync(workspace,{recursive:true,mode:0o700});
     this.workspace=realpathSync(workspace);this.events=events;this.getRequestId=getRequestId;
     this.db=new DatabaseSync(join(home,'bridge.sqlite'));
     this.db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, kind TEXT NOT NULL, body TEXT NOT NULL)');
+    // Also indexes pre-existing editions; ordinary text edits must never replace a managed Word/PDF.
+    this.db.exec("CREATE INDEX IF NOT EXISTS document_artifact_path ON records(json_extract(body,'$.path')) WHERE kind='document_artifact'");
+    this.documentArtifactAtPath=this.db.prepare("SELECT 1 FROM records WHERE kind='document_artifact' AND json_extract(body,'$.path')=? LIMIT 1");
     // Pre-project records referred to the isolated test directory. Bind once;
     // never let a relative old proposal resolve against a new workspace.
     for(const r of this.list('approval'))if(r.operation==='file'&&!r.workspace)this.put({...r,workspace:resolve(legacyWorkspace)});
@@ -19,11 +26,19 @@ export class Operations {
   close(){this.db.close();}
   put(record){
     if(record.kind==='approval'&&!record.requestId&&!this.db.prepare('SELECT id FROM records WHERE id=?').get(record.id))record={...record,requestId:this.getRequestId()};
+    if(record.requestId&&!Object.hasOwn(record,'projectId')){
+      try{const source=this.request(record.requestId);if(Object.hasOwn(source,'projectId'))record={...record,projectId:source.projectId};}catch{}
+    }
     this.db.prepare('INSERT INTO records VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(record.id,record.kind,JSON.stringify(record));if(record.kind==='request')this.events?.publish('request.updated',record,record.id);
-    else if(['tool','approval'].includes(record.kind))this.events?.publish('operation.updated',record,record.requestId);
+    else if(['tool','approval'].includes(record.kind)){
+      // Project-specific comparisons are read from the scoped snapshot after this invalidation.
+      const event=record.proposal||isProjectResult(record)?{id:record.id,operation:record.operation,status:record.status,projectId:record.projectId,...(record.phase?{phase:record.phase}:{})}:record;
+      this.events?.publish('operation.updated',event,record.requestId);
+    }
     return copy(record);}
   get(id){const row=this.db.prepare('SELECT body FROM records WHERE id=?').get(id);if(!row)throw Error('unknown_id');return JSON.parse(row.body);}
   list(kind){return this.db.prepare('SELECT body FROM records WHERE kind=? ORDER BY rowid DESC').all(kind).map(r=>JSON.parse(r.body));}
+  isDocumentArtifactPath(path){return !!this.documentArtifactAtPath.get(path);}
   filePath(name) {
     if(typeof name!=='string'||!name||isAbsolute(name)||name.split(/[\\/]/).some(p=>p==='..'||p==='.'||!p)||name.includes('\0'))throw Error('invalid_workspace_path');
     const path=resolve(this.workspace,name),rel=relative(this.workspace,path);
@@ -82,7 +97,12 @@ export class Operations {
     if(typeof text!=='string'||!text.trim()||text.length>300)throw Error('invalid_memory');
     return this.put({id:randomUUID(),kind:'approval',operation:'memory',executionMode,status:'pending',tool,args:{...args,scope:'own'},createdAt:Date.now()});
   }
-  reject(id){const r=this.get(id);if(r.status!=='pending')throw Error('approval_not_pending');return this.put({...r,status:'rejected'});}
+  reject(id){
+    const record=this.get(id);
+    if(record.kind!=='approval')throw Error('invalid_approval');
+    if(record.status!=='pending')throw Error('approval_not_pending');
+    return this.put({...record,status:'rejected'});
+  }
   retireMemory(text,messageIds=[]){if(!text)return;this.put({id:'retired-'+hash(text),kind:'retired',text,messageIds,createdAt:Date.now()});}
   restoreMemory(text){this.db.prepare('DELETE FROM records WHERE id=? AND kind=?').run('retired-'+hash(text),'retired');}
   retired(){return this.list('retired').map(r=>({text:r.text,messageIds:r.messageIds}));}
@@ -92,11 +112,11 @@ export class Operations {
   }
   task(id,now=Date.now()){const r=this.get(id);if(r.kind!=='task')throw Error('unknown_task');return r.status==='running'&&now>=r.dueAt?this.put({...r,status:'completed',completedAt:r.dueAt,result:'受控计时任务已完成；未执行外部作业。'}):r;}
   cancelTask(id,now=Date.now()){const r=this.task(id,now);return r.status==='running'?this.put({...r,status:'cancelled',cancelledAt:now}):r;}
-  submit(id,text,source='text',context={kind:'none'}) {
+  submit(id,text,source='text',context={kind:'none'},entry={}) {
     if(typeof id!=='string'||!/^[\w-]{1,100}$/.test(id)||typeof text!=='string'||!text.trim()||text.length>8000)throw Error('invalid_request');
     let old;try{old=this.get(id);}catch(e){if(e.message!=='unknown_id')throw e;}
     if(old){if(old.kind!=='request'||old.input!==text||old.source!==source)throw Error('request_conflict');return {...old,duplicate:true};}
-    return this.put({id,kind:'request',input:text,source,context,status:'queued',createdAt:Date.now()});
+    return this.put({...entry,id,kind:'request',input:text,source,context,status:'queued',createdAt:Date.now()});
   }
   request(id){const r=this.get(id);if(r.kind!=='request')throw Error('unknown_request');return r;}
   finish(id,result){return this.put({...this.request(id),...result,updatedAt:Date.now()});}

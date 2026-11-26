@@ -1,3 +1,4 @@
+import {legacyProjectRoute,routeChunks} from './routing-fixture.mjs';
 /** Deterministic model for the real process integration test; no remote connection. */
 import {pathToFileURL} from 'node:url';
 import {join} from 'node:path';
@@ -13,6 +14,7 @@ export async function apply(ctx,config) {
     async listModels(){return [this.info()];}
     async resolveModel(){return this.info();}
     async *stream(options){
+      const route=legacyProjectRoute(options);if(route){yield* routeChunks(route);return;}
       // Harness also injects runtime-context messages with the user role.
       const matches=text=>['hello','slow','stream','cancel-stream','stream-fail'].includes(text)||(text.startsWith('background:')||text.startsWith('agent:'));
       const inputIndex=options.messages.findLastIndex(m=>m.role==='user'&&m.content.some(b=>b.type==='text'&&matches(b.text)));

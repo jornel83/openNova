@@ -5,15 +5,16 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {installTaskResearch,taskResearchPlugins,taskResearchTools} from '../tasks/task-research.mjs';
 import {readJson} from '../tasks/agent-files.mjs';
+import {researchCheckpoints} from '../tasks/research-recovery.mjs';
 
 function fixture(t){
   const home=mkdtempSync(join(tmpdir(),'nova-task-research-')),scopes=[];
   t.after(()=>{for(const scope of scopes)scope.close();rmSync(home,{recursive:true,force:true});});
-  function start(taskId,runId,permission='full'){
+  function start(taskId,runId,permission='full',overrides={}){
     const workspace=join(home,taskId,'workspace');mkdirSync(workspace,{recursive:true});
     const config={policyVersion:2,taskId,runId,sessionId:'session-'+taskId,permission,
       agentHome:join(home,taskId),runDir:join(home,'runs',runId),workspace,goal:'整理公开资料',
-      research:{enabled:true,available:true,httpAvailable:true}};
+      research:{enabled:true,available:true,httpAvailable:true},...overrides};
     const hooks=new Map(),contexts=[];
     const ctx={on:(name,fn)=>{const rows=hooks.get(name)??[];rows.push(fn);hooks.set(name,rows);},systemPrompt:{context:value=>contexts.push(value)}};
     const scope=installTaskResearch(ctx,config);scopes.push(scope);
@@ -85,4 +86,32 @@ test('failed and cancelled runs retain evidence already observed with the owning
     assert.equal(evidence.sources.length,1);assert.equal(evidence.sources[0].requestId,evidence.runId);
     assert.equal(evidence.sources[0].excerpt,'Verified task source');
   }
+});
+
+test('automatic replay keeps the original web observation IDs and retrieval times, explicit continuation can fetch updated evidence',async t=>{
+  const {start}=fixture(t),frozen={documentResearch:true,projectId:'A',workspaceMode:'documents',inputSnapshot:{version:2}};
+  const url='https://example.com/source',calls=[
+    {tool:'web_search',args:{queries:['reliable']},result:{sources:[{url,snippet:'Search result'}]}},
+    {tool:'web_fetch',args:{url},result:{url,statusCode:200,content:'Fetched evidence'}},
+  ];
+  let networkCalls=0;
+  async function run(runId,overrides){
+    const scope=start('employee',runId,'full',{...frozen,...overrides}),execute=researchCheckpoints(scope.config);
+    for(const c of calls){
+      const callId=runId+c.tool;
+      scope.call(callId,c.tool,c.args);
+      const result=await execute({callId,name:c.tool,arguments:c.args},()=>{networkCalls++;return {value:c.result};});
+      scope.result(callId,result.value);
+    }
+    const sources=scope.lookup({}).sources,summary=scope.evidence(),logs=scope.ops.list('tool').filter(r=>r.requestId===runId);
+    scope.close();return {sources,summary,logs};
+  }
+  const first=await run('first'),second=await run('resumed',{researchResume:{originRunId:'first'}});
+  assert.equal(networkCalls,2);assert.equal(second.summary.research.usage.fetchCalls,0);assert.equal(second.summary.research.usage.searchCalls,0);
+  assert.deepEqual(second.sources,first.sources);
+  assert.deepEqual(second.logs.flatMap(r=>r.observationIds).sort(),first.sources.map(s=>s.observationId).sort());
+  assert.ok(second.logs.every(r=>r.reusedFrom.requestId==='first'));
+  const explicit=await run('explicit');
+  assert.equal(networkCalls,4);assert.equal(explicit.summary.research.usage.fetchCalls,1);
+  assert.ok(explicit.sources.every(s=>s.requestId==='explicit'&&!first.sources.some(old=>s.observationId===old.observationId)));
 });

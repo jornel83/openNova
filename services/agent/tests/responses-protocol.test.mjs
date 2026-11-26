@@ -25,6 +25,17 @@ test('text completion emits final text and keeps only provider replay data',asyn
  const chunks=await Array.fromAsync(protocol.responseToolChunks({streamItems:async()=>({output:[text]})},opts));
  assert.equal(chunks.find(x=>x.type==='text-delta').text,'查到了。');assert.equal(chunks.at(-1).reason.kind,'stop');
 });
+test('empty completed text never becomes a successful assistant message',async()=>{
+ for(const value of ['', '  \n']){
+  const empty={...text,content:[{type:'output_text',text:value}]};
+  const client={streamItems:async()=>({output:[empty]})};
+  const chunks=[];
+  await assert.rejects(async()=>{
+   for await(const chunk of protocol.responseToolChunks(client,opts))chunks.push(chunk);
+  },/incomplete_model_response/);
+  assert.deepEqual(chunks,[]);
+ }
+});
 for(const [name,item] of [['missing id',{...fc(),call_id:''}],['bad JSON',{...fc(),arguments:'{'}],['wrong tool',{...fc(),name:'bash'}],['wrong namespace',{...fc(),namespace:'other'}]]){
  test(`rejects ${name} before emitting executable content`,async()=>{
  const seen=[];await assert.rejects(async()=>{for await(const c of protocol.responseToolChunks({streamItems:async()=>({output:[item]})},opts))seen.push(c);});assert.equal(seen.length,0);

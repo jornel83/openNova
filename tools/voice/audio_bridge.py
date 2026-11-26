@@ -1,5 +1,6 @@
 """Bounded IPC with the voice-processed macOS capture/playback process."""
 import asyncio
+import os
 import base64
 import json
 import time
@@ -12,12 +13,13 @@ def audio_error(code, system_code=None):
         detail = f'（系统错误 {system_code}）' if type(system_code) is int else ''
         return ValueError(f'原生音频引擎启动失败{detail}，请重新运行；若仍失败，请提供此错误信息。')
     hints = {
-        'microphone_permission_denied':'请在 macOS 隐私设置中允许终端访问麦克风。',
-        'audio_device_not_found':'找不到指定方向的音频设备，请用 --list-devices 查看名称并重新运行。',
-        'audio_device_ambiguous':'设备名称匹配多项，请用 --list-devices 查看完整名称。',
-        'audio_device_selection_failed':'无法启用所选音频设备，请检查连接后重试。',
+        'microphone_permission_denied':('请在 macOS 隐私设置中允许 OpenNova 访问麦克风。' if os.environ.get('OPENNOVA_PACKAGED') == '1'
+                                        else '请在 macOS 隐私设置中允许终端访问麦克风。'),
+        'audio_device_not_found':'所选音频设备未连接或不支持此方向，请在界面刷新设备并重新选择；也可用 --list-devices 查看。',
+        'audio_device_ambiguous':'设备名称匹配多项，请在窗口“音频设备”中选择具体设备；也可用 --list-devices 查看完整名称。',
+        'audio_device_selection_failed':'无法启用所选音频设备，请检查连接，并在窗口“音频设备”刷新后重新选择。',
         'voice_processing_unavailable':'所选音频组合无法开启 Voice Processing，请换用其他输入或输出设备。',
-        'audio_route_changed':'音频设备已断开或默认设备已变化，请恢复设备后输入 /retry。',
+        'audio_route_changed':'音频设备已断开或默认设备已变化，请在窗口“音频设备”刷新并重选，或恢复设备后输入 /retry。',
         'capture_overflow':'收音缓冲已满，请输入 /retry 重试。',
         'macos_15_required':'连续对话需要 macOS 15 或更高版本。',
     }
@@ -25,6 +27,12 @@ def audio_error(code, system_code=None):
 
 
 async def build_helper():
+    if os.environ.get('OPENNOVA_PACKAGED') == '1':
+        directory = os.environ.get('OPENNOVA_BIN_DIR')
+        binary = Path(directory) / 'opennova-audio' if directory else None
+        if binary is None or not binary.is_file() or not os.access(binary, os.X_OK):
+            raise ValueError('OpenNova 安装包缺少原生音频程序，请重新安装。')
+        return binary
     sources = [ROOT/'tools/voice/native'/name for name in ('PlaybackQueue.swift', 'AudioDevices.swift', 'AudioBridge.swift')]
     output = ROOT/'output/voice/bin/opennova-audio'
     if output.is_file() and output.stat().st_mtime >= max(p.stat().st_mtime for p in sources):
@@ -79,6 +87,8 @@ class NativeAudio:
         self.closed = False
         self.playback = 'idle'
         self.on_state = None
+        self.on_evidence = None
+        self.receipt_keys = set()
 
     async def start(self):
         binary = await build_helper()
@@ -118,6 +128,13 @@ class NativeAudio:
                 self.deliver({'type':'error','code':'voice_processing_unavailable'})
             elif not self.ready.done(): self.ready.set_result(event)
         elif kind == 'played':
+            receipt = (event.get('generation'),event.get('segment'),self.generation)
+            if self.on_evidence and receipt not in self.receipt_keys:
+                self.receipt_keys.add(receipt)
+                if len(self.receipt_keys) > 256: self.receipt_keys = {receipt}
+                self.on_evidence({'event':'native_playback_receipt','generation':self.generation,
+                    'nativeGeneration':event.get('generation'),'segment':event.get('segment'),
+                    'frames':event.get('frames'),'accepted':event.get('generation') == self.generation})
             if event.get('generation') == self.generation:
                 self.frames = event['frames']
                 self.played_segments.add(event['segment'])
@@ -173,7 +190,9 @@ class NativeAudio:
         self.played_segments.clear()
         self.playback_times.clear()
         self.changed.set()
-        await self.command('clear', generation=generation)
+        result = await self.command('clear', generation=generation)
+        if self.on_evidence and result.get('generation') == generation:
+            self.on_evidence({'event':'native_clear_ack','generation':generation,'nativeGeneration':generation})
 
     async def pause(self): await self.command('pause')
     async def resume(self): await self.command('resume')

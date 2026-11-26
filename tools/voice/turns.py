@@ -32,6 +32,20 @@ class TurnCapture:
         self.discard_quiet = 0
         self.acoustics = AcousticEvidence()
         self.measurement = {'strong_ms':0}
+        self.last_frame_at = None
+        self.last_voice_at = time.monotonic()
+        self.last_detected_voice_at = None
+        self.voice_revision = 0
+
+    def notification_idle(self, quiet_seconds=1.2, *, require_capture=True):
+        """Use capture state, before queued VAD/ASR events reach the controller."""
+        now = time.monotonic()
+        last_voice = self.last_voice_at if require_capture else self.last_detected_voice_at
+        return ((not require_capture or self.last_frame_at is not None and now-self.last_frame_at < .75)
+                and (last_voice is None or now-last_voice >= quiet_seconds) and not self.current
+                and not self.gate.active and not self.gate.speech_frames
+                and not self.discarding and not self.zero_warned
+                and not any(not task.done() and not task.cancelling() for task in self.tasks))
 
     def event(self, kind, turn, **fields):
         if turn['epoch'] == self.epoch:
@@ -40,6 +54,9 @@ class TurnCapture:
 
     def reset(self, epoch):
         self.epoch = epoch
+        self.last_frame_at = None
+        self.last_voice_at = time.monotonic()
+        self.last_detected_voice_at = None
         self.pending.clear()
         self.gate = SpeechGate(silence_ms=self.normal)
         self.current = None
@@ -65,6 +82,13 @@ class TurnCapture:
             del self.pending[:FRAME_BYTES]
             try:
                 probability = self.detector(frame)
+                self.last_frame_at = time.monotonic()
+                # Even a first voiced frame must prevent unsolicited playback;
+                # ordinary interruption still uses the existing confirmation gate.
+                if probability >= self.gate.end_threshold:
+                    self.last_voice_at = self.last_frame_at
+                    self.last_detected_voice_at = self.last_frame_at
+                    self.voice_revision += 1
                 self.measurement = self.acoustics.measure(frame, probability)
                 if self.discarding:
                     self.discard_quiet = self.discard_quiet+1 if probability < self.gate.end_threshold else 0

@@ -97,6 +97,14 @@ test('creation intent resumes after interruption without duplicate management ta
   const f=fixture(t);f.failOnce();f.supervisor.tick();assert.equal(f.supervisor.history(f.base.id)[0].status,'queued');f.supervisor.tick();f.supervisor.tick();
   assert.equal(f.tasks.all().filter(task=>task.managementReview).length,1);assert.equal(f.creates,2);
 });
+test('internal reviews, skill extraction and command checks cannot enter recursive review or enable management',t=>{
+  const f=fixture(t);
+  for(const internal of [{managementReview:{targetTaskId:'parent'}},{managementReview:{kind:'skill-extraction',targetTaskId:'parent'}},{parentTaskId:'parent'}]){
+    const task={...f.base,assignedBotId:'chief',...internal};f.tasks.put('task',task);
+    f.supervisor.tick();assert.equal(f.creates,0);
+    assert.throws(()=>f.supervisor.configure({id:task.id,runId:task.runId,enabled:true}),/management_task_not_configurable/);
+  }
+});
 test('acceptance rejects failed verification, uninspectable artifacts and summary-only evidence',t=>{
   const f=fixture(t),decision={action:'accept',summary:'verified',evidenceIds:[f.report.artifacts[0].id]};
   assert.throws(()=>normalizeReviewDecision({...decision,evidenceIds:['report:summary']},f.report),/concrete_evidence/);
@@ -198,4 +206,27 @@ test('management activity is shown only for the current bound review while histo
   assert.equal(f.supervisor.get(review.id).activity,undefined,'live activity is not written into the acceptance record');
   f.decide({action:'accept',summary:'检查通过',evidenceIds:[f.report.artifacts[0].id]});f.supervisor.tick();
   assert.equal(f.supervisor.view(f.base).currentReview.activity,undefined);
+});
+
+test('retrying an incomplete network review validates cleanup, report, pause and keeps idempotent intent',t=>{
+ const f=fixture(t);f.supervisor.tick();let review=f.supervisor.history(f.base.id)[0],child=f.tasks.row('task',review.managementTaskId),run=f.tasks.row('run',child.runId),job=f.tasks.row('job',run.jobId);
+ f.tasks.put('task',{...child,status:'failed'});f.tasks.put('job',{...job,status:'failed',cleanupConfirmed:false,agentResult:{error:'network_error',diagnostic:{code:'network_error',stage:'conversation'}}});
+ f.supervisor.put({...review,status:'needs_user',error:'management_review_incomplete'});review=f.supervisor.get(review.id);
+ const action={id:f.base.id,runId:f.base.runId,reportId:f.report.id,reviewId:review.id,actionId:'retry-network',retryReview:true};
+ assert.equal(f.supervisor.canRetry(review),false);assert.throws(()=>f.supervisor.configure(action),/review_retry_unavailable/);
+ f.tasks.put('job',{...f.tasks.row('job',job.id),cleanupConfirmed:true});assert.equal(f.supervisor.canRetry(review),true);
+ assert.throws(()=>f.supervisor.configure({...action,reportId:'other'}),/review_retry_unavailable/);
+ f.supervisor.configure({id:f.base.id,runId:f.base.runId,paused:true});assert.equal(f.supervisor.canRetry(review),false);
+ f.supervisor.configure({id:f.base.id,runId:f.base.runId,paused:false});
+ f.supervisor.configure(action);f.supervisor.configure(action);f.supervisor.tick();
+ const resumed=f.tasks.row('task',child.id);assert.notEqual(resumed.runId,run.id);assert.equal(f.tasks.row('run',resumed.runId).number,2);assert.equal(f.tasks.row('task',f.base.id).runId,f.base.runId);
+ f.supervisor.configure(action);assert.equal(f.tasks.row('task',child.id).runId,resumed.runId);
+ assert.throws(()=>f.supervisor.configure({...action,reportId:'other'}),/review_action_conflict/);
+});
+
+test('review-only recovery cannot turn a reviewer rework decision into another business run',t=>{
+ const f=fixture(t);f.supervisor.tick();const review=f.supervisor.history(f.base.id)[0];
+ f.supervisor.put({...review,reviewOnly:true});
+ f.decide({action:'request_changes',summary:'还需调整内容',instruction:'重新执行原任务',evidenceIds:[]});f.supervisor.tick();
+ assert.equal(f.tasks.row('task',f.base.id).runId,f.base.runId);assert.equal(f.supervisor.history(f.base.id)[0].status,'needs_user');assert.match(f.supervisor.history(f.base.id)[0].decision.summary,/未重新执行原任务/);
 });

@@ -38,7 +38,19 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(matches_control({**base,'generation':3},c,'v'))
         self.assertTrue(matches_control({**base,'generation':3,'requestId':'new'},c,'v'))
         self.assertTrue(matches_control({**base,'action':'end'},c,'v'))
+        self.assertTrue(matches_control({**base,'action':'disable'},c,'v'))
+        self.assertFalse(matches_control({**base,'action':'disable','voiceInstanceId':'other'},c,'v'))
         self.assertFalse(matches_control({**base,'action':'mute','voiceInstanceId':'other'},c,'v'))
+    async def test_disable_ack_is_flushed_before_disconnecting_lease(self):
+        calls=[]
+        async def api(path,body):calls.append((path,dict(body)));return {}
+        bridge=UiBridge(api,'v')
+        command={'id':'disable-1','voiceInstanceId':'v','generation':0,'action':'disable'}
+        bridge.ack(command,{'status':'applied'})
+        await bridge.close()
+        self.assertEqual([path for path,_ in calls],['/voice/ack','/voice/publish'])
+        self.assertEqual(calls[0][1]['status'],'applied')
+        self.assertFalse(calls[1][1]['connected'])
     async def test_retired_owner_signals_shutdown_instead_of_silently_retrying(self):
         calls=[]
         async def api(path,body):
@@ -61,6 +73,23 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         try:
             self.assertEqual((await asyncio.wait_for(q.get(),.3))['id'],'first')
             await asyncio.sleep(.04);self.assertTrue(q.empty())
+        finally:await b.close();await task
+    async def test_deferred_device_replays_are_throttled_and_disable_still_arrives(self):
+        polls=[];commands=[{'id':'devices','action':'devices','voiceInstanceId':'v','generation':0}]
+        async def api(path,body):
+            if path=='/voice/poll':
+                polls.append(asyncio.get_running_loop().time())
+                return {'commands':list(commands)}  # Queued deferred control disables host long-polling.
+            return {}
+        b=UiBridge(api,'v',interval=.01);q=asyncio.Queue();task=asyncio.create_task(b.run(q))
+        try:
+            command=await asyncio.wait_for(q.get(),.3)
+            b.defer(command)
+            await asyncio.sleep(.16)
+            self.assertTrue(q.empty(),'the same pending device change must not be re-enqueued')
+            self.assertLessEqual(len(polls),6,'pending device changes must not trigger a busy HTTP poll loop')
+            commands.insert(0,{'id':'disable','action':'disable','voiceInstanceId':'v','generation':0})
+            self.assertEqual((await asyncio.wait_for(q.get(),.2))['id'],'disable')
         finally:await b.close();await task
     async def test_terminal_stop_captures_old_request_before_native_clear(self):
         from continuous_run import stop_foreground

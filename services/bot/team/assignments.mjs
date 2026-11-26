@@ -27,7 +27,7 @@ export class TeamAssignments {
   inputs(report,prefix){
     return (report.artifacts??[]).map(a=>{
       const file=this.tasks.reports.artifact({id:report.taskId,reportId:report.id,artifactId:a.id});
-      return {taskId:report.taskId,reportId:report.id,artifactId:a.id,path:file.path,sha256:file.sha256??a.sha256,name:prefix+'/'+a.name};
+      return {taskId:report.taskId,projectId:report.projectId,reportId:report.id,artifactId:a.id,path:file.path,sha256:file.sha256??a.sha256,name:prefix+'/'+a.name};
     });
   }
   reassign({id,runId,assignmentVersion,assignedBotId,actionId,summary='',reportId}){
@@ -39,6 +39,7 @@ export class TeamAssignments {
     if(t.runId!==runId||t.assignmentVersion!==assignmentVersion)throw Error('task_run_changed');
     if(t.kind!=='agent'||t.managementReview||t.handoff?.status==='stopping'||assignedBotId===t.assignedBotId)throw Error('invalid_task_handoff');
     tasks.team.assignment({...t,assignedBotId});
+    if(t.media&&!tasks.skills?.validateSelection({...t,assignedBotId}).includes('image-production'))throw Error('task_media_skill_required');
     let report=null;if(reportId){report=tasks.reports.get(reportId);tasks.reports.assertCurrent(t,reportId);}
     const inputs=report?this.inputs(report,'handoff/'+report.id):[];
     const managementPaused=!!t.management?.paused;
@@ -50,7 +51,10 @@ export class TeamAssignments {
     if(taskIsClosed(t))return;
     const tasks=this.tasks,h=t.handoff,run=tasks.row('run',t.runId),job=tasks.row('job',run.jobId);
     if(active.has(t.status)||!job.cleanupConfirmed||tasks.workers.has(job.id))return;
-    try{tasks.team.assignment({...t,assignedBotId:h.toBotId});}catch(error){t.blockedReason=error.message;tasks.put('task',t);return;}
+    try{
+      tasks.team.assignment({...t,assignedBotId:h.toBotId});
+      if(t.media&&!tasks.skills?.validateSelection({...t,assignedBotId:h.toBotId}).includes('image-production'))throw Error('task_media_skill_required');
+    }catch(error){t.blockedReason=error.message;tasks.put('task',t);return;}
     try{tasks.runBudget(t);}catch(error){if(t.blockedReason!==error.message){t.blockedReason=error.message;tasks.put('task',t);tasks.changed(t);}return;}
     // Versioned copies are rechecked before ownership changes. Unknown work is never replayed.
     if(h.reportId)try{const report=tasks.reports.get(h.reportId);this.inputs(report,'handoff/'+report.id);}catch(error){t.blockedReason=error.message;tasks.put('task',t);return;}
@@ -91,7 +95,7 @@ export class TeamAssignments {
       if(!reason&&reports.length)try{
         const inputs=reports.flatMap(r=>this.inputs(r,'dependencies/'+r.taskId+'/'+r.id));
         t.transferInputs=[...(t.transferInputs??[]),...inputs];
-        t.dependencyInputs=reports.map(r=>({taskId:r.taskId,reportId:r.id,version:r.version,summary:r.summary,artifacts:r.artifacts.map(a=>({id:a.id,name:a.name,sha256:a.sha256}))}));
+        t.dependencyInputs=reports.map(r=>({taskId:r.taskId,projectId:r.projectId,reportId:r.id,version:r.version,summary:r.summary,artifacts:r.artifacts.map(a=>({id:a.id,name:a.name,sha256:a.sha256}))}));
       }catch{reason='dependency_artifact_missing';}
       const status=reason?'blocked':'queued';
       if(t.status!==status||t.blockedReason!==reason||reports.length){

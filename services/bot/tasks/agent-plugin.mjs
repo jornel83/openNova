@@ -4,15 +4,20 @@ import {ROOT} from '../../runtime/sources.mjs';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {readFileSync,mkdirSync} from 'node:fs';
-import {join} from 'node:path';
+import {readFileSync,mkdirSync,realpathSync,existsSync} from 'node:fs';
+import {join,resolve,relative,dirname,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {saveJson,readJson} from './agent-files.mjs';
+import {candidatePatchDigest} from '../team/candidate-patch.mjs';
 import {resolveTaskPath} from './filesystem.mjs';
-import {LOCAL_TASK_TOOLS,allowedTaskTools} from './execution.mjs';
+import {LOCAL_TASK_TOOLS,TASK_MEDIA_TOOLS,allowedTaskTools} from './execution.mjs';
 import {hostToolDefinitions} from './host-tools.mjs';
 import {createTaskActivity} from './activity.mjs';
+import {taskBridgeTimeout} from './bridge.mjs';
+import {taskMediaDefinitions} from './media-tools.mjs';
+import {TASK_DOCUMENT_TOOLS,taskDocumentDefinitions,readFrozenText} from './document-tool-contract.mjs';
+import {researchCheckpoints} from './research-recovery.mjs';
 export const name='opennova-task-agent';
 export const inject=['tools','llm','systemPrompt'];
 export const AGENT_TOOLS=LOCAL_TASK_TOOLS;
@@ -25,6 +30,7 @@ export const AGENT_INSTRUCTIONS=`你是 OpenNova 后台数字员工，在独立�
 export async function apply(ctx,config){
   const {defineTool}=await import(pathToFileURL(join(config.harnessRoot,'packages/core/tools/lib/index.js')));
   const local=new AsyncLocalStorage(),commands=new Set();let steps=0,toolCalls=0,totalTokens=0,estimatedTokens=false,waiting=null,awaiting=null,stopReason;
+  const checkpoint=researchCheckpoints(config);
   const {estimateMessage,estimateContent,estimateToolsTokens}=await import(pathToFileURL(join(config.harnessRoot,'packages/llm/token-meter/lib/types/estimate.js')));
   const progress=()=>saveJson(join(config.runDir,'progress.json'),{steps,toolCalls,totalTokens,estimatedTokens,waiting,awaiting,stopReason,updatedAt:Date.now()});
   const activity=createTaskActivity({path:join(config.runDir,'activity.json'),taskId:config.taskId,runId:config.runId}),activeTools=new Map();
@@ -35,7 +41,7 @@ export async function apply(ctx,config){
     if(!config.bridge)throw Error('task_host_unavailable');
     const endpoint=config.bridge.scoped?'/task-runtime/'+route:route==='admission'?'/background-task-admission':'/background-task-check';
     const response=await fetch(config.bridge.url+endpoint,{method:'POST',headers:{Authorization:'Bearer '+readFileSync(config.bridge.tokenPath,'utf8').trim(),'Content-Type':'application/json'},
-      body:JSON.stringify({...body,taskId:config.taskId,runId:config.runId,assignmentVersion:config.assignmentVersion}),signal:AbortSignal.any([AbortSignal.timeout(route==='video'?180000:30000),...(signal?[signal]:[])])});
+      body:JSON.stringify({...body,taskId:config.taskId,runId:config.runId,assignmentVersion:config.assignmentVersion}),signal:AbortSignal.any([AbortSignal.timeout(taskBridgeTimeout(route)),...(signal?[signal]:[])])});
     const result=await response.json();if(!response.ok)throw Error(result.error||'task_host_unavailable');return result;
   };
   const commandTool=async args=>{
@@ -44,6 +50,11 @@ export async function apply(ctx,config){
     if(typeof args.command!=='string'||!args.command.trim()||args.command.length>16000)throw Error('invalid_task_command');
     const timeoutMs=args.timeoutMs??120000;if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000)throw Error('invalid_task_timeout');
     const cwd=resolveTaskPath(config,args.workdir??'.',{directory:true}),directory=join(config.runDir,'commands',current.id);mkdirSync(directory,{recursive:true,mode:0o700});
+    const measurePatch=()=>{
+      try{return candidatePatchDigest(readJson(join(config.agentHome,'workspace.json')));}catch{return undefined;}
+    };
+    const regression=config.candidateReview?.regressions.some(rule=>rule.command===args.command)&&cwd===realpathSync(config.workspace);
+    const before=regression?measurePatch():undefined;
     saveJson(join(directory,'intent.json'),{jobId:current.id,runId:config.runId});
     return await new Promise((resolveDone,reject)=>{
       const child=spawn(process.execPath,[fileURLToPath(new URL('./worker.mjs',import.meta.url)),directory],{cwd,detached:true,stdio:['ignore','ignore','ignore','ipc'],env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>!/(KEY|TOKEN|SECRET|PASSWORD)/i.test(key))),NODE_OPTIONS:''}});
@@ -56,6 +67,7 @@ export async function apply(ctx,config){
         const result=readJson(join(directory,'result.json'));
         if(!result?.cleanupConfirmed){reject(Error('task_command_cleanup_unconfirmed'));return;}
         let output='';try{output=readFileSync(join(directory,'output.log'),'utf8').slice(-24000);}catch(error){if(error.code!=='ENOENT'){reject(error);return;}}
+        if(before&&result.status==='completed'&&result.exitCode===0&&measurePatch()===before)current.step.candidatePatchSha256=before;
         resolveDone({...result,cwd,output,logPath:join(directory,'output.log')});
       });
       child.send({type:'start',spec:{jobId:current.id,runId:config.runId,command:args.command,cwd,timeoutMs,logLimit:8*1024*1024}},()=>{});
@@ -75,11 +87,28 @@ export async function apply(ctx,config){
     }],
   ])ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},execute:async a=>JSON.stringify(await execute(a))})));
   const allowed=new Set(allowedTaskTools(config));
+  for(const [name,description,parameters] of taskDocumentDefinitions())if(allowed.has(name))ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,
+    output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},execute:async args=>{
+      const step=local.getStore();if(!step)throw Error('task_step_required');
+      return JSON.stringify(await callHost('document',{name,args,actionId:step.id},step.signal));
+    }})));
   for(const [name,description,parameters] of videoToolDefinitions(config.skills?.find(skill=>skill.name==='video-production')?.archiveRoot??ROOT))if(allowed.has(name))ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,
     output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},execute:async args=>{
       const current=local.getStore();if(!current)throw Error('task_step_required');
       const result=await callHost('video',{name,args,actionId:current.id},current.signal);
       if(result.waitingForVideo){awaiting={kind:'video',videoRecordId:result.videoRecordId,task_id:result.task_id,output_dir:result.output_dir};progress();toolActivity();}
+      return JSON.stringify(result);
+    },
+  })));
+  for(const [name,description,parameters] of taskMediaDefinitions(config))ctx.effect(()=>ctx.tools.register(defineTool({name,description,parameters,
+    output:{schema:{type:'string'},render:(_,value)=>[{type:'text',text:value}]},execute:async args=>{
+      const current=local.getStore();if(!current)throw Error('task_step_required');
+      const result=await callHost('media',{name,args,actionId:current.id},current.signal);
+      if(result.waitingForMedia){
+        const mediaOperationId=result.operationId??result.id,remoteTaskId=result.generation?.taskId;
+        if(!/^[A-Za-z0-9_-]{1,200}$/.test(mediaOperationId??'')||!/^[A-Za-z0-9_-]{1,200}$/.test(remoteTaskId??''))throw Error('invalid_media_waiting_receipt');
+        awaiting={kind:'media',mediaOperationId,remoteTaskId};progress();toolActivity();
+      }
       return JSON.stringify(result);
     },
   })));
@@ -89,6 +118,7 @@ export async function apply(ctx,config){
       return JSON.stringify(await callHost('tool',{name,args,actionId:current.id},current.signal));
     }})));
   ctx.tools.guard(exec=>(exec.agent?.session?.id??exec.agent?.id)===config.sessionId&&allowed.has(exec.name)?undefined:'Tool unavailable for this task.');
+  if(config.documentResearch&&!config.managementReview)ctx.on('fs/write-intent',()=>({kind:'createIfAbsent'}),{prepend:true});
   ctx.on('system-prompt/assemble',async(a,c,next)=>{const result=await next();return {...result,tools:result.tools.filter(t=>allowed.has(t.name))};});
   ctx.on('tools/execute',async(exec,next)=>{
     if(waiting||awaiting)throw Error(awaiting?'task_waiting_for_event':'task_waiting_for_user');
@@ -98,14 +128,36 @@ export async function apply(ctx,config){
     const path=join(config.runDir,'steps',record.id+'.json');saveJson(path,record);progress();
     activeTools.set(record.id,exec.name);toolActivity();
     try{
-    for(const key of ['file_path','path','workdir'])if(typeof exec.arguments?.[key]==='string')resolveTaskPath(config,exec.arguments[key]);
-      const result=await local.run({...record,signal:exec.signal},()=>next());
+    let createOnlyPath,frozenText;
+    if(config.documentResearch&&!config.managementReview&&['write','read'].includes(exec.name)){
+      const raw=exec.arguments.file_path;if(typeof raw!=='string'||raw.includes('\\')||raw.split('/').includes('..'))throw Error('invalid_task_document_path');
+      const root=realpathSync(config.workspace),absolute=resolve(root,raw),name=relative(root,absolute);
+      if(!name||name==='..'||name.startsWith('../')||isAbsolute(name))throw Error('invalid_task_document_path');
+      const f=config.inputSnapshot.files.find(f=>f.path===name);
+      if(exec.name==='read'){
+        if(!f||f.mime)throw Error('task_document_input_not_bound');
+        frozenText=f;
+      }else{
+        if(f||!(name.startsWith('.nova-spec/')&&name.endsWith('.json')||/\.(md|txt)$/.test(name)&&!name.split('/').some(p=>p.startsWith('.'))))throw Error('invalid_task_document_path');
+        let parent=dirname(absolute);while(!existsSync(parent)&&parent!==root)parent=dirname(parent);
+        if(realpathSync(parent)!==parent)throw Error('invalid_task_document_path');
+        createOnlyPath=absolute;
+      }
+    }
+    if(!frozenText&&!TASK_MEDIA_TOOLS.includes(exec.name)&&!TASK_DOCUMENT_TOOLS.includes(exec.name))for(const key of ['file_path','path','workdir'])if(typeof exec.arguments?.[key]==='string')resolveTaskPath(config,exec.arguments[key]);
+      const result=await local.run({id:record.id,step:record,signal:exec.signal},()=>checkpoint(exec,()=>{
+        if(createOnlyPath&&existsSync(createOnlyPath))throw Error('task_document_target_exists');
+        if(frozenText)return readFrozenText(config,frozenText,exec.arguments);
+        return next();
+      },runId=>{record.reusedRunId=runId;}));
       let value=result.value;if(exec.name==='task_command'&&typeof value==='string'){try{value=JSON.parse(value);}catch{value={};}}
       if(typeof value==='string'){try{value=JSON.parse(value);}catch{}}
       const httpStatus=result.meta?.statusCode??value?.statusCode;
       const httpFailed=exec.name==='web_fetch'&&httpStatus!==undefined&&(httpStatus<200||httpStatus>=300);
-      const videoStatus=exec.name.startsWith('video_')?(value?.status==='unknown'?'interrupted':value?.error||['failed','expired'].includes(value?.status)?'failed':value?.status==='cancelled'?'cancelled':'completed'):null;
-      const status=result.isError||httpFailed?'failed':videoStatus??(['task_command',...(config.hostTools??[])].includes(exec.name)?(value?.status==='dispatched'?'completed':value?.status||'failed'):'completed');
+      const videoStatus=exec.name.startsWith('video_')?(value?.status==='unknown'?'interrupted':exec.name==='video_generate'&&value?.status==='running'?'completed':value?.error||['failed','expired'].includes(value?.status)?'failed':value?.status==='cancelled'?'cancelled':'completed'):null;
+      const mediaStatus=TASK_MEDIA_TOOLS.includes(exec.name)?(value?.status==='unknown'?'interrupted':value?.waitingForMedia?'pending':
+        value?.status==='cancelled'?'cancelled':value?.error||value?.status==='failed'?'failed':'completed'):null;
+      const status=result.isError||httpFailed?'failed':mediaStatus??videoStatus??(['task_command',...TASK_DOCUMENT_TOOLS,...(config.hostTools??[])].includes(exec.name)?(value?.status==='dispatched'?'completed':value?.status||'failed'):'completed');
       saveJson(path,{...record,status,finishedAt:Date.now(),exitCode:value?.exitCode,cleanupConfirmed:value?.cleanupConfirmed,
         output:result.content?.filter(b=>b.type==='text').map(b=>b.text).join('\n').slice(-24000),logPath:value?.logPath??record.logPath});
       return result;

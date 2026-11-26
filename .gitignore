@@ -24,3 +24,10 @@ output/
 
 # Browser test snapshots and traces
 .playwright-cli/
+
+# Workspaces hold local project data. Share only the workflow setup notes.
+/workspaces/*
+!/workspaces/aesthetic-video-workflow/
+/workspaces/aesthetic-video-workflow/*
+!/workspaces/aesthetic-video-workflow/.gitignore
+!/workspaces/aesthetic-video-workflow/README.md
